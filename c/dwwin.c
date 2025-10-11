@@ -231,7 +231,7 @@ void WinUpdate(WINDOW *window, struct dwTransferData *dp)
 				break;
 
 		default:
-				wprintw(window, "%s", "Undefined");
+				wprintw(window, "%s: %d", "Undefined", dp->baudRate);
 				break;
 	}
 	wmove(window, y++, x); wclrtoeol(window);

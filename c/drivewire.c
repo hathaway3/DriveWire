@@ -216,7 +216,7 @@ int main(int argc, char **argv)
         strcpy(dskfile[1], "disk1");
         strcpy(dskfile[2], "disk2");
         strcpy(dskfile[3], "disk3");
-        setBaud(&datapack, 3); // assume CoCo 3
+        setBaud(&datapack, B115200); // assume CoCo 3
         // change EOLs and send to printer
         strcpy(datapack.prtcmd, "| tr \"\\r\" \"\\n\" | lpr");
         // change EOLs and move to file
