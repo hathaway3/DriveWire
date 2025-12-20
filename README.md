@@ -25,7 +25,7 @@ This repository has DriveWire host implementations for supported platforms:
 There are other repositories that host DriveWire implementations:
 
 - Python: Mike Furman hosts [pyDriveWire](https://github.com/n6il/pyDriveWire).
-- Java: Aaron Wolfe's [DriveWire 4 Server](https://sourceforge.net/projects/drivewireserver/).
+- Java: Aaron Wolfe's [DriveWire 4 Server](https://github.com/qbancoffee/drivewire4) updated by Rocky Hill.
 
 ## History
 
