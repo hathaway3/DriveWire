@@ -27,12 +27,15 @@ struct DriveWireCmd: ParsableCommand {
     @Option(name: .long, help: "Virtual disk image path to insert into drive 3")
     var disk3: String?
 
+    @Flag(name: .shortAndLong, help: "Show client activity")
+    var verbose: Bool = false
+
     func run() throws {
         let d = DriveWireSerialDriver()
         
         d.baudRate = baudRate
         d.portName = port
-        d.logging = true
+        d.logging = verbose
 
         if let disk0Path = disk0 {
             try d.host.insertVirtualDisk(driveNumber: 0, imagePath: disk0Path)

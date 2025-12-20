@@ -1612,9 +1612,6 @@ extension DriveWireHost {
         /// A path to a file that contains the drive's data.
         var imagePath = ""
         
-        /// The path path where named object files exist.
-        var basePath = NSHomeDirectory()
-        
         private var bookmarkData = Data()
         private var storageContainer = Data()
         
@@ -1625,13 +1622,7 @@ extension DriveWireHost {
         ///     - imagePath: A path to a file that contains the drive's data.
         init(driveNumber : Int, imagePath : String) throws {
             self.driveNumber = driveNumber
-
-            // if imagePath is not an absolute pathlist, assign it one.
-            if imagePath.starts(with: "/") {
-                self.imagePath = imagePath
-            } else {
-                self.imagePath = basePath + "/" + imagePath
-            }
+            self.imagePath = imagePath
 
             reload()
         }
