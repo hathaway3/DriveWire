@@ -30,6 +30,9 @@ There are other repositories that host DriveWire implementations:
 
 The [MicroPython](micropython) folder contains a complete DriveWire 4 server designed to run on low-cost microcontrollers like the **Raspberry Pi Pico W** and **Pico 2 W**. 
 
+### Web Interface
+![DriveWire Dashboard](micropython/docs/dashboard_mockup.png)
+
 ### Key Features:
 - **Web-Based Management**: A retro-themed (Tandy/CoCo aesthetic) dark mode web interface.
 - **Virtual Serial TCP/IP**: Map CoCo virtual serial ports to external network services (Support for both Client and Server modes).

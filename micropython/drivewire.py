@@ -39,17 +39,33 @@ class VirtualDrive:
     def __init__(self, filename):
         self.filename = filename
         self.file = None
+        self.dirty_sectors = {} # LSN -> data
         try:
             self.file = open(filename, "r+b")
         except OSError:
              print(f"Failed to open {filename}")
 
     def close(self):
+        self.flush()
         if self.file:
             self.file.close()
             self.file = None
 
+    def flush(self):
+        if not self.file or not self.dirty_sectors: return
+        try:
+            for lsn, data in self.dirty_sectors.items():
+                self.file.seek(lsn * 256)
+                self.file.write(data)
+            self.file.flush()
+            self.dirty_sectors = {}
+            print(f"Flushed {self.filename}")
+        except Exception as e:
+            print(f"Flush Error: {e}")
+
     def read_sector(self, lsn):
+        if lsn in self.dirty_sectors:
+            return self.dirty_sectors[lsn]
         if not self.file: return None
         try:
             self.file.seek(lsn * 256)
@@ -62,14 +78,8 @@ class VirtualDrive:
             return None
 
     def write_sector(self, lsn, data):
-        if not self.file: return False
-        try:
-            self.file.seek(lsn * 256)
-            self.file.write(data)
-            return True
-        except Exception as e:
-            print(f"Write Error: {e}")
-            return False
+        self.dirty_sectors[lsn] = data
+        return True
 
 class DriveWireServer:
     def __init__(self):

@@ -2,9 +2,17 @@
 
 This is a full-featured DriveWire 4 server implementation written in MicroPython, optimized for the **Raspberry Pi Pico W** and **Pico 2 W**.
 
-## Features
+## Screenshots
 
-- **Standard DriveWire 4 Support**: Works with standard CoCo DriveWire clients (HDB-DOS, OS-9, etc.).
+![Web Dashboard](docs/dashboard_mockup.png)
+*Live Dashboard showing real-time DriveWire activity and system logs.*
+
+![Configuration Tab](docs/config_mockup.png)
+*Retro-styled configuration interface (Tandy/CoCo aesthetic).*
+
+## Advanced Features
+
+- **Flash Wear Protection**: Implements a Sector-level Write-Back Cache. All disk writes are buffered in RAM and synchronized to the physical flash storage only once per minute of inactivity, significantly extending the life of your Pico's internal storage.
 - **Retro Web Dashboard**: A Tandy/CoCo-inspired "Dark Mode" web interface for configuration and monitoring.
 - **Virtual Serial TCP/IP**: Map CoCo virtual serial ports to external network services (Support for both Client and Server modes).
 - **Serial Terminal Tab**: Real-time diagnostic monitor for snooping on any virtual serial channel.
