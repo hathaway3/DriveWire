@@ -1,0 +1,14 @@
+{
+    "wifi_ssid": "YOUR_SSID",
+    "wifi_password": "YOUR_PASSWORD",
+    "baud_rate": 115200,
+    "drives": [
+        null,
+        null,
+        null,
+        null
+    ],
+    "ntp_server": "pool.ntp.org",
+    "timezone_offset": 0,
+    "serial_map": {}
+}

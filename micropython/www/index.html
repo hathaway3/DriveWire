@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DriveWire Server</title>
+    <!-- Import VT323 for that CRT Terminal look -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --coco-green: #33ff33;
+            /* Typical Green Phosphor */
+            --coco-dark-green: #004400;
+            --coco-black: #050505;
+            /* Deep black */
+            --coco-alert: #ff3333;
+        }
+
+        body {
+            font-family: 'VT323', monospace;
+            background: var(--coco-black);
+            color: var(--coco-green);
+            padding: 20px;
+            max-width: 700px;
+            margin: 0 auto;
+            font-size: 20px;
+            letter-spacing: 1px;
+            text-shadow: 0 0 2px var(--coco-dark-green);
+        }
+
+        h1,
+        h2 {
+            color: var(--coco-green);
+            text-transform: uppercase;
+            border-bottom: 2px solid var(--coco-green);
+            padding-bottom: 5px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 40px;
+            font-size: 3em;
+        }
+
+        .card {
+            background: #000;
+            padding: 20px;
+            border: 2px solid var(--coco-green);
+            margin-bottom: 30px;
+            box-shadow: 0 0 10px var(--coco-dark-green);
+        }
+
+        label {
+            display: block;
+            margin-top: 15px;
+            font-weight: normal;
+            color: var(--coco-green);
+            text-transform: uppercase;
+        }
+
+        input[type="text"],
+        input[type="password"],
+        input[type="number"],
+        select {
+            width: 100%;
+            padding: 10px;
+            margin-top: 5px;
+            border: 2px solid var(--coco-green);
+            background: #000;
+            color: var(--coco-green);
+            font-family: 'VT323', monospace;
+            font-size: 1.2em;
+            box-sizing: border-box;
+            border-radius: 0;
+            /* Retro hard edges */
+        }
+
+        input:focus,
+        select:focus {
+            outline: none;
+            background: var(--coco-dark-green);
+            color: #fff;
+        }
+
+        placeholder {
+            color: var(--coco-dark-green);
+        }
+
+        .btn {
+            background: var(--coco-green);
+            color: #000;
+            border: 2px solid var(--coco-green);
+            padding: 15px 20px;
+            border-radius: 0;
+            cursor: pointer;
+            font-size: 1.5em;
+            width: 100%;
+            font-family: 'VT323', monospace;
+            text-transform: uppercase;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background: #000;
+            color: var(--coco-green);
+            box-shadow: 0 0 15px var(--coco-green);
+        }
+
+        .btn-secondary {
+            background: #000;
+            color: var(--coco-green);
+            font-size: 1em;
+            padding: 10px;
+        }
+
+        .btn-secondary:hover {
+            background: var(--coco-green);
+            color: #000;
+        }
+
+        .btn-danger {
+            background: #000;
+            color: var(--coco-alert);
+            border-color: var(--coco-alert);
+            font-size: 1.2em;
+            padding: 5px 10px;
+            width: auto;
+        }
+
+        .btn-danger:hover {
+            background: var(--coco-alert);
+            color: #000;
+        }
+
+        .status {
+            margin-top: 10px;
+            padding: 15px;
+            border: 2px solid;
+            display: none;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        .success {
+            border-color: var(--coco-green);
+            color: var(--coco-green);
+            background: var(--coco-dark-green);
+        }
+
+        .error {
+            border-color: var(--coco-alert);
+            color: var(--coco-alert);
+            background: #330000;
+        }
+
+        /* Serial Row Styles */
+        .serial-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+            align-items: flex-end;
+            border-bottom: 1px dashed var(--coco-dark-green);
+            padding-bottom: 15px;
+        }
+
+        .serial-row:last-child {
+            border-bottom: none;
+        }
+
+        @keyframes crt-flicker {
+            0% {
+                opacity: 0.97;
+            }
+
+            50% {
+                opacity: 1;
+            }
+
+            100% {
+                opacity: 0.98;
+            }
+        }
+
+        body::after {
+            content: " ";
+            display: block;
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 2;
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+        }
+
+        body {
+            animation: crt-flicker 0.15s infinite;
+        }
+
+        /* Tab Styles */
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid var(--coco-green);
+            margin-bottom: 20px;
+        }
+
+        .tab-btn {
+            background: #000;
+            color: var(--coco-green);
+            border: none;
+            padding: 10px 20px;
+            font-family: 'VT323', monospace;
+            font-size: 1.2em;
+            cursor: pointer;
+            margin-right: 5px;
+            border-top: 2px solid transparent;
+            border-left: 2px solid transparent;
+            border-right: 2px solid transparent;
+        }
+
+        .tab-btn:hover {
+            background: var(--coco-dark-green);
+            color: #fff;
+        }
+
+        .tab-btn.active {
+            border-color: var(--coco-green);
+            border-bottom: 2px solid #000;
+            position: relative;
+            top: 2px;
+            font-weight: bold;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Dashboard Styles */
+        .status-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 1.2em;
+        }
+
+        .highlight {
+            color: #fff;
+            text-shadow: 0 0 5px var(--coco-green);
+        }
+
+        .log-box {
+            border: 1px solid var(--coco-dark-green);
+            height: 200px;
+            overflow-y: scroll;
+            padding: 10px;
+            font-size: 0.8em;
+            background: #020202;
+        }
+
+        .serial-stat-row {
+            font-family: monospace;
+            margin-bottom: 5px;
+            border-bottom: 1px dotted var(--coco-dark-green);
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>DRIVEWIRE SERVER</h1>
+    </header>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('config')">CONFIGURATION</button>
+        <button class="tab-btn" onclick="switchTab('status')">DASHBOARD</button>
+    </div>
+
+    <!-- CONFIGURATION TAB -->
+    <div id="tab-config" class="tab-content active">
+        <div class="card">
+            <h2>SERIAL PORT</h2>
+            <label for="baud">BAUD RATE:</label>
+            <select id="baud">
+                <option value="38400">38400 (CoCo 1/2)</option>
+                <option value="57600">57600 (CoCo 2/3)</option>
+                <option value="115200" selected>115200 (CoCo 3)</option>
+                <option value="230400">230400 (High Speed)</option>
+                <option value="460800">460800 (Very High)</option>
+                <option value="921600">921600 (Max)</option>
+            </select>
+        </div>
+
+        <div class="card">
+            <h2>WIFI CONFIG (REBOOT REQ)</h2>
+            <label for="ssid">SSID:</label>
+            <input type="text" id="ssid">
+            <label for="wifi_pass">PASSWORD:</label>
+            <input type="password" id="wifi_pass">
+        </div>
+
+        <div class="card">
+            <h2>TIME SETTINGS</h2>
+            <label for="ntp_server">NTP SERVER:</label>
+            <input type="text" id="ntp_server" placeholder="pool.ntp.org">
+            <label for="tz_offset">TIMEZONE OFFSET (HRS):</label>
+            <input type="number" id="tz_offset" placeholder="e.g. -5">
+        </div>
+
+        <div class="card">
+            <h2>VIRTUAL SERIAL (TCP/IP)</h2>
+            <div id="serial-map-container">
+                <!-- Injected by JS -->
+            </div>
+            <button class="btn btn-secondary" style="margin-top:15px;" onclick="addSerialMap()">+ ADD STATION</button>
+        </div>
+
+        <div class="card">
+            <h2>VIRTUAL DRIVES</h2>
+            <div id="drives-container">
+                <!-- Drives injected by JS -->
+            </div>
+        </div>
+
+        <div class="actions">
+            <button class="btn" onclick="saveConfig()">SAVE CONFIGURATION</button>
+        </div>
+        <div id="status-msg" class="status"></div>
+    </div> <!-- END CONFIG TAB -->
+
+    <!-- DASHBOARD TAB -->
+    <div id="tab-status" class="tab-content">
+        <div class="card">
+            <h2>SYSTEM STATUS</h2>
+            <div class="status-grid">
+                <div>LAST OPCODE: <span id="stat-opcode" class="highlight">--</span></div>
+                <div>LAST DRIVE: <span id="stat-drive" class="highlight">--</span></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>SERIAL ACTIVITY</h2>
+            <div id="serial-activity-list">
+                <!-- Populated by JS -->
+                <p>Waiting for data...</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>SYSTEM LOG</h2>
+            <div id="system-log" class="log-box">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <script src="static/script.js"></script>
+</body>
+
+</html>
