@@ -1,7 +1,5 @@
 #  DriveWire 
 
-This is the official repository for DriveWire.
-
 DriveWire defines a standard for guest computers to access input/output resources on a host computer. This model gives the guest computer the appearance that it is directly connected to a large storage device, when in fact, connectivity is achieved using a serial cable connected to the host.
 
 There are distinct advantages in utilizing DriveWire as a storage medium:
