@@ -90,9 +90,20 @@ async def status_endpoint(request):
     if hasattr(app, 'dw_server'):
         return {
             'stats': app.dw_server.stats,
-            'logs': list(app.dw_server.log_buffer)
+            'logs': list(app.dw_server.log_buffer),
+            'term_buf': list(app.dw_server.terminal_buffer),
+            'monitor_chan': app.dw_server.monitor_channel
         }
     return {'error': 'DriveWire Server not attached'}
+
+@app.route('/api/serial/monitor', methods=['POST'])
+async def monitor_chan_endpoint(request):
+    if hasattr(app, 'dw_server'):
+        chan = request.json.get('chan', -1)
+        app.dw_server.monitor_channel = int(chan)
+        app.dw_server.terminal_buffer = bytearray() # Clear on change
+        return {'status': 'ok'}
+    return {'error': 'DriveWire Server not attached'}, 500
 
 def start():
     print("Starting Web Server...")

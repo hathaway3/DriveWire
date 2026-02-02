@@ -272,6 +272,23 @@
             margin-bottom: 5px;
             border-bottom: 1px dotted var(--coco-dark-green);
         }
+
+        #terminal-output {
+            scrollbar-width: thin;
+            scrollbar-color: var(--coco-dark-green) #000;
+        }
+
+        #terminal-output::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #terminal-output::-webkit-scrollbar-track {
+            background: #000;
+        }
+
+        #terminal-output::-webkit-scrollbar-thumb {
+            background: var(--coco-dark-green);
+        }
     </style>
 </head>
 
@@ -283,6 +300,7 @@
     <div class="tabs">
         <button class="tab-btn active" onclick="switchTab('config')">CONFIGURATION</button>
         <button class="tab-btn" onclick="switchTab('status')">DASHBOARD</button>
+        <button class="tab-btn" onclick="switchTab('terminal')">TERMINAL</button>
     </div>
 
     <!-- CONFIGURATION TAB -->
@@ -360,6 +378,41 @@
             <div id="system-log" class="log-box">
                 <!-- Populated by JS -->
             </div>
+        </div>
+    </div>
+
+    <!-- TERMINAL TAB -->
+    <div id="tab-terminal" class="tab-content">
+        <div class="card">
+            <h2>SERIAL MONITOR</h2>
+            <label for="terminal-chan">SNOOP CHANNEL:</label>
+            <select id="terminal-chan" onchange="updateMonitorChannel()">
+                <option value="-1">NONE</option>
+                <option value="0">CHANNEL 0</option>
+                <option value="1">CHANNEL 1</option>
+                <option value="2">CHANNEL 2</option>
+                <option value="3">CHANNEL 3</option>
+                <option value="4">CHANNEL 4</option>
+                <option value="5">CHANNEL 5</option>
+                <option value="6">CHANNEL 6</option>
+                <option value="7">CHANNEL 7</option>
+                <option value="8">CHANNEL 8</option>
+                <option value="9">CHANNEL 9</option>
+                <option value="10">CHANNEL 10</option>
+                <option value="11">CHANNEL 11</option>
+                <option value="12">CHANNEL 12</option>
+                <option value="13">CHANNEL 13</option>
+                <option value="14">CHANNEL 14</option>
+            </select>
+        </div>
+
+        <div class="card">
+            <div id="terminal-output" class="log-box"
+                style="height: 400px; font-family: monospace; white-space: pre-wrap; background: #000; border: 1px solid var(--coco-green); color: var(--coco-green); padding: 10px; overflow-y: auto;">
+                <!-- Activity shown here -->
+            </div>
+            <button class="btn btn-secondary" style="margin-top:10px;"
+                onclick="document.getElementById('terminal-output').innerHTML = ''">CLEAR TERMINAL</button>
         </div>
     </div>
 

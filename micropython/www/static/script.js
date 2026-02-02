@@ -79,11 +79,28 @@ function switchTab(tabName) {
     const btns = document.querySelectorAll('.tab-btn');
     if (tabName === 'config') btns[0].classList.add('active');
     if (tabName === 'status') btns[1].classList.add('active');
+    if (tabName === 'terminal') btns[2].classList.add('active');
+}
+
+async function updateMonitorChannel() {
+    const chan = document.getElementById('terminal-chan').value;
+    try {
+        await fetch('/api/serial/monitor', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chan: parseInt(chan) })
+        });
+        document.getElementById('terminal-output').innerHTML = '';
+    } catch (e) {
+        console.error("Failed to update monitor channel", e);
+    }
 }
 
 async function pollStatus() {
     // Only poll if tab is visible
-    if (!document.getElementById('tab-status').classList.contains('active')) return;
+    const statusIdx = document.getElementById('tab-status').classList.contains('active');
+    const termIdx = document.getElementById('tab-terminal').classList.contains('active');
+    if (!statusIdx && !termIdx) return;
 
     try {
         const response = await fetch('/api/status');
@@ -103,15 +120,45 @@ async function pollStatus() {
             serContainer.innerHTML = serHtml;
         }
 
-        if (data.logs) {
+        if (data.logs && statusIdx) {
             const logBox = document.getElementById('system-log');
             logBox.innerHTML = data.logs.map(l => `<div>> ${l}</div>`).join('');
             logBox.scrollTop = logBox.scrollHeight;
         }
 
+        if (data.term_buf && termIdx) {
+            const termBox = document.getElementById('terminal-output');
+            if (data.term_buf.length > 0) {
+                // Convert bytes to string (escaping HTML)
+                const text = bytesToString(data.term_buf);
+                // Simple append or replacement? 
+                // Since the server buffer is only 512 bytes and we clear locally,
+                // let's just refresh.
+                termBox.innerText = text;
+                termBox.scrollTop = termBox.scrollHeight;
+            }
+        }
+
+        // Sync monitor dropdown
+        if (data.monitor_chan !== undefined && termIdx) {
+            const sel = document.getElementById('terminal-chan');
+            if (sel.value != data.monitor_chan) sel.value = data.monitor_chan;
+        }
+
     } catch (e) {
         console.log("Status poll failed", e);
     }
+}
+
+function bytesToString(bytes) {
+    let s = "";
+    bytes.forEach(b => {
+        // Simple printable check
+        if (b === 10 || b === 13) s += "\n";
+        else if (b >= 32 && b <= 126) s += String.fromCharCode(b);
+        else s += "."; // Non-printable
+    });
+    return s;
 }
 
 function renderSerialMap(map) {

@@ -86,6 +86,8 @@ class DriveWireServer:
             'serial': {} # Key: Channel, Val: {tx: 0, rx: 0}
         }
         self.log_buffer = []
+        self.monitor_channel = -1
+        self.terminal_buffer = bytearray()
         self.channels = [bytearray() for _ in range(32)] # 0-14 VSerial, 15-30 ??? Spec says 30 channels.
         self.tcp_connections = {} # Key: Channel (int), Value: (reader, writer, task)
         # Spec: 0-14 Virtual Serial. 128-142 Virtual Window. 
@@ -131,6 +133,17 @@ class DriveWireServer:
         self.log_buffer.append(msg)
         if len(self.log_buffer) > 20:
             self.log_buffer.pop(0)
+
+    def snoop_serial(self, chan, data):
+        if chan == self.monitor_channel:
+            # Add to terminal buffer
+            if isinstance(data, int):
+                self.terminal_buffer.append(data)
+            else:
+                self.terminal_buffer.extend(data)
+            # Keep last 512 bytes
+            if len(self.terminal_buffer) > 512:
+                self.terminal_buffer = self.terminal_buffer[-512:]
 
     async def run(self):
         print("Starting DriveWire Loop...")
@@ -335,6 +348,9 @@ class DriveWireServer:
                             # Stats
                             if ch_idx not in self.stats['serial']: self.stats['serial'][ch_idx] = {'tx':0, 'rx':0}
                             self.stats['serial'][ch_idx]['rx'] += 1 # Rx from CoCo perspective (read)
+                            
+                            # Snoop
+                            self.snoop_serial(ch_idx, data_byte)
                         else:
                             self.uart.write(bytes([0, 0]))
 
@@ -354,6 +370,9 @@ class DriveWireServer:
                                     # Stats
                                     if chan not in self.stats['serial']: self.stats['serial'][chan] = {'tx':0, 'rx':0}
                                     self.stats['serial'][chan]['tx'] += 1
+                                    
+                                    # Snoop
+                                    self.snoop_serial(chan, val)
                                     
                                 except Exception as e:
                                     print(f"TCP Write Error Ch{chan}: {e}")
