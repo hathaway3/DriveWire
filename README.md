@@ -35,6 +35,7 @@ The [MicroPython](micropython) folder contains a complete DriveWire 4 server des
 ### Key Features:
 - **Web-Based Management**: A retro-themed (Tandy/CoCo aesthetic) dark mode web interface.
 - **Virtual Serial TCP/IP**: Map CoCo virtual serial ports to external network services (Support for both Client and Server modes).
+- **Serial Terminal Tab**: Real-time diagnostic monitor for snooping on any virtual serial channel.
 - **Status Dashboard**: Live monitoring of DriveWire opcodes, drive access, and serial port activity.
 - **Disk Management**: Automatic scanning of local/SD card storage for `.dsk` files with a dropdown selection UI.
 - **Time Sync**: Built-in NTP synchronization support for the CoCo.
