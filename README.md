@@ -21,11 +21,25 @@ This repository has DriveWire host implementations for supported platforms:
 - UNIX: [C](c)
 - Mac: [Swift](swift) and [Objective-C](objc)
 - Windows: [Delphi](delphi)
+- MicroPython: [MicroPython](micropython) (for RPi Pico W / Pico 2 W)
 
 There are other repositories that host DriveWire implementations:
 
 - Python: Mike Furman hosts [pyDriveWire](https://github.com/n6il/pyDriveWire).
 - Java: Aaron Wolfe's [DriveWire 4 Server](https://github.com/qbancoffee/drivewire4) updated by Rocky Hill.
+
+## MicroPython Implementation
+
+The [MicroPython](micropython) folder contains a complete DriveWire 4 server designed to run on low-cost microcontrollers like the **Raspberry Pi Pico W** and **Pico 2 W**. 
+
+### Key Features:
+- **Web-Based Management**: A retro-themed (Tandy/CoCo aesthetic) dark mode web interface.
+- **Virtual Serial TCP/IP**: Map CoCo virtual serial ports to external network services (Support for both Client and Server modes).
+- **Status Dashboard**: Live monitoring of DriveWire opcodes, drive access, and serial port activity.
+- **Disk Management**: Automatic scanning of local/SD card storage for `.dsk` files with a dropdown selection UI.
+- **Time Sync**: Built-in NTP synchronization support for the CoCo.
+
+For setup instructions and detailed information, see the [MicroPython README](micropython/README.md) (or [Walkthrough](file:///Users/jimmiehathaway/DriveWire/micropython/walkthrough.md)).
 
 ## History
 
