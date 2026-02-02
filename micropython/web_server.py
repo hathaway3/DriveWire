@@ -88,11 +88,22 @@ async def files_endpoint(request):
 @app.route('/api/status')
 async def status_endpoint(request):
     if hasattr(app, 'dw_server'):
+        drive_stats = []
+        for d in app.dw_server.drives:
+            if d:
+                ds = d.stats.copy()
+                ds['filename'] = d.filename.split('/')[-1]
+                ds['dirty_count'] = len(d.dirty_sectors)
+                drive_stats.append(ds)
+            else:
+                drive_stats.append(None)
+                
         return {
             'stats': app.dw_server.stats,
             'logs': list(app.dw_server.log_buffer),
             'term_buf': list(app.dw_server.terminal_buffer),
-            'monitor_chan': app.dw_server.monitor_channel
+            'monitor_chan': app.dw_server.monitor_channel,
+            'drive_stats': drive_stats
         }
     return {'error': 'DriveWire Server not attached'}
 

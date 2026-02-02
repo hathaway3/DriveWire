@@ -40,6 +40,12 @@ class VirtualDrive:
         self.filename = filename
         self.file = None
         self.dirty_sectors = {} # LSN -> data
+        self.read_cache = {}    # LSN -> data (LRU)
+        self.stats = {
+            'read_hits': 0,
+            'read_misses': 0,
+            'write_count': 0
+        }
         try:
             self.file = open(filename, "r+b")
         except OSError:
@@ -64,21 +70,42 @@ class VirtualDrive:
             print(f"Flush Error: {e}")
 
     def read_sector(self, lsn):
+        # 1. Check write cache
         if lsn in self.dirty_sectors:
+            self.stats['read_hits'] += 1
             return self.dirty_sectors[lsn]
+            
+        # 2. Check read cache (LRU)
+        if lsn in self.read_cache:
+            self.stats['read_hits'] += 1
+            data = self.read_cache.pop(lsn)
+            self.read_cache[lsn] = data # Move to end (most recent)
+            return data
+            
+        self.stats['read_misses'] += 1
         if not self.file: return None
         try:
             self.file.seek(lsn * 256)
             data = self.file.read(256)
             if len(data) < 256:
-                return data + bytes(256 - len(data))
+                data = data + bytes(256 - len(data))
+            
+            # Add to read cache
+            self.read_cache[lsn] = data
+            if len(self.read_cache) > 16:
+                # Remove oldest (first)
+                self.read_cache.pop(next(iter(self.read_cache)))
             return data
         except Exception as e:
             print(f"Read Error: {e}")
             return None
 
     def write_sector(self, lsn, data):
+        self.stats['write_count'] += 1
         self.dirty_sectors[lsn] = data
+        self.read_cache[lsn] = data # Keep read cache consistent
+        if len(self.read_cache) > 16:
+            self.read_cache.pop(next(iter(self.read_cache)))
         return True
 
 class DriveWireServer:
@@ -158,6 +185,10 @@ class DriveWireServer:
     async def run(self):
         print("Starting DriveWire Loop...")
         self.running = True
+        
+        # Start background tasks
+        asyncio.create_task(self.flush_loop())
+        
         sreader = asyncio.StreamReader(self.uart)
         swriter = asyncio.StreamWriter(self.uart, {})
         
@@ -583,4 +614,15 @@ class DriveWireServer:
                 await asyncio.sleep(0.001)
                 attempts -= 1
         return data if len(data) == count else None
+
+    def stop(self):
+        self.running = False
+        for d in self.drives:
+            if d: d.flush()
+
+    async def flush_loop(self):
+        while self.running:
+            await asyncio.sleep(60) # Sync every 60 seconds
+            for d in self.drives:
+                if d: d.flush()
 

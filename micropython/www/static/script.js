@@ -80,6 +80,7 @@ function switchTab(tabName) {
     if (tabName === 'config') btns[0].classList.add('active');
     if (tabName === 'status') btns[1].classList.add('active');
     if (tabName === 'terminal') btns[2].classList.add('active');
+    if (tabName === 'drives') btns[3].classList.add('active');
 }
 
 async function updateMonitorChannel() {
@@ -100,7 +101,8 @@ async function pollStatus() {
     // Only poll if tab is visible
     const statusIdx = document.getElementById('tab-status').classList.contains('active');
     const termIdx = document.getElementById('tab-terminal').classList.contains('active');
-    if (!statusIdx && !termIdx) return;
+    const driveIdx = document.getElementById('tab-drives').classList.contains('active');
+    if (!statusIdx && !termIdx && !driveIdx) return;
 
     try {
         const response = await fetch('/api/status');
@@ -159,6 +161,30 @@ function bytesToString(bytes) {
         else s += "."; // Non-printable
     });
     return s;
+}
+
+function renderDriveStats(stats) {
+    const grid = document.getElementById('drive-stats-grid');
+    grid.innerHTML = '';
+
+    stats.forEach((s, idx) => {
+        if (!s) return;
+
+        const totalReads = s.read_hits + s.read_misses;
+        const hitRate = totalReads > 0 ? ((s.read_hits / totalReads) * 100).toFixed(1) : 0;
+
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+            <h2>DRIVE ${idx}: ${s.filename}</h2>
+            <div class="serial-stat-row">READ HITS: ${s.read_hits}</div>
+            <div class="serial-stat-row">READ MISSES: ${s.read_misses}</div>
+            <div class="serial-stat-row">HIT RATE: ${hitRate}%</div>
+            <div class="serial-stat-row" style="margin-top:10px">TOTAL WRITES: ${s.write_count}</div>
+            <div class="serial-stat-row">DIRTY SECTORS: ${s.dirty_count}</div>
+        `;
+        grid.appendChild(card);
+    });
 }
 
 function renderSerialMap(map) {
