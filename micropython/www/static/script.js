@@ -141,10 +141,13 @@ async function pollStatus() {
             }
         }
 
-        // Sync monitor dropdown
         if (data.monitor_chan !== undefined && termIdx) {
             const sel = document.getElementById('terminal-chan');
             if (sel.value != data.monitor_chan) sel.value = data.monitor_chan;
+        }
+
+        if (data.drive_stats && driveIdx) {
+            renderDriveStats(data.drive_stats);
         }
 
     } catch (e) {
