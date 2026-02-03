@@ -23,10 +23,13 @@ async def main():
     # start_server is a coroutine that will keep running.
     await app.start_server(port=80, debug=True)
 
-if __name__ == '__main__':
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("Server stopped.")
-    except Exception as e:
-        print(f"Unexpected error: {e}")
+# Entry Point
+try:
+    asyncio.run(main())
+except KeyboardInterrupt:
+    print("Server stopped.")
+except Exception as e:
+    # Optional: Log to file for headless debugging
+    with open("error.log", "a") as f:
+        f.write(f"Startup error: {e}\n")
+    print(f"Unexpected error: {e}")
