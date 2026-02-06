@@ -3,44 +3,53 @@ import struct
 import os
 from machine import UART
 from config import shared_config
+import micropython
 
-# OpCodes
-OP_dwInit = 0x5a # 'Z' ?? No, typically we follow spec. 
-# DW4 Commands:
-OP_BKPT = 0x21
-OP_TIME = 0x23
-OP_INIT = 0x49 # 'I'
-OP_TERM = 0x54 # 'T'
-OP_READ = 0x52 # 'R'
-OP_READEX = 0x58 # 'X'
-OP_WRITE = 0x57 # 'W'
-OP_RESET = 0xFE
-OP_RESET2 = 0xFF
-OP_RESET3 = 0xF8
-OP_DWINIT = 0x5A # 'Z'
-OP_NAMEOBJ_MOUNT = 0x01
-OP_NAMEOBJ_CREATE = 0x02
-OP_GETSTAT = 0x47
-OP_SETSTAT = 0x53
-OP_PRINT = 0x50
-OP_PRINTFLUSH = 0x46
-OP_WIREBUG = 0x42
-OP_SERREAD = 0x43
-OP_SERWRITE = 0xC3
-OP_SERINIT = 0x4E
-OP_SERTERM = 0x43 # Wait, C3 is write. SERTERM? Spec might vary. C is channel ops.
-OP_SERTERM = 0x43 # Re-using code? Actually typically SERTERM is distinct. 
-# Checking typical DW implementations... 
-# Actually let's trust my previous impl or these constants.
-# SERTERM usually implies closing.
-# Let's define the class.
+# OpCodes - using const() to save RAM on MicroPython
+OP_BKPT = micropython.const(0x21)
+OP_TIME = micropython.const(0x23)
+OP_INIT = micropython.const(0x49)
+OP_TERM = micropython.const(0x54)
+OP_READ = micropython.const(0x52)
+OP_READEX = micropython.const(0x58)
+OP_REREAD = micropython.const(0xD2)
+OP_REREADEX = micropython.const(0xD8)
+OP_WRITE = micropython.const(0x57)
+OP_REWRITE = micropython.const(0xD7)
+OP_RESET = micropython.const(0xFE)
+OP_RESET2 = micropython.const(0xFF)
+OP_RESET3 = micropython.const(0xF8)
+OP_DWINIT = micropython.const(0x5A)
+OP_NAMEOBJ_MOUNT = micropython.const(0x01)
+OP_NAMEOBJ_CREATE = micropython.const(0x02)
+OP_GETSTAT = micropython.const(0x47)
+OP_SETSTAT = micropython.const(0x53)
+OP_PRINT = micropython.const(0x50)
+OP_PRINTFLUSH = micropython.const(0x46)
+OP_WIREBUG = micropython.const(0x42)
+OP_SERREAD = micropython.const(0x43)
+OP_SERWRITE = micropython.const(0xC3)
+OP_SERINIT = micropython.const(0x4E)
+OP_SERTERM = micropython.const(0x45)
+OP_SERSETSTAT = micropython.const(0xD3)
+
+# Constants for memory management
+MAX_READ_CACHE_ENTRIES = micropython.const(8)
+MAX_CHANNEL_BUFFER_SIZE = micropython.const(256)
+MAX_LOG_ENTRIES = micropython.const(20)
+MAX_TERMINAL_BUFFER_SIZE = micropython.const(512)
+SECTOR_SIZE = micropython.const(256)
+NUM_DRIVES = micropython.const(4)
+NUM_CHANNELS = micropython.const(32)
 
 class VirtualDrive:
+    """Manages a virtual disk drive with write-back caching for flash wear protection."""
+    
     def __init__(self, filename):
         self.filename = filename
         self.file = None
-        self.dirty_sectors = {} # LSN -> data
-        self.read_cache = {}    # LSN -> data (LRU)
+        self.dirty_sectors = {}  # LSN -> data (write cache)
+        self.read_cache = {}     # LSN -> data (LRU read cache)
         self.stats = {
             'read_hits': 0,
             'read_misses': 0,
@@ -48,8 +57,8 @@ class VirtualDrive:
         }
         try:
             self.file = open(filename, "r+b")
-        except OSError:
-             print(f"Failed to open {filename}")
+        except OSError as e:
+            print(f"Failed to open {filename}: {e}")
 
     def close(self):
         self.flush()
@@ -70,7 +79,8 @@ class VirtualDrive:
             print(f"Flush Error: {e}")
 
     def read_sector(self, lsn):
-        # 1. Check write cache
+        """Read a sector from the virtual drive, checking caches first."""
+        # 1. Check write cache (dirty sectors have priority)
         if lsn in self.dirty_sectors:
             self.stats['read_hits'] += 1
             return self.dirty_sectors[lsn]
@@ -79,85 +89,91 @@ class VirtualDrive:
         if lsn in self.read_cache:
             self.stats['read_hits'] += 1
             data = self.read_cache.pop(lsn)
-            self.read_cache[lsn] = data # Move to end (most recent)
+            self.read_cache[lsn] = data  # Move to end (most recent)
             return data
             
+        # 3. Read from disk
         self.stats['read_misses'] += 1
-        if not self.file: return None
-        try:
-            self.file.seek(lsn * 256)
-            data = self.file.read(256)
-            if len(data) < 256:
-                data = data + bytes(256 - len(data))
+        if not self.file:
+            return None
             
-            # Add to read cache
+        try:
+            self.file.seek(lsn * SECTOR_SIZE)
+            data = self.file.read(SECTOR_SIZE)
+            if len(data) < SECTOR_SIZE:
+                data = data + bytes(SECTOR_SIZE - len(data))
+            
+            # Add to read cache (reduced size for memory optimization)
             self.read_cache[lsn] = data
-            if len(self.read_cache) > 16:
+            if len(self.read_cache) > MAX_READ_CACHE_ENTRIES:
                 # Remove oldest (first)
                 self.read_cache.pop(next(iter(self.read_cache)))
             return data
         except Exception as e:
-            print(f"Read Error: {e}")
+            print(f"Read Error LSN {lsn}: {e}")
             return None
 
     def write_sector(self, lsn, data):
+        """Write a sector to the write-back cache (deferred write to flash)."""
         self.stats['write_count'] += 1
         self.dirty_sectors[lsn] = data
-        self.read_cache[lsn] = data # Keep read cache consistent
-        if len(self.read_cache) > 16:
+        # Keep read cache consistent
+        self.read_cache[lsn] = data
+        if len(self.read_cache) > MAX_READ_CACHE_ENTRIES:
             self.read_cache.pop(next(iter(self.read_cache)))
         return True
 
 class DriveWireServer:
+    """DriveWire 4 protocol server implementation for MicroPython."""
+    
     def __init__(self):
         self.config = shared_config
-        self.config = shared_config
         self.uart = None
-        self.drives = [None] * 4
+        self.drives = [None] * NUM_DRIVES
         self.running = False
         self.print_buffer = bytearray()
         self.stats = {
             'last_drive': 0, 
             'last_stat': 0, 
             'last_opcode': 0,
-            'serial': {} # Key: Channel, Val: {tx: 0, rx: 0}
+            'serial': {}  # Key: Channel, Val: {tx: 0, rx: 0}
         }
         self.log_buffer = []
         self.monitor_channel = -1
         self.terminal_buffer = bytearray()
-        self.channels = [bytearray() for _ in range(32)] # 0-14 VSerial, 15-30 ??? Spec says 30 channels.
-        self.tcp_connections = {} # Key: Channel (int), Value: (reader, writer, task)
-        # Spec: 0-14 Virtual Serial. 128-142 Virtual Window. 
-        # For simplicity, we'll map 128+ to index 16+.
+        self.channels = [bytearray() for _ in range(NUM_CHANNELS)]
+        self.tcp_connections = {}  # Key: Channel (int), Value: (reader, writer, task)
         self.reload_config()
 
     def reload_config(self):
+        """Reload configuration and reinitialize drives and UART."""
         # Close existing drives
         for d in self.drives:
-            if d: d.close()
+            if d:
+                d.close()
         
         # Load drives from config
         drive_paths = self.config.get("drives")
-        for i in range(4):
+        for i in range(NUM_DRIVES):
             path = drive_paths[i]
             if path:
-                self.drives[i] = VirtualDrive(path)
+                try:
+                    self.drives[i] = VirtualDrive(path)
+                except Exception as e:
+                    print(f"Failed to mount drive {i}: {e}")
+                    self.drives[i] = None
             else:
                 self.drives[i] = None
 
-        # Re-init UART if baud rate changed (not easily done dynamically without restart usually, but let's try)
+        # Re-init UART with configured baud rate
         baud = self.config.get("baud_rate")
-        # Note: UART ID 0 is often the REPL. UART 1 might be better if available, 
-        # or we might need to detach REPL. For now assuming UART 0 or 1 depending on board.
-        # Raspberry Pi Pico: UART0 on GP0/GP1.
         if self.uart:
-             self.uart.deinit()
+            self.uart.deinit()
         
         try:
-            # Using UART 0 for now, customize pins for specific board if needed.
-            # For Pico W, UART0 is tx=gp0, rx=gp1 usually.
+            # UART 0 on Pico W: TX=GP0, RX=GP1
             self.uart = UART(0, baudrate=baud) 
-            print(f"UART Initialized at {baud}")
+            print(f"UART Initialized at {baud} baud")
         except Exception as e:
             print(f"Failed to init UART: {e}")
 
@@ -166,21 +182,22 @@ class DriveWireServer:
         return s & 0xFFFF
 
     def log_msg(self, msg):
-        # Keep last 20 lines
+        """Add a message to the log buffer (limited size for memory efficiency)."""
         self.log_buffer.append(msg)
-        if len(self.log_buffer) > 20:
+        if len(self.log_buffer) > MAX_LOG_ENTRIES:
             self.log_buffer.pop(0)
 
     def snoop_serial(self, chan, data):
+        """Capture serial data for the monitored channel."""
         if chan == self.monitor_channel:
             # Add to terminal buffer
             if isinstance(data, int):
                 self.terminal_buffer.append(data)
             else:
                 self.terminal_buffer.extend(data)
-            # Keep last 512 bytes
-            if len(self.terminal_buffer) > 512:
-                self.terminal_buffer = self.terminal_buffer[-512:]
+            # Keep last N bytes for memory efficiency
+            if len(self.terminal_buffer) > MAX_TERMINAL_BUFFER_SIZE:
+                self.terminal_buffer = self.terminal_buffer[-MAX_TERMINAL_BUFFER_SIZE:]
 
     async def run(self):
         print("Starting DriveWire Loop...")
@@ -233,7 +250,7 @@ class DriveWireServer:
                             
                             is_extended = opcode in (OP_READEX, OP_REREADEX)
                             
-                            if drive_num < 4 and self.drives[drive_num]:
+                            if drive_num < NUM_DRIVES and self.drives[drive_num]:
                                 data = self.drives[drive_num].read_sector(lsn)
                                 if data:
                                     cs = self.checksum(data)
@@ -280,13 +297,12 @@ class DriveWireServer:
                     elif opcode in (OP_WRITE, OP_REWRITE):
                         # Write / ReWrite
                         # Req: Drive(1) + LSN(3) + Data(256) + Checksum(2)
-                        # Total 263 bytes needed (1+3+256+2 = 262 excluding opcode)
                         header = await self.read_bytes(4) 
                         if header:
                             drive_num = header[0]
                             lsn = (header[1] << 16) | (header[2] << 8) | header[3]
                             
-                            data = await self.read_bytes(256)
+                            data = await self.read_bytes(SECTOR_SIZE)
                             checksum_bytes = await self.read_bytes(2)
                             
                             if data and checksum_bytes:
@@ -294,20 +310,17 @@ class DriveWireServer:
                                 local_cs = self.checksum(data)
                                 
                                 if remote_cs == local_cs:
-                                    # Write to disk
+                                    # Write to disk cache
                                     success = False
-                                    if drive_num < 4 and self.drives[drive_num]:
+                                    if drive_num < NUM_DRIVES and self.drives[drive_num]:
                                         success = self.drives[drive_num].write_sector(lsn, data)
                                     
                                     if success:
-                                        self.uart.write(bytes([0])) # ACK
+                                        self.uart.write(bytes([0]))    # ACK
                                     else:
-                                        self.uart.write(bytes([240])) # Write Error
+                                        self.uart.write(bytes([240]))  # E_UNIT
                                 else:
-                                    self.uart.write(bytes([243])) # E_CRC
-                            else:
-                                # Timeout reading data
-                                pass
+                                    self.uart.write(bytes([243]))  # E_CRC
 
                     elif opcode == OP_TIME:
                         # OP_TIME ($23)
@@ -507,9 +520,9 @@ class DriveWireServer:
                                 name = name_b.decode('ascii', 'ignore')
                                 print(f"NamedObj Mount/Create: {name}")
                                 # Try to mount it.
-                                # Find free drive?
+                                # Find free drive slot
                                 free_drive = -1
-                                for i in range(4):
+                                for i in range(NUM_DRIVES):
                                     if self.drives[i] is None:
                                         free_drive = i
                                         break
@@ -546,7 +559,7 @@ class DriveWireServer:
                          pass # No response needed
                         
                 else:
-                    await asyncio.sleep(0.001) # Yield to other tasks (web server)
+                    await asyncio.sleep(0.01)  # Yield to other tasks (reduced CPU usage when idle)
                     
             except Exception as e:
                 print(f"DW Error: {e}")
@@ -602,17 +615,21 @@ class DriveWireServer:
             print(f"Closed VSerial Ch{chan}")
 
     async def read_bytes(self, count):
+        """Read exact number of bytes from UART with timeout."""
         data = bytearray()
-        # Simple timeout mechanism
-        attempts = 1000 # 1 second approx
-        while len(data) < count and attempts > 0:
+        attempts = 0
+        max_attempts = 1000  # ~1 second timeout
+        
+        while len(data) < count and attempts < max_attempts:
             if self.uart.any():
                 chunk = self.uart.read(count - len(data))
                 if chunk:
                     data.extend(chunk)
+                    attempts = 0  # Reset on successful read
             else:
                 await asyncio.sleep(0.001)
-                attempts -= 1
+                attempts += 1
+                
         return data if len(data) == count else None
 
     def stop(self):
@@ -621,8 +638,10 @@ class DriveWireServer:
             if d: d.flush()
 
     async def flush_loop(self):
+        """Periodically flush dirty sectors to disk (flash wear protection)."""
         while self.running:
-            await asyncio.sleep(60) # Sync every 60 seconds
+            await asyncio.sleep(60)  # Flush every 60 seconds of inactivity
             for d in self.drives:
-                if d: d.flush()
+                if d:
+                    d.flush()
 

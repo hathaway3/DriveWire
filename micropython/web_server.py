@@ -57,7 +57,6 @@ async def config_endpoint(request):
                 app.dw_server.reload_config()
 
             return {'status': 'ok'}
-            return {'status': 'ok'}
         except Exception as e:
             print(f"Error saving config: {e}")
             return {'status': 'error', 'message': str(e)}, 500
