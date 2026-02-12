@@ -41,6 +41,7 @@ MAX_TERMINAL_BUFFER_SIZE = micropython.const(512)
 SECTOR_SIZE = micropython.const(256)
 NUM_DRIVES = micropython.const(4)
 NUM_CHANNELS = micropython.const(32)
+# Let's define the class.
 
 class VirtualDrive:
     """Manages a virtual disk drive with write-back caching for flash wear protection."""
@@ -205,9 +206,6 @@ class DriveWireServer:
         
         # Start background tasks
         asyncio.create_task(self.flush_loop())
-        
-        sreader = asyncio.StreamReader(self.uart)
-        swriter = asyncio.StreamWriter(self.uart, {})
         
         while self.running:
             try:
@@ -635,7 +633,7 @@ class DriveWireServer:
     def stop(self):
         self.running = False
         for d in self.drives:
-            if d: d.flush()
+            if d: d.close()
 
     async def flush_loop(self):
         """Periodically flush dirty sectors to disk (flash wear protection)."""

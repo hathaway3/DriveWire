@@ -68,3 +68,12 @@ fastlane/test_output
 # https://github.com/johnno1962/injectionforxcode
 
 iOSInjectionProject/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# DriveWire Tests
+*.dsk
+config.json
