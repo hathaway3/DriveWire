@@ -3,7 +3,7 @@
 ## Simple Start
 
 Please visit Cloud 9's DriveWire page:
-[http://www.frontiernet.net/~mmarlette/Cloud-9/Software/DriveWire3.html](http://www.frontiernet.net/~mmarlette/Cloud-9/Software/DriveWire3.html)
+[http://cloud9tech.com/Cloud-9/Support/DriveWire%203%20User%20Manual.pdf](http://cloud9tech.com/Cloud-9/Support/DriveWire%203%20User%20Manual.pdf)
 
 Here you will find detailed instructions and related downloads for various ways to make your CoCo talk to a DriveWire server.
 

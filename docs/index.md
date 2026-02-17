@@ -6,7 +6,7 @@
 
 DriveWire 4 is a 100% compatible drop in replacement for the DriveWire 3 software. The requirements for connecting a CoCo to DriveWire 4 are identical to those for DriveWire 3.
 
-Please consult the [DriveWire 3 documentation](http://www.frontiernet.net/~mmarlette/Cloud-9/Software/DriveWire3.html) for all the information needed to get your CoCo ready to talk to DriveWire 4.
+Please consult the [DriveWire 3 documentation](http://cloud9tech.com/Cloud-9/Support/DriveWire%203%20User%20Manual.pdf) for all the information needed to get your CoCo ready to talk to DriveWire 4.
 
 ## Get started with DriveWire 4
 
