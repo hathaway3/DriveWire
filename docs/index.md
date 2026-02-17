@@ -1,7 +1,6 @@
 DriveWire Documentation
 
-  
-
+   
 
 [TOC]
 
@@ -48,27 +47,27 @@ To configure DriveWire, choose "Simple Config Wizard" from the "Config" menu.
 
 Here are some additional topics that all users may find interesting or helpful. 
 
-[Using_DriveWire] 
+[Using_DriveWire](Using_DriveWire.md) 
 
-[Solving_low_memory_issues] 
+[Solving_low_memory_issues](Solving_low_memory_issues.md) 
 
 # Technical information
 
 These topics are probably only of interest to programmers, hackers, and advanced users. 
 
-[Config.xml] (wip, and not applicable to current release) 
+[Config.xml](Config.xml.md) (wip, and not applicable to current release) 
 
-[OS9_Modules] 
+[OS9_Modules](OS9_Modules.md) 
 
-[The_'dw'_commands] 
+[The_'dw'_commands](The_'dw'_commands.md) 
 
-[Building_from_source] 
+[Building_from_source](Building_from_source.md) 
 
-[Writing_Network_Capable_Software] 
+[Writing_Network_Capable_Software](Writing_Network_Capable_Software.md) 
 
-[DriveWire_Specification] 
+[DriveWire_Specification](DriveWire_Specification.md) 
 
-[Becker_port_specification] 
+[Becker_port_specification](Becker_port_specification.md) 
 
 
 # Bugs
@@ -80,4 +79,4 @@ The code is hosted in git (see the **Git** tab above). To get a copy of the repo
 
 DriveWire is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. 
 
-DriveWire is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the [GNU General Public License](http://https://www.gnu.org/licenses/gpl-3.0.txt) for more details. 
+DriveWire is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the [GNU General Public License](https://www.gnu.org/licenses/gpl-3.0.txt) for more details. 

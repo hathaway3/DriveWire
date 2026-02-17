@@ -2,7 +2,7 @@
 
 ## dw
 
-Usage: dw \[command\] 
+Usage: `dw [command]` 
 
 The various 'dw' commands allow you to control and configure every aspect of the server. These commands can be sent to the server in a number of ways, including the dw command utility in OS9 or the DriveWire User Interface graphical tool. 
 
@@ -17,13 +17,13 @@ Examples:
 
 ### dw disk
 
-Usage: dw disk \[command\] 
+Usage: `dw disk [command]` 
 
 The dw disk commands allow you to manage the DriveWire virtual drives. 
 
 #### dw disk show
 
-Usage: dw disk show \[{# | all | dset \[#\]}\] 
+Usage: `dw disk show [{# | all | dset [#]}]` 
 
 Show current disk/set details 
 
@@ -41,7 +41,7 @@ Examples:
 
 #### dw disk eject
 
-Usage: dw disk eject \[dset\] {# | all} 
+Usage: `dw disk eject [dset] {# | all}` 
 
 Eject disk from drive # 
 
@@ -58,7 +58,7 @@ Examples:
 
 #### dw disk insert
 
-Usage: dw disk insert \[dset\] # path 
+Usage: `dw disk insert [dset] # path` 
 
 Load disk into drive # 
 
@@ -73,7 +73,7 @@ Examples:
 
 #### dw disk reload
 
-Usage: dw disk reload {# | all} 
+Usage: `dw disk reload {# | all}` 
 
 Reload disk in drive # 
 
@@ -87,7 +87,7 @@ Example:
 
 #### dw disk write
 
-Usage: dw disk write {# \[path\] | dset \[dset\]} 
+Usage: `dw disk write {# [path] | dset [dset]}` 
 
 Write disk images and disksets 
 
@@ -104,7 +104,7 @@ Examples:
 
 #### dw disk create
 
-Usage: dw disk create {# path | dset} 
+Usage: `dw disk create {# path | dset}` 
 
 Create new disk image or set 
 
@@ -119,7 +119,7 @@ Examples:
 
 #### dw disk set
 
-Usage: dw disk set {dset \[#\] | #} param \[val\] 
+Usage: `dw disk set {dset [#] | #} param [val]` 
 
 Set disk/diskset parameters 
 

@@ -1,20 +1,20 @@
-The DriveWire 4 GUI is a special client designed to allow you to configure the DriveWire server. It contains menus and buttons that simplify and speed up issuing commands to the server. It also allows you to create and maintain Disk sets and load virtual disks (or real floppy drives) for the Color Computer to use. To learn more about the commands in DriveWire, see [Using_DriveWire]. 
+The DriveWire 4 GUI is a special client designed to allow you to configure the DriveWire server. It contains menus and buttons that simplify and speed up issuing commands to the server. It also allows you to create and maintain Disk sets and load virtual disks (or real floppy drives) for the Color Computer to use. To learn more about the commands in DriveWire, see [Using_DriveWire](Using_DriveWire.md). 
 
 [TOC]
 
 ## Server Console
 
-[thumb|right](Image:Server.PNG) 
+*(Image:Server.PNG)* 
 
 When you double-click Go.cmd, the Server Console window is the first thing you will see. If "Log to Console" is enabled in the server settings dialog, this window will contain information about the server activity, including error reports, connections, disconnections, etc. The detail level and format of information can be adjusted in the server settings dialog. 
 
 By closing this window, you will terminate the server. You can minimize the server window if viewing is not required. 
 
-See [Using_DriveWire#Introduction] 
+See [Using_DriveWire#Introduction](Using_DriveWire.md#Introduction) 
 
 ## DriveWire 4 User Interface
 
-[thumb|left](Image:Client.PNG) 
+*(Image:Client.PNG)* 
 
 This is the main window and interface with the server, referred to as the client. Through it you mount disks in drive slots, create Diskset lists, and control the functions of DriveWire. Most of the buttons and menu items are merely shortcuts to build DriveWire commands. Alternatively, you can type in a DriveWire command in the command line box at the bottom of the window. 
 
@@ -36,10 +36,10 @@ the current IP address of the client
 6800 
 the port 
 
-[0] 
+`[0]` 
 the instance number 
 
-See [Using_DriveWire#Introduction] for more on instances. 
+See [Using_DriveWire#Introduction](Using_DriveWire.md#Introduction) for more on instances. 
 
 * * *
 
@@ -47,13 +47,13 @@ See [Using_DriveWire#Introduction] for more on instances.
 
 The menu bar contains the following menus: 
 
-  * [#File_Menu] 
-  * [#Tools_Menu] 
-  * [#MIDI_Menu] 
-  * [#Config_Menu] 
-  * [#Help_Menu] 
+  * [#File_Menu](#File_Menu) 
+  * [#Tools_Menu](#Tools_Menu) 
+  * [#MIDI_Menu](#MIDI_Menu) 
+  * [#Config_Menu](#Config_Menu) 
+  * [#Help_Menu](#Help_Menu) 
 
-See [#Menus] below. 
+See [#Menus](#Menus) below. 
 
 * * *
 
@@ -67,7 +67,7 @@ The button bar is divided into three groups, Diskset, Virtual Drives, and Server
   2. Load Diskset - loads a new diskset 
   3. Save Diskset - saves the current diskset 
 
-For more information on disksets, see [Using_DriveWire#Disk_Sets]. 
+For more information on disksets, see [Using_DriveWire#Disk_Sets](Using_DriveWire.md#Disk_Sets). 
 
 **Virtual Drives:**
 
@@ -176,7 +176,7 @@ Refresh the disk list
 Apply
 Apply changes to the disk in the currently selected slot 
 
-See [Using_DriveWire] for more information. 
+See [Using_DriveWire](Using_DriveWire.md) for more information. 
 
 * * *
 
@@ -188,19 +188,19 @@ Below the disk list is the server information box. When the server returns infor
 
 **Command Line**
 
-At the bottom of the window is the command line. Here you can type any valid DriveWire command. Pressing [ENTER] sends the command to the server. 
+At the bottom of the window is the command line. Here you can type any valid DriveWire command. Pressing `[ENTER]` sends the command to the server. 
 
-For more details on DriveWire commands, see [Using_DriveWire#The_'dw'_command]. 
+For more details on DriveWire commands, see [Using_DriveWire#The_'dw'_command](Using_DriveWire.md#The_'dw'_command). 
 
 ## Menus
 
 ### **File Menu**
 
-[thumb|left](Image:FileMenu.PNG) 
+*(Image:FileMenu.PNG)* 
 
 **Choose Server... Dialog**
 
-[thumb|right](Image:ChooseServer.PNG) 
+*(Image:ChooseServer.PNG)* 
     
     I am unclear on this. The dialog contains a droplist.
     I assume this means multiple-server support.
@@ -225,7 +225,7 @@ For more details on DriveWire commands, see [Using_DriveWire#The_'dw'_command].
 
 **Choose Instance... Dialog**
 
-[thumb|right](Image:ChooseInstance.PNG) 
+*(Image:ChooseInstance.PNG)* 
 
 **Exit**
 
@@ -233,7 +233,7 @@ For more details on DriveWire commands, see [Using_DriveWire#The_'dw'_command].
 
 ### **Tools Menu**
 
-[thumb|left](Image:ToolsMenu.PNG) 
+*(Image:ToolsMenu.PNG)* 
 
 **Diskset properties...**
 
@@ -241,7 +241,7 @@ For more details on DriveWire commands, see [Using_DriveWire#The_'dw'_command].
 
 **.dsk &amp;lt;-&amp;gt; disk Submenu**
 
-[thumb|right](Image:dskMenu.PNG) 
+*(Image:dskMenu.PNG)* 
 
 _**Copy .dsk to floppy disk**_
 
@@ -249,37 +249,37 @@ _**Copy floppy disk to .dsk**_
 
 _**Create .DSK from floppy disk Dialog**_
 
-[thumb|right](Image:CreateDSK.PNG) 
+*(Image:CreateDSK.PNG)* 
 
 This wizard is incomplete. 
 
 **HDBDOS Submenu**
 
-[thumb|right](Image:HBDDOSmenu.PNG) 
+*(Image:HBDDOSmenu.PNG)* 
 
 _**HDBDOS translation Submenu**_
 
-[thumb|right](Image:HBDDOStranslationMenu.PNG) 
+*(Image:HBDDOStranslationMenu.PNG)* 
 
 _**Create diskset Submenu**_
 
-[thumb|right](Image:HBDDOScreateDisksetMenu.PNG) 
+*(Image:HBDDOScreateDisksetMenu.PNG)* 
 
 **Server status**
 
 **Show server Submenu**
 
-[thumb|right](Image:ShowServerMenu.PNG) 
+*(Image:ShowServerMenu.PNG)* 
 
 **Log Viewer Window**
 
-[thumb|right](Image:LogViewer.PNG) 
+*(Image:LogViewer.PNG)* 
 
 * * *
 
 ### **MIDI Menu**
 
-[thumb|left](Image:MIDImenu.PNG) 
+*(Image:MIDImenu.PNG)* 
 
 **Show Status**
 
@@ -287,21 +287,21 @@ _**Create diskset Submenu**_
 
 **Choose MIDI Output Device... Dialog**
 
-[thumb|right](Image:ChooseMIDIoutput.PNG) 
+*(Image:ChooseMIDIoutput.PNG)* 
 
 _**Choose MIDI Output Device... Droplist**_
 
-[thumb|right](Image:ChooseMIDIdroplist.PNG) 
+*(Image:ChooseMIDIdroplist.PNG)* 
 
 **Synth Submenu**
 
-[thumb|right](Image:SynthMenu.PNG) 
+*(Image:SynthMenu.PNG)* 
 
 _**Show status**_
 
 _**Show Submenu**_
 
-[thumb|right](Image:ShowMenu.PNG) 
+*(Image:ShowMenu.PNG)* 
 
 _**Load soundbank...**_
 
@@ -309,11 +309,11 @@ _**Set profile...**_
 
 _**Choose Translation Profile... Dialog**_
 
-[thumb|right](Image:ChooseTranslationProfile.PNG) 
+*(Image:ChooseTranslationProfile.PNG)* 
 
 _**Choose Translation Profile... Droplist**_
 
-[thumb|right](Image:ChooseTranslationDroplist.PNG) 
+*(Image:ChooseTranslationDroplist.PNG)* 
 
 _**Lock instruments...**_
 
@@ -321,45 +321,45 @@ _**Lock instruments...**_
 
 ### **Config Menu**
 
-[thumb|left](Image:ConfigMenu.PNG) 
+*(Image:ConfigMenu.PNG)* 
 
 **Simple Config...**
 
 **Initial Configuration Wizard**
 
-[thumb|right](Image:SimpleConfigWizard.PNG) 
+*(Image:SimpleConfigWizard.PNG)* 
 
-[thumb|right](Image:SimpleWizard2.PNG) 
+*(Image:SimpleWizard2.PNG)* 
 
-[thumb|right](Image:SimpleWizard3.PNG) 
+*(Image:SimpleWizard3.PNG)* 
 
-[thumb|right](Image:SimpleWizard4.PNG) 
+*(Image:SimpleWizard4.PNG)* 
 
 **Server...**
 
 **Server Configuration Dialog**
 
-[thumb|right](Image:ServerConfig.PNG) 
+*(Image:ServerConfig.PNG)* 
 
 **Instance...**
 
 **Instance Configuration Dialog**
 
-[thumb|right](Image:InstanceConfigCon.PNG) 
+*(Image:InstanceConfigCon.PNG)* 
 
-[thumb|right](Image:InstanceConfigDev.PNG) 
+*(Image:InstanceConfigDev.PNG)* 
 
-[thumb|right](Image:InstanceConfigNet.PNG) 
+*(Image:InstanceConfigNet.PNG)* 
 
-[thumb|right](Image:InstanceConfigIP.PNG) 
+*(Image:InstanceConfigIP.PNG)* 
 
-[thumb|right](Image:InstanceConfigAdv.PNG) 
+*(Image:InstanceConfigAdv.PNG)* 
 
 **User Interface...**
 
 **User Interface Configuration Dialog**
 
-[thumb|right](Image:UIconfig.PNG) 
+*(Image:UIconfig.PNG)* 
 
 **Reset Instance Device**
 
@@ -367,10 +367,10 @@ _**Lock instruments...**_
 
 ### **Help Menu**
 
-[thumb|left](Image:HelpMenu.PNG) 
+*(Image:HelpMenu.PNG)* 
 
 **Documentation**
 
 **About...**
 
-[thumb|right](Image:About.PNG) 
+*(Image:About.PNG)* 

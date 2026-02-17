@@ -9,7 +9,7 @@ DriveWire provides many services to your CoCo. These include disk drives that ca
 The DriveWire server can provide any number of instances. Each instance supports one CoCo via one connection, such as a serial link or TCP/IP connection. A single server can run one or many instances at the same time. Each instance has its own set of virtual disks, ports, etc. Instances can be started and stopped using dw commands or using the Instance Manager in the DW4UI. 
 
   
-[[img src=drivewireserver block.jpg]] 
+*(Image: drivewireserver block.jpg)* 
 
   
 There are multiple interfaces which can be used to configure and control these services. The most basic tool for these tasks is the OS-9 command 'dw' which comes on a DriveWire bootable NitrOS-9 image and can be found in the DriveWire CVS repository in source form. If you prefer to manage DriveWire from a PC, you can use the DriveWire 4 User Interface, a GUI that runs on modern computers. 
@@ -80,7 +80,7 @@ Similar to a word processor's "auto save" function, DriveWire will periodically 
 This diagram displays how the various disk settings effect the operation of the buffers. These settings can be specified using the GUI, using various 'dw disk' commands, or stored along with a source path in a disk set. 
 
   
-[[img src=dw_buffer.gif]] 
+*(Image: dw_buffer.gif)* 
 
   
 
@@ -105,7 +105,7 @@ DriveWire 4 defaults to identical behavior.
 
 **DW3/Default mode:**
 
-[[img src=hdbdos_dw3.gif]] 
+*(Image: hdbdos_dw3.gif)* 
 
   
 The way DriveWire 3 and HDBDOS work together makes it difficult to do some common tasks. There is no way to copy data between two different .dsk files, for instance. To make these tasks easier, DriveWire 4 has an alternate mode that can be enabled by specifying: 
@@ -118,7 +118,7 @@ HDBDOSMode uses the sector number contained in each request sent from HDBDOS, an
 
 **HDBDOSMode:**
 
-[[img src=hdbdos_dw4.jpg]] 
+*(Image: hdbdos_dw4.jpg)* 
 
   
 
@@ -226,7 +226,7 @@ To save time, remember that all commands may be abbreviated to their shortest un
 
 ## Ports
 
-[[img src=DW4Ports.png]] 
+*(Image: DW4Ports.png)* 
 
 Ports, ports and more ports... DW4 lets you specify lots of ports. I've received several questions about what they all do, so here's an attempt to clarify. 
 
