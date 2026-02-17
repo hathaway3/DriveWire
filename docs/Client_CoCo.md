@@ -1,9 +1,12 @@
 # Client (CoCo) Side Software (ROMs, Cassette Images, etc.)
 
-## Simple Start
+## Official Resources
 
-Please visit Cloud 9's DriveWire page:
-[http://cloud9tech.com/Cloud-9/Support/DriveWire%203%20User%20Manual.pdf](http://cloud9tech.com/Cloud-9/Support/DriveWire%203%20User%20Manual.pdf)
+For the most accurate and detailed information on legacy DriveWire hardware and software, please visit the official Cloud 9 site:
+
+*   **Cloud 9 DriveWire Page**: [http://cloud9tech.com/Cloud-9/Hardware/DriveWire3.html](http://cloud9tech.com/Cloud-9/Hardware/DriveWire3.html)
+*   **DriveWire 3 User Manual (PDF)**: [http://cloud9tech.com/Cloud-9/Support/DriveWire%203%20User%20Manual.pdf](http://cloud9tech.com/Cloud-9/Support/DriveWire%203%20User%20Manual.pdf)
+
 
 Here you will find detailed instructions and related downloads for various ways to make your CoCo talk to a DriveWire server.
 
