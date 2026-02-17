@@ -7,6 +7,7 @@ If you'd like to add DriveWire functionality to your existing OS-9 system, you'l
 Premade NitrOS-9 boot disks with all the modules included are available from the [NitrOS-9 project](http://www.nitros9.org/latest/).
 
 The DriveWire modules are included in the NitrOS-9 source code if you'd like to build them yourself.
+For specific details on NitrOS-9 Level 2 integration, please see [NitrOS9 Level 2 Integration](NitrOS9_Level2_Integration.md).
 
 ## Modules
 
