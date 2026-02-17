@@ -1,4 +1,7 @@
-The DriveWire 4 GUI is a special client designed to allow you to configure the DriveWire server. It contains menus and buttons that simplify and speed up issuing commands to the server. It also allows you to create and maintain Disk sets and load virtual disks (or real floppy drives) for the Color Computer to use. To learn more about the commands in DriveWire, see [Using_DriveWire](Using_DriveWire.md). 
+!!! note "Generalization (Review Needed)"
+    The following describes the Java-based graphical interface. Other implementations (like MicroPython) may use different configuration methods.
+
+    The DriveWire Java GUI is a special client designed to allow you to configure the DriveWire server. It contains menus and buttons that simplify and speed up issuing commands to the server. It also allows you to create and maintain Disk sets and load virtual disks (or real floppy drives) for the Color Computer to use. To learn more about the commands in DriveWire, see [Using_DriveWire](Using_DriveWire.md). 
 
 [TOC]
 
@@ -12,7 +15,10 @@ By closing this window, you will terminate the server. You can minimize the serv
 
 See [Using_DriveWire#Introduction](Using_DriveWire.md#Introduction) 
 
-## DriveWire 4 User Interface
+!!! note "Generalization (Review Needed)"
+    Generalized heading to "DriveWire User Interface".
+
+    ## DriveWire User Interface
 
 *(Image:Client.PNG)* 
 

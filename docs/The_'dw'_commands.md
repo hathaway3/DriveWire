@@ -27,7 +27,10 @@ Usage: `dw disk show [{# | all | dset [#]}]`
 
 Show current disk/set details 
 
-The dw disk show command is a useful tool for quickly determining the status of the many virtual disk drives that DW4 provides. It can be abbreviated as "dw d sh". 
+!!! note "Generalization (Review Needed)"
+    Generalized "DW4" to "the DriveWire server".
+
+    The dw disk show command is a useful tool for quickly determining the status of the many virtual disk drives that the DriveWire server provides. It can be abbreviated as "dw d sh". 
 
 ### Examples
 

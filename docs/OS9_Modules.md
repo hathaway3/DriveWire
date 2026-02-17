@@ -15,7 +15,10 @@ For specific details on NitrOS-9 Level 2 integration, please see [NitrOS9 Level 
 
 The I/O routines for all DriveWire functionality are contained in the dwio module. The stock dwio module is called **dwio.sb**. This module uses the bit banger for it's I/O. You can use alternate dwio modules if you'd like to use another device. In the NitrOS9 CVS you will find dw3_becker.sb which enables high speed functionality in Gary Becker's Coco3FPGA project, and dw3_mess.sb which is used with John Linville's MESS patch. 
 
-TODO - find the dwsub for 6551 TODO - document "DW4" turbo io 
+!!! note "Generalization (Review Needed)"
+    The following TODO has been generalized to refer to enhanced serial protocols rather than just "DW4".
+
+    TODO - find the dwsub for 6551 TODO - document enhanced "Turbo" I/O protocols.
 
 You must load one dwio module in order to use any DriveWire functionality. 
 

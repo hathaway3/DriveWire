@@ -1,6 +1,9 @@
 # Installation
 
-This guide covers the installation of the DriveWire 4 server software.
+!!! note "Generalization (Review Needed)"
+    The following guide has been updated to cover the general installation concepts for DriveWire server software.
+
+    This guide covers the installation of the DriveWire server software.
 
 ## Prerequisites
 
@@ -12,12 +15,18 @@ This guide covers the installation of the DriveWire 4 server software.
 
 ## Installation
 
-Installing DriveWire 4 just means unpacking the zip file wherever you'd like. There is no installation program to run.
+!!! note "Generalization (Review Needed)"
+    Simplified installation description.
+
+    Installing the DriveWire server often just means unpacking an archive wherever you'd like. Most implementations do not require a formal installation program.
 
 ## Requirements
 
-DriveWire 4 requires a Java JRE to be installed and working on your system. If you don't have one, you can visit [java.com](http://www.java.com/getjava/) and follow the prompts.
+!!! note "Generalization (Review Needed)"
+    Generalized requirements to indicate they are implementation-specific (primarily Java).
+
+    The Java-based DriveWire server requires a Java JRE to be installed and working on your system. If you don't have one, you can visit [java.com](http://www.java.com/getjava/) and follow the prompts. Other builds, such as the MicroPython version, have different requirements.
 
 ## Next Steps
 
-Once installed, proceed to [Running DriveWire](index.md#step-3-run-drivewire-4).
+Once installed, proceed to [Running DriveWire](index.md#step-3-run-drivewire).

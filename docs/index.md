@@ -2,27 +2,34 @@
 
 [TOC]
 
-## Before you start
+!!! note "Generalization (Review Needed)"
+    The following home page has been updated to reflect the multi-implementation nature of the DriveWire project.
 
-DriveWire 4 is a 100% compatible drop in replacement for the DriveWire 3 software. The requirements for connecting a CoCo to DriveWire 4 are identical to those for DriveWire 3.
+    ## Before you start
 
-Please consult the [DriveWire 3 documentation](http://cloud9tech.com/Cloud-9/Support/DriveWire%203%20User%20Manual.pdf) for all the information needed to get your CoCo ready to talk to DriveWire 4.
+    DriveWire is a flexible server and protocol suite for the TRS-80 Color Computer and compatible systems. It provides virtual disks, networking, and other services.
 
-## Get started with DriveWire 4
+    Please consult the [DriveWire 3 documentation](http://cloud9tech.com/Cloud-9/Support/DriveWire%203%20User%20Manual.pdf) for the legacy information needed to get your CoCo ready to talk to DriveWire.
 
-### Step 1: Download the DriveWire 4 software
+    ## Get started with DriveWire
 
-Download the current version from [the DriveWire 4 website](http://sites.google.com/site/drivewire4/)
+    ### Step 1: Choose a DriveWire implementation
 
-### Step 2: Install DriveWire 4
+    This project contains multiple implementations of the DriveWire server:
+    - **Java Server & GUI**: The classic cross-platform implementation.
+    - **MicroPython Server**: A lightweight version for microcontrollers like the Raspberry Pi Pico.
+
+    Download the current version from the [project repository](https://github.com/hathaway3/DriveWire).
+
+### Step 2: Install DriveWire
 
 See [Installation](Installation.md) for detailed instructions.
 
-### Step 3: Run DriveWire 4
+### Step 3: Run DriveWire
 
-To start the server and GUI, see [The DriveWire GUI](The_DriveWire_GUI.md).
+To start the Java-based server and GUI, see [The DriveWire GUI](The_DriveWire_GUI.md). For other implementations, see their respective documentation.
 
-### Step 4: Configure DriveWire 4
+### Step 4: Configure DriveWire
 
 To configure DriveWire, see [Configuration](Configuration.md).
 
