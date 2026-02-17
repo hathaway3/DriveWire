@@ -16,8 +16,8 @@ nav:
     - GUI Manual: The_DriveWire_GUI.md
     - Command Reference: The_'dw'_commands.md
     - Troubleshooting Memory: Solving_low_memory_issues.md
-    - CoCo Client Software: Client_(CoCo)_side_software_(ROMs,_cassette_images,_etc).md
-    - Non-CoCo Client Software: Client_(Non_CoCo)_side_software.md
+    - CoCo Client Software: Client_CoCo.md
+    - Non-CoCo Client Software: Client_Non_CoCo.md
     - Getting Help: Getting_help.md
   - Technical Reference:
     - Specification: DriveWire_Specification.md
@@ -29,5 +29,5 @@ nav:
     - Network Programming: Writing_Network_Capable_Software.md
     - Beta Info: Beta.md
   - Legacy:
-    - Driver Installation: Add_the_DriveWire_drivers_to_your_existing_system.md
+    - Driver Installation: Add_DriveWire_Drivers.md
     - Wiki Home: Home.md
