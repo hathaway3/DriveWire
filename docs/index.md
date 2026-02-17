@@ -1,7 +1,5 @@
 DriveWire Documentation
 
-   
-
 [TOC]
 
 # Before you start
@@ -16,38 +14,25 @@ Please consult the [DriveWire 3 documentation](http://www.frontiernet.net/~mmarl
 
 Download the current version from [the DriveWire 4 website](http://sites.google.com/site/drivewire4/)
 
-  
-
-
 ## Step 2: Install DriveWire 4
 
-Installing DriveWire 4 just means unpacking the zip file where ever you'd like. There is no installation program to run. 
-
-DriveWire 4 requires a Java JRE to be installed and working on your system. If you don't have one, you can visit http://www.java.com/getjava/ and follow the prompts. 
-
-  
-
+See [Installation](Installation.md) for detailed instructions.
 
 ## Step 3: Run DriveWire 4
 
-To start DriveWire 4, double click on the file most likely to work on your system: 
-
-  * Windows users can double click on DW4UI.exe or DW4UI.jar 
-  * Mac OS X users can double click on DW4UI.command 
-  * Linux and *BSD users can double click DW4UI.sh 
-
-  
-
+To start the server and GUI, see [The DriveWire GUI](The_DriveWire_GUI.md).
 
 ## Step 4: Configure DriveWire 4
 
-To configure DriveWire, choose "Simple Config Wizard" from the "Config" menu. 
+To configure DriveWire, see [Configuration](Configuration.md).
 
 # Carry on
 
 Here are some additional topics that all users may find interesting or helpful. 
 
 [Using_DriveWire](Using_DriveWire.md) 
+
+[Getting_help](Getting_help.md)
 
 [Solving_low_memory_issues](Solving_low_memory_issues.md) 
 

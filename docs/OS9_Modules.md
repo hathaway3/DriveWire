@@ -1,14 +1,14 @@
-[TOC]
+# OS-9 Modules
 
-# Intro
+## Intro
 
-If you'd like to add DriveWire functionality to your existing OS9 system, you'll need to load various modules depending on which features you'd like to use. 
+If you'd like to add DriveWire functionality to your existing OS-9 system, you'll need to load various modules depending on which features you'd like to use.
 
-Premade NitrOS9 boot disks with all the modules included are available from the NitrOS9 project: http://www.nitros9.org/latest/ 
+Premade NitrOS-9 boot disks with all the modules included are available from the [NitrOS-9 project](http://www.nitros9.org/latest/).
 
-The DriveWire modules are included in the NitrOS9 source code if you'd like to build them yourself. 
+The DriveWire modules are included in the NitrOS-9 source code if you'd like to build them yourself.
 
-# Modules
+## Modules
 
 ### Base I/O
 

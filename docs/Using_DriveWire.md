@@ -1,40 +1,32 @@
-[TOC]
+# Using DriveWire
 
 ## Introduction
 
-DriveWire provides many services to your CoCo. These include disk drives that can mount disk image files, serial ports that can be used to communicate over the internet, a real time clock, MIDI, and printing support. 
+DriveWire provides many services to your CoCo. These include disk drives that can mount disk image files, serial ports that can be used to communicate over the internet, a real time clock, MIDI, and printing support.
 
 ## Instances
 
-The DriveWire server can provide any number of instances. Each instance supports one CoCo via one connection, such as a serial link or TCP/IP connection. A single server can run one or many instances at the same time. Each instance has its own set of virtual disks, ports, etc. Instances can be started and stopped using dw commands or using the Instance Manager in the DW4UI. 
+The DriveWire server can provide any number of instances. Each instance supports one CoCo via one connection, such as a serial link or TCP/IP connection. A single server can run one or many instances at the same time. Each instance has its own set of virtual disks, ports, etc. Instances can be started and stopped using `dw` commands or using the Instance Manager in the DW4UI.
 
-  
-*(Image: drivewireserver block.jpg)* 
+*(Image: drivewireserver block.jpg)*
 
-  
-There are multiple interfaces which can be used to configure and control these services. The most basic tool for these tasks is the OS-9 command 'dw' which comes on a DriveWire bootable NitrOS-9 image and can be found in the DriveWire CVS repository in source form. If you prefer to manage DriveWire from a PC, you can use the DriveWire 4 User Interface, a GUI that runs on modern computers. 
+There are multiple interfaces which can be used to configure and control these services. The most basic tool for these tasks is the OS-9 command `dw` which comes on a DriveWire bootable NitrOS-9 image and can be found in the DriveWire CVS repository in source form. If you prefer to manage DriveWire from a PC, you can use the DriveWire 4 User Interface, a GUI that runs on modern computers.
 
-## Starting the DriveWire server and GUI
+## Starting the DriveWire Server and GUI
 
-To start DriveWire 4 from a GUI, double click on the DW4UI file most likely to work on your system: 
+To start DriveWire 4 from a GUI, double click on the DW4UI file most likely to work on your system:
 
-  
-Windows users can double click on DW4UI.exe or DW4UI.jar 
+- **Windows**: `DW4UI.exe` or `DW4UI.jar`
+- **macOS**: `DW4UI.command`
+- **Linux/BSD**: `DW4UI.sh`
 
-Mac OS X users can double click on DW4UI.command 
+There are many different factors that can determine whether any of these files will work for you. If you are unable to start DriveWire 4 using any of the above files, you can usually start it using the command line.
 
-Linux and *BSD users can double click DW4UI.sh 
+On all systems except macOS, change to the directory where you unzipped the DW4 package, and enter:
 
-  
-There are many different factors that can determine whether any of these files will work for you. 
-
-  
-If you are unable to start DriveWire 4 using any of the above files, you can probably still start it using the command line. 
-
-  
-On all systems except Mac OSX, change to the directory where you unzipped the DW4 package, and enter: 
-
-java -jar DW4UI.jar 
+```bash
+java -jar DW4UI.jar
+```
 
   
 On Mac OS X (think different, I guess), instead enter: 

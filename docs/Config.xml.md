@@ -1,8 +1,6 @@
-[TOC]
+# Config.xml
 
-# General
-
-# config.xml
+## General
 
 ## Instance
 

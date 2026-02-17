@@ -7,5 +7,27 @@ theme:
 
 nav:
   - Home: index.md
-  - Installation: Add_the_DriveWire_drivers_to_your_existing_system.md
-  # MkDocs will auto-detect other pages, but you can list them here manually
+  - Getting Started:
+    - Installation: Installation.md
+    - Building from Source: Building_from_source.md
+    - Cables: DriveWire_cables.md
+  - User Guide:
+    - Using DriveWire: Using_DriveWire.md
+    - GUI Manual: The_DriveWire_GUI.md
+    - Command Reference: The_'dw'_commands.md
+    - Troubleshooting Memory: Solving_low_memory_issues.md
+    - CoCo Client Software: Client_(CoCo)_side_software_(ROMs,_cassette_images,_etc).md
+    - Non-CoCo Client Software: Client_(Non_CoCo)_side_software.md
+    - Getting Help: Getting_help.md
+  - Technical Reference:
+    - Specification: DriveWire_Specification.md
+    - Becker Port Spec: Becker_port_specification.md
+    - Config XML: Config.xml.md
+    - Configuration: Configuration.md
+    - OS9 Modules: OS9_Modules.md
+  - Developer Guide:
+    - Network Programming: Writing_Network_Capable_Software.md
+    - Beta Info: Beta.md
+  - Legacy:
+    - Driver Installation: Add_the_DriveWire_drivers_to_your_existing_system.md
+    - Wiki Home: Home.md
