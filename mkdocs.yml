@@ -1,0 +1,11 @@
+site_name: DriveWire Wiki
+theme:
+  name: material
+  palette: 
+    scheme: slate # Dark mode, perfect for retro-computing projects
+    primary: teal
+
+nav:
+  - Home: index.md
+  - Installation: Add_the_DriveWire_drivers_to_your_existing_system.md
+  # MkDocs will auto-detect other pages, but you can list them here manually
