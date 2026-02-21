@@ -13,7 +13,13 @@ DEFAULT_CONFIG = {
     "drives": [None] * 4,  # 4 Virtual Drives
     "ntp_server": "pool.ntp.org",
     "timezone_offset": 0,  # Hours from UTC (-12 to +14)
-    "serial_map": {}  # { "0": {"host": "towel.blinkenlights.nl", "port": 23} }
+    "serial_map": {},  # { "0": {"host": "towel.blinkenlights.nl", "port": 23} }
+    "sd_spi_id": 1,        # SPI bus (0 or 1)
+    "sd_sck": 10,          # GP10
+    "sd_mosi": 11,         # GP11
+    "sd_miso": 12,         # GP12
+    "sd_cs": 13,           # GP13
+    "sd_mount_point": "/sd"
 }
 
 class Config:
@@ -38,13 +44,19 @@ class Config:
             self.save()
 
     def save(self):
-        with open(CONFIG_FILE, 'w') as f:
-            json.dump(self.config, f)
+        try:
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump(self.config, f)
+        except OSError as e:
+            print(f"Config save error: {e}")
 
     def get(self, key):
         return self.config.get(key)
 
     def set(self, key, value):
+        if key not in DEFAULT_CONFIG:
+            print(f"Warning: Unknown config key '{key}'")
+            return
         self.config[key] = value
         self.save()
     

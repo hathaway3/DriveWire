@@ -38,6 +38,6 @@ except Exception as e:
         with open("error.log", "a") as f:
             import time
             f.write(f"[{time.localtime()}] Startup error: {e}\n")
-    except:
+    except OSError:
         pass
     print(f"Unexpected error: {e}")

@@ -4,6 +4,7 @@ import os
 from machine import UART
 from config import shared_config
 import micropython
+import activity_led
 
 # OpCodes - using const() to save RAM on MicroPython
 OP_BKPT = micropython.const(0x21)
@@ -62,22 +63,37 @@ class VirtualDrive:
             print(f"Failed to open {filename}: {e}")
 
     def close(self):
-        self.flush()
-        if self.file:
-            self.file.close()
-            self.file = None
+        try:
+            self.flush()
+        except Exception as e:
+            print(f"Flush error during close of {self.filename}: {e}")
+        finally:
+            if self.file:
+                try:
+                    self.file.close()
+                except OSError as e:
+                    print(f"Error closing {self.filename}: {e}")
+                self.file = None
 
     def flush(self):
         if not self.file or not self.dirty_sectors: return
+        flushed_lsns = []
+        activity_led.on()
         try:
             for lsn, data in self.dirty_sectors.items():
                 self.file.seek(lsn * 256)
                 self.file.write(data)
+                flushed_lsns.append(lsn)
             self.file.flush()
             self.dirty_sectors = {}
             print(f"Flushed {self.filename}")
-        except Exception as e:
-            print(f"Flush Error: {e}")
+        except OSError as e:
+            # Only clear sectors that were successfully written
+            for lsn in flushed_lsns:
+                self.dirty_sectors.pop(lsn, None)
+            print(f"Flush Error ({len(self.dirty_sectors)} sectors remain dirty): {e}")
+        finally:
+            activity_led.off()
 
     def read_sector(self, lsn):
         """Read a sector from the virtual drive, checking caches first."""
@@ -101,6 +117,7 @@ class VirtualDrive:
         try:
             self.file.seek(lsn * SECTOR_SIZE)
             data = self.file.read(SECTOR_SIZE)
+            activity_led.blink()
             if len(data) < SECTOR_SIZE:
                 data = data + bytes(SECTOR_SIZE - len(data))
             
@@ -116,8 +133,15 @@ class VirtualDrive:
 
     def write_sector(self, lsn, data):
         """Write a sector to the write-back cache (deferred write to flash)."""
+        if lsn < 0:
+            print(f"Write Error: Invalid LSN {lsn}")
+            return False
+        if len(data) != SECTOR_SIZE:
+            print(f"Write Error: Data length {len(data)} != {SECTOR_SIZE}")
+            return False
         self.stats['write_count'] += 1
         self.dirty_sectors[lsn] = data
+        activity_led.blink()
         # Keep read cache consistent
         self.read_cache[lsn] = data
         if len(self.read_cache) > MAX_READ_CACHE_ENTRIES:
@@ -324,14 +348,19 @@ class DriveWireServer:
                         # OP_TIME ($23)
                         # Bi-directional.
                         # Server response: Year(0-255, yr-1900), Month(1-12), Day(1-31), Hour(0-23), Minute(0-59), Second(0-59)
-                        import time_sync
-                        t = time_sync.get_local_time()
-                        # t is (year, month, day, hour, minute, second, wday, yday)
-                        year = t[0] - 1900
-                        if year < 0: year = 0
-                        if year > 255: year = 255
-                        
-                        resp = bytes([year, t[1], t[2], t[3], t[4], t[5]])
+                        try:
+                            import time_sync
+                            t = time_sync.get_local_time()
+                            if not t or len(t) < 6:
+                                raise ValueError("Invalid time tuple")
+                            # t is (year, month, day, hour, minute, second, wday, yday)
+                            year = t[0] - 1900
+                            if year < 0: year = 0
+                            if year > 255: year = 255
+                            resp = bytes([year, t[1], t[2], t[3], t[4], t[5]])
+                        except Exception as e:
+                            print(f"OP_TIME Error: {e}")
+                            resp = bytes([0, 1, 1, 0, 0, 0])  # Fallback: 1900-01-01 00:00:00
                         self.uart.write(resp)
 
                     elif opcode == OP_PRINT:
@@ -371,26 +400,14 @@ class DriveWireServer:
                     elif opcode == OP_SERREAD:
                         # OP_SERREAD ($43) - Polling
                         # Response: Byte 1 (Status/Data Avail), Byte 2 (Data or Count)
-                        
-                        # Simplified Check: Do we have data for any channel?
-                        # For now, we don't populate channels with data source, so always empty.
-                        # Unless loopback? Let's just return "No Data".
-                        # Byte 1 = 0: No data.
-                        # Byte 2 = Ignored.
-                        
-                        # Check if any channel has data?
-                        # For this basic implementation, we just echo nothing.
                         found_channel = -1
-                        for i in range(15):
+                        for i in range(NUM_CHANNELS):
                             if len(self.channels[i]) > 0:
                                 found_channel = i
                                 break
                                 
-                        if found_channel >= 0:
+                        if found_channel >= 0 and len(self.channels[found_channel]) > 0:
                             # We have data!
-                            # Byte 1: 1 to 15 (Channel + 1) -> Byte 2 is single byte data
-                            # OR 17-31 -> Byte 2 is count
-                            # Let's send single byte for now
                             ch_idx = found_channel
                             response_byte_1 = ch_idx + 1
                             data_byte = self.channels[ch_idx].pop(0)
@@ -428,6 +445,9 @@ class DriveWireServer:
                                     
                                 except Exception as e:
                                     print(f"TCP Write Error Ch{chan}: {e}")
+                                    # Clean up dead connection
+                                    self.log_msg(f"TCP Ch{chan} write failed, closing")
+                                    await self.close_tcp(chan)
                             else:
                                 pass # No connection, discard
 
@@ -436,7 +456,8 @@ class DriveWireServer:
                         # Channel is opcode & 0x0F
                         chan = opcode & 0x0F
                         val = await self.read_bytes(1)
-                        pass
+                        if val:
+                            self.log_msg(f"FASTWRITE Ch{chan}: data discarded (unimplemented)")
 
                     elif opcode == OP_SERINIT:
                          # 1 byte channel
@@ -544,8 +565,11 @@ class DriveWireServer:
                     elif opcode == OP_WIREBUG:
                         # OP_WIREBUG ($42) + CoCoType(1) + CPUType(1) + Reserved(21)??
                         # Param 3 says 3-23 reserved, so 21 bytes. Total 23 bytes payload.
-                        await self.read_bytes(23)
-                        print("Entered WireBug Mode")
+                        wb_data = await self.read_bytes(23)
+                        if wb_data:
+                            print("Entered WireBug Mode")
+                        else:
+                            print("WireBug handshake timeout")
                         # We just stay silent now, as we are the server and we initiate commands.
                         # If we don't send commands, CoCo just waits. 
                         # To exit, we could send OP_WIREBUG_GO ($47) but usually we wait for user input.
@@ -564,7 +588,11 @@ class DriveWireServer:
                 await asyncio.sleep(1)
 
     async def tcp_accept_handler(self, chan, reader, writer):
-        print(f"Accepted connection on Ch{chan} from {writer.get_extra_info('peername')}")
+        try:
+            peer = writer.get_extra_info('peername')
+            print(f"Accepted connection on Ch{chan} from {peer}")
+        except Exception:
+            print(f"Accepted connection on Ch{chan} (peername unavailable)")
         # If we already have a connection on this channel, close it?
         # Simple server: One client at a time overrides.
         if chan in self.tcp_connections:
@@ -632,14 +660,21 @@ class DriveWireServer:
 
     def stop(self):
         self.running = False
-        for d in self.drives:
-            if d: d.close()
+        for i, d in enumerate(self.drives):
+            if d:
+                try:
+                    d.close()
+                except Exception as e:
+                    print(f"Error closing drive {i}: {e}")
 
     async def flush_loop(self):
         """Periodically flush dirty sectors to disk (flash wear protection)."""
         while self.running:
             await asyncio.sleep(60)  # Flush every 60 seconds of inactivity
-            for d in self.drives:
+            for i, d in enumerate(self.drives):
                 if d:
-                    d.flush()
+                    try:
+                        d.flush()
+                    except Exception as e:
+                        print(f"Flush loop error drive {i}: {e}")
 

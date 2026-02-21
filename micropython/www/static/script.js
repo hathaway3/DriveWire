@@ -29,14 +29,24 @@ async function init() {
     document.getElementById('ntp_server').value = config.ntp_server || 'pool.ntp.org';
     document.getElementById('tz_offset').value = config.timezone_offset || 0;
 
+    // SD card SPI pin config
+    document.getElementById('sd_spi_id').value = config.sd_spi_id != null ? config.sd_spi_id : 1;
+    document.getElementById('sd_sck').value = config.sd_sck != null ? config.sd_sck : 10;
+    document.getElementById('sd_mosi').value = config.sd_mosi != null ? config.sd_mosi : 11;
+    document.getElementById('sd_miso').value = config.sd_miso != null ? config.sd_miso : 12;
+    document.getElementById('sd_cs').value = config.sd_cs != null ? config.sd_cs : 13;
+    document.getElementById('sd_mount_point').value = config.sd_mount_point || '/sd';
+
     const container = document.getElementById('drives-container');
     container.innerHTML = '';
     const currentDrives = config.drives || [null, null, null, null];
 
-    // Build base options
+    // Build options with filename display and storage badge
     let baseOptions = '<option value="">(NO DISK)</option>';
     files.forEach(f => {
-        baseOptions += `<option value="${f}">${f}</option>`;
+        const fname = f.split('/').pop();
+        const badge = f.startsWith('/sd') ? '\uD83D\uDCBE' : '\uD83D\uDCC1';
+        baseOptions += `<option value="${f}">${badge} ${fname}</option>`;
     });
 
     for (let i = 0; i < 4; i++) {
@@ -46,7 +56,8 @@ async function init() {
         // Ensure current value is in the list
         let options = baseOptions;
         if (currentVal && !files.includes(currentVal)) {
-            options += `<option value="${currentVal}">${currentVal} (MISSING)</option>`;
+            const missingName = currentVal.split('/').pop();
+            options += `<option value="${currentVal}">\u26A0 ${missingName} (MISSING)</option>`;
         }
 
         div.innerHTML = `
@@ -63,8 +74,12 @@ async function init() {
 
     renderSerialMap(config.serial_map || {});
 
+    // Check SD card status on load
+    pollSdStatus();
+
     // Start Polling
     setInterval(pollStatus, 2000);
+    setInterval(pollSdStatus, 10000);  // SD status every 10s
 }
 
 function switchTab(tabName) {
@@ -262,7 +277,14 @@ async function saveConfig() {
         ntp_server: document.getElementById('ntp_server').value,
         timezone_offset: parseInt(document.getElementById('tz_offset').value),
         drives: [],
-        serial_map: {}
+        serial_map: {},
+        // SD card SPI config
+        sd_spi_id: parseInt(document.getElementById('sd_spi_id').value),
+        sd_sck: parseInt(document.getElementById('sd_sck').value),
+        sd_mosi: parseInt(document.getElementById('sd_mosi').value),
+        sd_miso: parseInt(document.getElementById('sd_miso').value),
+        sd_cs: parseInt(document.getElementById('sd_cs').value),
+        sd_mount_point: document.getElementById('sd_mount_point').value.trim() || '/sd'
     };
 
     for (let i = 0; i < 4; i++) {
@@ -303,5 +325,51 @@ async function saveConfig() {
     } catch (error) {
         console.error('Error:', error);
         showStatus('Network error while saving.', 'error');
+    }
+}
+
+async function pollSdStatus() {
+    try {
+        const response = await fetch('/api/sd/status');
+        const data = await response.json();
+
+        // Update config page indicator
+        const configIndicator = document.getElementById('sd-config-indicator');
+        if (configIndicator) {
+            if (data.mounted) {
+                let text = `\uD83D\uDFE2 MOUNTED AT ${data.mount_point}`;
+                if (data.free_mb != null) {
+                    text += ` | ${data.free_mb} MB FREE / ${data.total_mb} MB`;
+                }
+                configIndicator.innerHTML = text;
+                configIndicator.style.color = 'var(--coco-green)';
+            } else {
+                configIndicator.innerHTML = '\uD83D\uDD34 NOT MOUNTED (NO CARD OR WRONG PINS)';
+                configIndicator.style.color = 'var(--coco-alert)';
+            }
+        }
+
+        // Update dashboard indicator
+        const dashStatus = document.getElementById('sd-card-status');
+        if (dashStatus) {
+            if (data.mounted) {
+                let html = `<div class="status-grid">`;
+                html += `<div>STATUS: <span class="highlight">MOUNTED</span></div>`;
+                html += `<div>PATH: <span class="highlight">${data.mount_point}</span></div>`;
+                if (data.free_mb != null) {
+                    html += `<div>FREE: <span class="highlight">${data.free_mb} MB</span></div>`;
+                    html += `<div>TOTAL: <span class="highlight">${data.total_mb} MB</span></div>`;
+                }
+                if (data.files_found != null) {
+                    html += `<div>DSK FILES: <span class="highlight">${data.files_found}</span></div>`;
+                }
+                html += `</div>`;
+                dashStatus.innerHTML = html;
+            } else {
+                dashStatus.innerHTML = '<span style="color:var(--coco-alert);">\uD83D\uDD34 NO SD CARD DETECTED</span>';
+            }
+        }
+    } catch (e) {
+        console.log('SD status poll failed', e);
     }
 }

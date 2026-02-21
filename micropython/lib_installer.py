@@ -94,14 +94,16 @@ def install_dependencies():
                         url = f"{cand['base']}/{file}"
                         try:
                             r = urequests.get(url)
-                            if r.status_code == 200:
-                                with open(file, "w") as f:
-                                    f.write(r.text)
-                                print(f"Saved {file}")
-                            else:
-                                print(f"Failed to download {file} (Status {r.status_code})")
-                                success = False
-                            r.close()
+                            try:
+                                if r.status_code == 200:
+                                    with open(file, "w") as f:
+                                        f.write(r.text)
+                                    print(f"Saved {file}")
+                                else:
+                                    print(f"Failed to download {file} (Status {r.status_code})")
+                                    success = False
+                            finally:
+                                r.close()
                         except Exception as e:
                             print(f"Download error: {e}")
                             success = False

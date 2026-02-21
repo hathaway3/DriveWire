@@ -17,6 +17,13 @@ if wifi_ssid and wifi_ssid != 'YOUR_SSID':
     except Exception as e:
         print(f"WiFi Connection failed: {e}")
 
+# Mount SD card (best effort — continues without it)
+try:
+    import sd_card
+    sd_card.init_sd()
+except Exception as e:
+    print(f"SD card init skipped: {e}")
+
 # Ensure libraries are installed
 try:
     lib_installer.install_dependencies()
@@ -26,5 +33,6 @@ except Exception as e:
     try:
         with open("boot_error.log", "a") as f:
             f.write(f"Boot error: {e}\n")
-    except:
+    except OSError:
         pass
+

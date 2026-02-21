@@ -35,13 +35,16 @@ The [MicroPython](micropython) folder contains a complete DriveWire 4 server des
 
 ### Key Features:
 - **Web-Based Management**: A retro-themed (Tandy/CoCo aesthetic) dark mode web interface.
+- **SD Card Support**: External SD card storage via SPI with FAT/FAT32 support — disk images from internal flash and SD card appear seamlessly in the same UI with storage-type badges.
+- **Activity LED**: Onboard LED blinks during disk reads/writes and stays lit during flush, providing a visual HDD-style activity indicator.
+- **Robust Error Handling**: Comprehensive exception handling across all I/O operations with graceful fallbacks, input validation, and resource cleanup.
 - **Virtual Serial TCP/IP**: Map CoCo virtual serial ports to external network services (Support for both Client and Server modes).
 - **Serial Terminal Tab**: Real-time diagnostic monitor for snooping on any virtual serial channel.
-- **Status Dashboard**: Live monitoring of DriveWire opcodes, drive access, and serial port activity.
+- **Status Dashboard**: Live monitoring of DriveWire opcodes, drive access, serial port activity, and SD card status.
 - **Disk Management**: Automatic scanning of local/SD card storage for `.dsk` files with a dropdown selection UI.
 - **Time Sync**: Built-in NTP synchronization support for the CoCo.
 
-For setup instructions and detailed information, see the [MicroPython README](micropython/README.md) (or [Walkthrough](file:///Users/jimmiehathaway/DriveWire/micropython/walkthrough.md)).
+For setup instructions and detailed information, see the [MicroPython README](micropython/README.md).
 
 ## History
 

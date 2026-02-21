@@ -1,14 +1,1 @@
-{
-    "wifi_ssid": "YOUR_SSID",
-    "wifi_password": "YOUR_PASSWORD",
-    "baud_rate": 115200,
-    "drives": [
-        null,
-        null,
-        null,
-        null
-    ],
-    "ntp_server": "pool.ntp.org",
-    "timezone_offset": 0,
-    "serial_map": {}
-}
+{"wifi_ssid": "YOUR_SSID", "wifi_password": "YOUR_PASSWORD", "baud_rate": 115200, "drives": ["test_drive.dsk", null, null, null], "ntp_server": "pool.ntp.org", "timezone_offset": 0, "serial_map": {"2": {"host": "127.0.0.1", "port": 8888}}, "sd_spi_id": 1, "sd_sck": 10, "sd_mosi": 11, "sd_miso": 12, "sd_cs": 13, "sd_mount_point": "/sd"}
