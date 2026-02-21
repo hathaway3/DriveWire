@@ -130,6 +130,14 @@ async def sd_status_endpoint(request):
 @app.route('/api/status')
 async def status_endpoint(request):
     try:
+        # Always include server time (lightweight)
+        try:
+            import time_sync
+            t = time_sync.get_local_time()
+            server_time = f"{t[0]:04d}-{t[1]:02d}-{t[2]:02d} {t[3]:02d}:{t[4]:02d}:{t[5]:02d}"
+        except Exception:
+            server_time = "--:--:--"
+
         if hasattr(app, 'dw_server'):
             drive_stats = []
             for d in app.dw_server.drives:
@@ -142,13 +150,14 @@ async def status_endpoint(request):
                     drive_stats.append(None)
                     
             return {
+                'server_time': server_time,
                 'stats': app.dw_server.stats,
                 'logs': list(app.dw_server.log_buffer),
                 'term_buf': list(app.dw_server.terminal_buffer),
                 'monitor_chan': app.dw_server.monitor_channel,
                 'drive_stats': drive_stats
             }
-        return {'error': 'DriveWire Server not attached'}
+        return {'server_time': server_time, 'error': 'DriveWire Server not attached'}
     except Exception as e:
         return {'error': f'Status error: {e}'}, 500
 

@@ -78,7 +78,7 @@ async function init() {
     pollSdStatus();
 
     // Start Polling
-    setInterval(pollStatus, 2000);
+    setInterval(pollStatus, 1000);  // 1 second for live time + heartbeat
     setInterval(pollSdStatus, 10000);  // SD status every 10s
 }
 
@@ -122,6 +122,10 @@ async function pollStatus() {
     try {
         const response = await fetch('/api/status');
         const data = await response.json();
+
+        if (data.server_time) {
+            document.getElementById('stat-time').innerText = data.server_time;
+        }
 
         if (data.stats) {
             document.getElementById('stat-opcode').innerText = '0x' + data.stats.last_opcode.toString(16).toUpperCase();
