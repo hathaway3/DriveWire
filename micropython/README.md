@@ -2,13 +2,12 @@
 
 A full-featured DriveWire 4 server implementation in MicroPython, optimized for the **Raspberry Pi Pico W** and **Pico 2 W** with advanced memory management and performance optimizations.
 
-## Screenshots
+## Web Interface
 
-![Web Dashboard](docs/dashboard_mockup.png)
+![Dashboard Tab](docs/dashboard_tab.png)
 *Live Dashboard showing real-time DriveWire activity and system logs.*
 
-![Configuration Tab](docs/config_mockup.png)
-*Retro-styled configuration interface (Tandy/CoCo aesthetic).*
+The DriveWire server features a modern, responsive web dashboard with a retro Tandy/CoCo phosphor aesthetic. See the [Web Interface](#web-interface-dashboard) section for more details.
 
 ## Key Features
 
@@ -135,15 +134,33 @@ The onboard LED on the Pico W / Pico 2 W provides visual feedback during disk I/
 
 This works identically for both internal flash and SD card images. On non-Pico hardware, LED calls are safely ignored.
 
-## Dashboard Usage
+## Web Interface Dashboard
 
-Access the web UI to monitor live activity:
-- **Last OpCode**: Most recent command from the CoCo
-- **SD Card Storage**: Mount status, free/used space, and DSK file count
-- **Serial Activity**: TX/RX byte counts for active virtual serial channels
-- **System Logs**: Live scroll of internal events (last 20 entries)
-- **Drive Stats**: Read/write statistics and cache hit rates
-- **Memory Status**: Free memory reported at boot and startup
+Access the web UI via your Pico's IP address to monitor live activity and manage the server.
+
+### Dashboard Performance
+The dashboard utilizes a lightweight JSON API. Polling occurs every 1 second (stats/time) or 10 seconds (SD status), ensuring minimal CPU impact on the SPI/UART DriveWire timing.
+
+| Tab | Description |
+| :--- | :--- |
+| **DASHBOARD** | Large live clock, opcode/drive stats, SD storage info, and system logs. |
+| **CONFIG** | WiFi, NTP, SD pin configuration, and virtual serial station mapping. |
+| **TERMINAL** | Real-time "snoop" monitor for any virtual serial channel (0-14). |
+| **DRIVES** | Detailed I/O statistics, read hit/miss ratios, and dirty sector counts for all 4 drives. |
+
+#### Web Interface Preview
+
+![Dashboard Tab](docs/dashboard_tab.png)
+*Live system status, server time, and SD storage monitor.*
+
+![Configuration Tab](docs/config_tab.png)
+*Hardware configuration, GPIO pin mapping, and network station settings.*
+
+![Terminal Tab](docs/terminal_tab.png)
+*Serial monitor for real-time debugging of virtual serial traffic.*
+
+![Drive Stats Tab](docs/drives_tab.png)
+*Detailed performance metrics and cache status for all virtual drives.*
 
 ## Troubleshooting
 
