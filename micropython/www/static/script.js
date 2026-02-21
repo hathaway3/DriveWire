@@ -103,12 +103,16 @@ async function init() {
     // Check SD card status on load
     pollSdStatus();
 
+    // Initialize File Manager listeners
+    initFilesTab();
+
     // Start Polling
     setInterval(pollStatus, 1000);  // 1 second for live time + heartbeat
     setInterval(pollSdStatus, 10000);  // SD status every 10s
 }
 
-const VALID_TABS = ['config', 'status', 'terminal', 'drives'];
+const VALID_TABS = ['config', 'status', 'terminal', 'drives', 'files'];
+let mountedFiles = [];
 
 function switchTab(tabName) {
     if (!VALID_TABS.includes(tabName)) return;
@@ -125,6 +129,141 @@ function switchTab(tabName) {
     const btns = document.querySelectorAll('.tab-btn');
     const tabIdx = VALID_TABS.indexOf(tabName);
     if (tabIdx >= 0 && btns[tabIdx]) btns[tabIdx].classList.add('active');
+
+    if (tabName === 'files') {
+        refreshFilesTab();
+    }
+}
+
+async function refreshFilesTab() {
+    const listBody = document.getElementById('files-list');
+    listBody.innerHTML = '<tr><td colspan="2">LOADING FILES...</td></tr>';
+
+    const files = await fetchFiles();
+    listBody.innerHTML = '';
+
+    if (!files || files.length === 0) {
+        listBody.innerHTML = '<tr><td colspan="2">NO DISK IMAGES FOUND.</td></tr>';
+        return;
+    }
+
+    // Only show files on SD or root that are .dsk
+    files.forEach(f => {
+        const tr = document.createElement('tr');
+        const fname = f.split('/').pop();
+        const isMounted = mountedFiles.includes(f);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = isMounted ? 'btn btn-sm btn-disabled' : 'btn btn-sm btn-danger';
+        deleteBtn.textContent = 'DELETE';
+        if (isMounted) {
+            deleteBtn.title = 'Disk image mounted and in use';
+            deleteBtn.onclick = null;
+        } else {
+            deleteBtn.onclick = () => deleteFile(f);
+        }
+
+        tr.innerHTML = `
+            <td><span class="file-icon">${f.startsWith('/sd') ? '\uD83D\uDCBE' : '\uD83D\uDCC1'}</span> ${escHtml(fname)}</td>
+            <td></td>
+        `;
+        tr.cells[1].appendChild(deleteBtn);
+        listBody.appendChild(tr);
+    });
+}
+
+async function deleteFile(path) {
+    if (!confirm(`ARE YOU SURE YOU WANT TO DELETE ${path}?`)) return;
+
+    try {
+        const response = await fetch('/api/files/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: path })
+        });
+        const result = await response.json();
+        if (result.status === 'ok') {
+            refreshFilesTab();
+        } else {
+            alert('DELETE FAILED: ' + result.error);
+        }
+    } catch (e) {
+        alert('DELETE FAILED: ' + e);
+    }
+}
+
+function initFilesTab() {
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+
+    dropZone.onclick = () => fileInput.click();
+
+    dropZone.ondragover = (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+    };
+
+    dropZone.ondragleave = () => dropZone.classList.remove('dragover');
+
+    dropZone.ondrop = (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        handleFileUpload(e.dataTransfer.files);
+    };
+
+    fileInput.onchange = () => handleFileUpload(fileInput.files);
+}
+
+async function handleFileUpload(files) {
+    if (!files || files.length === 0) return;
+
+    const progressContainer = document.getElementById('progress-container');
+    const progressBar = document.getElementById('progress-bar');
+    const statusEl = document.getElementById('upload-status');
+
+    progressContainer.style.display = 'block';
+    statusEl.innerText = 'UPLOADING...';
+
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file.name.toLowerCase().endsWith('.dsk')) {
+            statusEl.innerText = `SKIPPING ${file.name}: ONLY .DSK ALLOWED`;
+            continue;
+        }
+
+        try {
+            const xhr = new XMLHttpRequest();
+            const promise = new Promise((resolve, reject) => {
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                        const pct = (e.loaded / e.total) * 100;
+                        progressBar.style.width = pct + '%';
+                    }
+                };
+                xhr.onload = () => {
+                    if (xhr.status === 200) resolve(JSON.parse(xhr.responseText));
+                    else reject(xhr.statusText);
+                };
+                xhr.onerror = () => reject('NETWORK ERROR');
+            });
+
+            xhr.open('POST', '/api/files/upload');
+            xhr.setRequestHeader('X-Filename', file.name);
+            xhr.send(file);
+
+            await promise;
+            statusEl.innerText = `SAVED ${file.name} OK`;
+        } catch (e) {
+            statusEl.innerText = `UPLOAD FAILED FOR ${file.name}: ${e}`;
+            break;
+        }
+    }
+
+    progressBar.style.width = '0%';
+    setTimeout(() => {
+        progressContainer.style.display = 'none';
+        refreshFilesTab();
+    }, 2000);
 }
 
 async function updateMonitorChannel() {
@@ -212,8 +351,16 @@ async function pollStatus() {
             if (sel.value != data.monitor_chan) sel.value = data.monitor_chan;
         }
 
-        if (data.drive_stats && driveIdx) {
-            renderDriveStats(data.drive_stats);
+        if (data.drive_stats) {
+            // Track full paths of mounted files for the Files tab delete protection
+            mountedFiles = data.drive_stats
+                .filter(s => s && s.full_path)
+                .map(s => s.full_path);
+
+            if (driveIdx) renderDriveStats(data.drive_stats);
+            // If we are currently on the files tab, we should refresh to update delete buttons
+            // but maybe only if mountedFiles changed? For simplicity, we can refresh
+            // if the list is visible and something changed.
         }
 
     } catch (e) {

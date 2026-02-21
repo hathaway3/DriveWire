@@ -146,6 +146,7 @@ The dashboard utilizes a lightweight JSON API. Polling occurs every 1 second (st
 | **DASHBOARD** | Large live clock, opcode/drive stats, SD storage info, and system logs. |
 | **CONFIG** | WiFi, NTP, SD pin configuration, and virtual serial station mapping. |
 | **TERMINAL** | Real-time "snoop" monitor for any virtual serial channel (0-14). |
+| **FILES** | Remote file manager for the SD card. Upload images via drag-and-drop and delete old images. |
 | **DRIVES** | Detailed I/O statistics, read hit/miss ratios, and dirty sector counts for all 4 drives. |
 
 #### Web Interface Preview
@@ -155,6 +156,9 @@ The dashboard utilizes a lightweight JSON API. Polling occurs every 1 second (st
 
 ![Configuration Tab](docs/config_tab.png)
 *Hardware configuration, GPIO pin mapping, and network station settings.*
+
+![Files Tab](docs/files_tab.png)
+*Drag-and-drop file manager for SD card disk images.*
 
 ![Terminal Tab](docs/terminal_tab.png)
 *Serial monitor for real-time debugging of virtual serial traffic.*

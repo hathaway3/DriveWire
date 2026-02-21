@@ -144,6 +144,7 @@ async def status_endpoint(request):
                 if d:
                     ds = d.stats.copy()
                     ds['filename'] = d.filename.split('/')[-1]
+                    ds['full_path'] = d.filename
                     ds['dirty_count'] = len(d.dirty_sectors)
                     drive_stats.append(ds)
                 else:
@@ -160,6 +161,79 @@ async def status_endpoint(request):
         return {'server_time': server_time, 'error': 'DriveWire Server not attached'}
     except Exception as e:
         return {'error': f'Status error: {e}'}, 500
+
+@app.route('/api/files/delete', methods=['POST'])
+async def delete_file_endpoint(request):
+    """Delete a file if not currently mounted."""
+    try:
+        if not hasattr(app, 'dw_server'):
+            return {'error': 'DriveWire Server not attached'}, 500
+            
+        body = request.json
+        if not body or 'path' not in body:
+            return {'error': 'Missing file path'}, 400
+            
+        path = body['path']
+        
+        # Security: only allow deleting from /sd or non-system files
+        if not path.startswith('/sd/') and not path.endswith('.dsk'):
+            return {'error': 'Access denied: Cannot delete system files'}, 403
+            
+        # Check if mounted
+        for i, drive in enumerate(app.dw_server.drives):
+            if drive and drive.filename == path:
+                return {'error': f'Cannot delete: File is mounted in DRIVE {i}'}, 400
+                
+        # Attempt delete
+        try:
+            os.remove(path)
+            return {'status': 'ok'}
+        except OSError as e:
+            return {'error': f'Delete failed: {e}'}, 500
+            
+    except Exception as e:
+        return {'error': f'Delete error: {e}'}, 500
+
+
+@app.route('/api/files/upload', methods=['POST'])
+async def upload_file_endpoint(request):
+    """Handle file upload via streaming POST with X-Filename header."""
+    try:
+        filename = request.headers.get('X-Filename')
+        if not filename:
+            return {'error': 'Missing X-Filename header. Please use the Files tab drag-and-drop.'}, 400
+            
+        # Basic validation
+        if not filename.lower().endswith('.dsk'):
+            return {'error': 'Only .dsk files are supported.'}, 400
+            
+        # Clean filename to prevent path traversal
+        clean_name = filename.split('/')[-1].split('\\')[-1]
+        target_path = '/sd/' + clean_name
+        
+        # Ensure /sd exists
+        try:
+            if '/sd' not in os.listdir('/'):
+                return {'error': 'SD card not mounted. Cannot upload to SD.'}, 400
+        except Exception:
+            return {'error': 'SD card check failed.'}, 500
+
+        # Stream save to avoid memory issues
+        # Note: Depending on microdot version, we might needs to handle request.stream
+        # or it might already be in request.body if small.
+        # Microdot Asyncio's request.body is a coroutine or property that reads the body.
+        
+        body = request.body
+        if hasattr(body, '__call__'): # Async body
+            body = await body()
+            
+        with open(target_path, 'wb') as f:
+            f.write(body)
+            
+        return {'status': 'ok', 'path': target_path}
+    except Exception as e:
+        return {'error': f'Upload failed: {e}'}, 500
+
 
 @app.route('/api/serial/monitor', methods=['POST'])
 async def monitor_chan_endpoint(request):
