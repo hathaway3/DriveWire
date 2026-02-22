@@ -28,7 +28,7 @@ The DriveWire server features a modern, responsive web dashboard with a retro Ta
 - **Microcontroller**: Raspberry Pi Pico W or Pico 2 W
 - **Serial Connection**: UART pins (TX: GP0, RX: GP1 by default)
 - **Level Shifter**: TTL-to-RS232 level shifter **required** to safely connect to the CoCo's serial port
-- **SD Card Module** *(optional)*: SPI-connected microSD card breakout board
+- **SD Card Module** *(optional)*: SPI-connected microSD card breakout board (see [Wiring Guide](docs/wiring.md))
 - **Memory**: Minimum 264KB RAM (Pico W/2 W have sufficient memory)
 
 ## Performance & Memory
@@ -80,6 +80,8 @@ The DriveWire server features a modern, responsive web dashboard with a retro Ta
 The server supports external SD card storage via SPI for additional `.dsk` disk images. Cards must be formatted as **FAT or FAT32**.
 
 ### Wiring (Default SPI Pins)
+
+For detailed wiring instructions and visuals for specific devices like Adafruit 4682 and 6038, see the [SPI SD Wiring Guide](docs/wiring.md).
 
 | Signal | Default Pin | Description |
 |--------|-------------|-------------|
