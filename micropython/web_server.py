@@ -11,6 +11,7 @@ except ImportError:
 from config import shared_config
 import json
 import os
+import uasyncio as asyncio
 import sd_card
 import time_sync
 
