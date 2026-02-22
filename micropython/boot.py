@@ -1,7 +1,10 @@
-# boot.py -- run on boot-up
 import lib_installer
 import config
 import gc
+import fs_repair
+
+# Scrub root filesystem for conflicts (duplicate sd folders)
+fs_repair.scrub_root()
 
 # Report memory status
 gc.collect()

@@ -62,11 +62,13 @@ def init_sd():
         _sd = sdcard.SDCard(spi, cs)
 
         # Create mount point if needed
-        try:
-            os.mkdir(_mount_point)
-        except OSError:
-            pass  # Already exists
-
+        if _mount_point not in os.listdir('/'):
+            try:
+                os.mkdir(_mount_point)
+                print(f"SD card: Created mount point {_mount_point}")
+            except OSError as e:
+                print(f"SD card: Error creating mount point: {e}")
+        
         os.mount(_sd, _mount_point)
         _mounted = True
 

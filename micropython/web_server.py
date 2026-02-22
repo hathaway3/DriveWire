@@ -279,14 +279,20 @@ async def upload_file_endpoint(request):
                         if not chunk:
                             print("End of stream reached")
                             break
-                        f.write(chunk)
-                        bytes_written += len(chunk)
+                            
+                        try:
+                            f.write(chunk)
+                            bytes_written += len(chunk)
+                        except Exception as write_err:
+                            print(f"SD Write Error at {bytes_written} bytes: {write_err}")
+                            raise write_err
                         
                         # Log progress every 64KB
                         if bytes_written % (16 * chunk_size) == 0:
                             print(f"Uploaded: {bytes_written}/{total_size} bytes")
-                            # Explicitly yield after a write burst
-                            await asyncio.sleep(0.01)
+                            # Explicitly yield and collect garbage after a write burst
+                            gc.collect()
+                            await asyncio.sleep(0.05)
         except Exception as e:
             print(f"Stream write error: {e}")
             return {'error': f'Write failed: {e}'}, 500
