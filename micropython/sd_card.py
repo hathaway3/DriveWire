@@ -6,12 +6,19 @@ for FAT/FAT32 filesystem access. Configurable SPI pins via config.json.
 """
 
 import os
+import asyncio
 from config import shared_config
 
 # Module-level state
 _sd = None
 _mounted = False
 _mount_point = '/sd'
+_lock = asyncio.Lock()
+
+
+def get_lock():
+    """Return the global SD card lock."""
+    return _lock
 
 
 def init_sd():
@@ -123,29 +130,30 @@ def is_mounted():
         return False
 
 
-def get_info():
+async def get_info():
     """
     Return SD card status information.
     Returns dict with: mounted, mount_point, and optionally free/total bytes.
     """
-    info = {
-        'mounted': is_mounted(),
-        'mount_point': _mount_point,
-    }
+    async with _lock:
+        info = {
+            'mounted': is_mounted(),
+            'mount_point': _mount_point,
+        }
 
-    if info['mounted']:
-        try:
-            stat = os.statvfs(_mount_point)
-            # statvfs returns: (f_bsize, f_frsize, f_blocks, f_bfree, f_bavail,
-            #                   f_files, f_ffree, f_favail, f_flag, f_namemax)
-            block_size = stat[0]
-            total_blocks = stat[2]
-            free_blocks = stat[3]
-            info['total_bytes'] = block_size * total_blocks
-            info['free_bytes'] = block_size * free_blocks
-            info['total_mb'] = round(info['total_bytes'] / (1024 * 1024), 1)
-            info['free_mb'] = round(info['free_bytes'] / (1024 * 1024), 1)
-        except OSError:
-            pass  # statvfs may not be supported on all platforms
+        if info['mounted']:
+            try:
+                stat = os.statvfs(_mount_point)
+                # statvfs returns: (f_bsize, f_frsize, f_blocks, f_bfree, f_bavail,
+                #                   f_files, f_ffree, f_favail, f_flag, f_namemax)
+                block_size = stat[0]
+                total_blocks = stat[2]
+                free_blocks = stat[3]
+                info['total_bytes'] = block_size * total_blocks
+                info['free_bytes'] = block_size * free_blocks
+                info['total_mb'] = round(info['total_bytes'] / (1024 * 1024), 1)
+                info['free_mb'] = round(info['free_bytes'] / (1024 * 1024), 1)
+            except OSError:
+                pass  # statvfs may not be supported on all platforms
 
-    return info
+        return info

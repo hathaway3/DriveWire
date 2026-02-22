@@ -217,6 +217,7 @@ function initFilesTab() {
 
 async function handleFileUpload(files) {
     if (!files || files.length === 0) return;
+    console.log("Upload started: pausing background polling");
     isUploading = true;
 
     const progressContainer = document.getElementById('progress-container');
@@ -285,6 +286,7 @@ async function handleFileUpload(files) {
         progressContainer.style.display = 'none';
         statusEl.style.display = 'none';
         isUploading = false;
+        console.log("Upload complete: resuming background polling");
         refreshFilesTab();
     }, 3000);
 }
@@ -312,7 +314,10 @@ async function updateMonitorChannel() {
 }
 
 async function pollStatus() {
-    if (isUploading) return;
+    if (isUploading) {
+        console.log("Skipping pollStatus during upload");
+        return;
+    }
     // Only poll if tab is visible
     const statusIdx = document.getElementById('tab-status').classList.contains('active');
     const termIdx = document.getElementById('tab-terminal').classList.contains('active');
@@ -612,7 +617,10 @@ async function saveConfig() {
 }
 
 async function pollSdStatus() {
-    if (isUploading) return;
+    if (isUploading) {
+        console.log("Skipping pollSdStatus during upload");
+        return;
+    }
     try {
         const response = await fetch('/api/sd/status');
         if (!response.ok) return;

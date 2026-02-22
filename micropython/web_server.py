@@ -122,7 +122,7 @@ async def sd_status_endpoint(request):
     """Return SD card mount status and storage info."""
     try:
         import sd_card
-        info = sd_card.get_info()
+        info = await sd_card.get_info()
         info['files_found'] = len([f for f in get_dsk_files() if f.startswith('/sd')])
         return info
     except ImportError:
@@ -254,24 +254,25 @@ async def upload_file_endpoint(request):
             return {'error': f'SD card check failed: {e}'}, 500
 
         # Stream save to avoid memory issues
-        # We read from request.stream in 4KB chunks
+        # We use a lock to prevent concurrent SPI access
         chunk_size = 4096
         bytes_written = 0
         total_size = int(content_length) if content_length else 0
         
         try:
-            with open(target_path, 'wb') as f:
-                while True:
-                    chunk = await request.stream.read(chunk_size)
-                    if not chunk:
-                        print("End of stream reached")
-                        break
-                    f.write(chunk)
-                    bytes_written += len(chunk)
-                    
-                    # Log progress every 64KB
-                    if bytes_written % (16 * chunk_size) == 0:
-                        print(f"Uploaded: {bytes_written}/{total_size} bytes")
+            async with sd_card.get_lock():
+                with open(target_path, 'wb') as f:
+                    while True:
+                        chunk = await request.stream.read(chunk_size)
+                        if not chunk:
+                            print("End of stream reached")
+                            break
+                        f.write(chunk)
+                        bytes_written += len(chunk)
+                        
+                        # Log progress every 64KB
+                        if bytes_written % (16 * chunk_size) == 0:
+                            print(f"Uploaded: {bytes_written}/{total_size} bytes")
         except Exception as e:
             print(f"Stream write error: {e}")
             return {'error': f'Write failed: {e}'}, 500
