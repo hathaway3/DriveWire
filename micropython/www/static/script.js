@@ -113,6 +113,7 @@ async function init() {
 
 const VALID_TABS = ['config', 'status', 'terminal', 'drives', 'files'];
 let mountedFiles = [];
+let isUploading = false;
 
 function switchTab(tabName) {
     if (!VALID_TABS.includes(tabName)) return;
@@ -216,6 +217,7 @@ function initFilesTab() {
 
 async function handleFileUpload(files) {
     if (!files || files.length === 0) return;
+    isUploading = true;
 
     const progressContainer = document.getElementById('progress-container');
     const progressBar = document.getElementById('progress-bar');
@@ -282,6 +284,7 @@ async function handleFileUpload(files) {
     setTimeout(() => {
         progressContainer.style.display = 'none';
         statusEl.style.display = 'none';
+        isUploading = false;
         refreshFilesTab();
     }, 3000);
 }
@@ -309,6 +312,7 @@ async function updateMonitorChannel() {
 }
 
 async function pollStatus() {
+    if (isUploading) return;
     // Only poll if tab is visible
     const statusIdx = document.getElementById('tab-status').classList.contains('active');
     const termIdx = document.getElementById('tab-terminal').classList.contains('active');
@@ -608,6 +612,7 @@ async function saveConfig() {
 }
 
 async function pollSdStatus() {
+    if (isUploading) return;
     try {
         const response = await fetch('/api/sd/status');
         if (!response.ok) return;

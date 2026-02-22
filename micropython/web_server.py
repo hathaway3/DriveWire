@@ -223,13 +223,32 @@ async def upload_file_endpoint(request):
         clean_name = filename.split('/')[-1].split('\\')[-1]
         target_path = '/sd/' + clean_name
         
-        # Ensure /sd exists
+        # Ensure /sd exists and check capacity
         try:
             root_dirs = os.listdir('/')
             print(f"Root contents: {root_dirs}")
+            
+            # Check for ghost directory/mount conflict
             if 'sd' not in root_dirs and '/sd' not in root_dirs:
                 print("Upload Error: SD card not mounted")
                 return {'error': 'SD card not mounted. Cannot upload to SD.'}, 400
+                
+            # Log capacity for diagnostics
+            try:
+                flash_stat = os.statvfs('/')
+                sd_stat = os.statvfs('/sd')
+                flash_free = flash_stat[0] * flash_stat[3] / 1024
+                sd_free = sd_stat[0] * sd_stat[3] / 1024
+                print(f"Capacity check - Flash free: {flash_free:.1f}KB, SD free: {sd_free:.1f}KB")
+                
+                # If stats are identical, it might be writing to flash instead of SD
+                if flash_stat == sd_stat:
+                    print("WARNING: /sd appears to be a directory on internal flash, not the SD card mount!")
+                    if sd_free < int(content_length or 0) / 1024:
+                         return {'error': f'Insufficient space on internal flash ({sd_free:.1f}KB). Verify SD card mount.'}, 400
+
+            except Exception as e:
+                print(f"Capacity check failed: {e}")
         except Exception as e:
             print(f"SD card check failed: {e}")
             return {'error': f'SD card check failed: {e}'}, 500
