@@ -211,10 +211,12 @@ async def upload_file_endpoint(request):
         print(f"Upload starting: {filename} (Content-Length: {content_length})")
         
         if not filename:
+            print("Upload Error: Missing X-Filename header")
             return {'error': 'Missing X-Filename header. Please use the Files tab drag-and-drop.'}, 400
             
         # Basic validation
         if not filename.lower().endswith('.dsk'):
+            print(f"Upload Error: Invalid file type: {filename}")
             return {'error': 'Only .dsk files are supported.'}, 400
             
         # Clean filename to prevent path traversal
@@ -223,10 +225,14 @@ async def upload_file_endpoint(request):
         
         # Ensure /sd exists
         try:
-            if '/sd' not in os.listdir('/'):
+            root_dirs = os.listdir('/')
+            print(f"Root contents: {root_dirs}")
+            if 'sd' not in root_dirs and '/sd' not in root_dirs:
+                print("Upload Error: SD card not mounted")
                 return {'error': 'SD card not mounted. Cannot upload to SD.'}, 400
-        except Exception:
-            return {'error': 'SD card check failed.'}, 500
+        except Exception as e:
+            print(f"SD card check failed: {e}")
+            return {'error': f'SD card check failed: {e}'}, 500
 
         # Stream save to avoid memory issues
         # We read from request.stream in 4KB chunks
