@@ -13,6 +13,7 @@ import json
 import os
 
 app = Microdot()
+app.max_body_limit = 1024 * 1024  # 1MB limit for .dsk images
 config = shared_config
 
 @app.route('/')
@@ -219,18 +220,20 @@ async def upload_file_endpoint(request):
             return {'error': 'SD card check failed.'}, 500
 
         # Stream save to avoid memory issues
-        # Note: Depending on microdot version, we might needs to handle request.stream
-        # or it might already be in request.body if small.
-        # Microdot Asyncio's request.body is a coroutine or property that reads the body.
+        # We read from request.stream in 4KB chunks
+        chunk_size = 4096
+        bytes_written = 0
         
-        body = request.body
-        if hasattr(body, '__call__'): # Async body
-            body = await body()
-            
         with open(target_path, 'wb') as f:
-            f.write(body)
-            
-        return {'status': 'ok', 'path': target_path}
+            while True:
+                chunk = await request.stream.read(chunk_size)
+                if not chunk:
+                    break
+                f.write(chunk)
+                bytes_written += len(chunk)
+                
+        print(f"Upload complete: {target_path} ({bytes_written} bytes)")
+        return {'status': 'ok', 'path': target_path, 'size': bytes_written}
     except Exception as e:
         return {'error': f'Upload failed: {e}'}, 500
 
