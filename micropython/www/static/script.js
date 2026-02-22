@@ -363,9 +363,9 @@ async function pollStatus() {
 
     try {
         const response = await fetch('/api/status');
-        if (!response.ok) return;
+        if (!response.ok || _dialogOpen) return;
         const data = await response.json();
-        if (!data) return;
+        if (!data || _dialogOpen) return;
 
         if (data.server_time) {
             document.getElementById('stat-time').innerText = data.server_time;
@@ -660,9 +660,9 @@ async function pollSdStatus() {
     }
     try {
         const response = await fetch('/api/sd/status');
-        if (!response.ok) return;
+        if (!response.ok || _dialogOpen) return;
         const data = await response.json();
-        if (!data) return;
+        if (!data || _dialogOpen) return;
 
         // Update config page indicator
         const configIndicator = document.getElementById('sd-config-indicator');
