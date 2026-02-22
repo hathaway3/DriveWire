@@ -184,6 +184,46 @@
             padding: 10px;
         }
 
+        .btn-danger {
+            background: #000;
+            color: var(--coco-alert);
+            border-color: var(--coco-alert);
+        }
+
+        .btn-danger:hover {
+            background: var(--coco-alert);
+            color: #000;
+            box-shadow: 0 0 15px var(--coco-alert);
+        }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 5, 0, 0.85);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-box {
+            background: var(--coco-black);
+            border: 2px solid var(--coco-alert);
+            padding: 30px;
+            max-width: 500px;
+            text-align: center;
+            box-shadow: 0 0 20px var(--coco-alert);
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 20px;
+            margin-top: 30px;
+        }
+
         .btn-secondary:hover {
             background: var(--coco-green);
             color: #000;
@@ -571,7 +611,20 @@
         </div>
     </div>
 
-    <script src="static/script.js?v=5"></script>
+    <!-- CUSTOM CONFIRM MODAL -->
+    <div id="custom-confirm" class="modal-overlay">
+        <div class="modal-box">
+            <h2 style="color: var(--coco-alert); border-color: var(--coco-alert)">CONFIRM ACTION</h2>
+            <p id="confirm-msg" style="margin: 20px 0"></p>
+            <div class="modal-buttons">
+                <button id="confirm-yes" class="btn btn-danger">YES</button>
+                <button id="confirm-no" class="btn btn-secondary"
+                    style="border: 2px solid var(--coco-green)">NO</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="static/script.js?v=6"></script>
 </body>
 
 </html>

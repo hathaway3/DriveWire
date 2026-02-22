@@ -205,10 +205,31 @@ async function refreshFilesTab() {
     });
 }
 
+async function customConfirm(message) {
+    return new Promise(resolve => {
+        const overlay = document.getElementById('custom-confirm');
+        const msgEl = document.getElementById('confirm-msg');
+        const btnYes = document.getElementById('confirm-yes');
+        const btnNo = document.getElementById('confirm-no');
+
+        msgEl.innerText = message;
+        overlay.style.display = 'flex';
+        _dialogOpen = true; // Still keeps background polling tidy
+
+        const cleanup = () => {
+            overlay.style.display = 'none';
+            _dialogOpen = false;
+            btnYes.onclick = null;
+            btnNo.onclick = null;
+        };
+
+        btnYes.onclick = () => { cleanup(); resolve(true); };
+        btnNo.onclick = () => { cleanup(); resolve(false); };
+    });
+}
+
 async function deleteFile(path) {
-    _dialogOpen = true;
-    const confirmed = confirm(`ARE YOU SURE YOU WANT TO DELETE ${path}?`);
-    _dialogOpen = false;
+    const confirmed = await customConfirm(`ARE YOU SURE YOU WANT TO DELETE\n${path}?`);
     if (!confirmed) return;
 
     try {
