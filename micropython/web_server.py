@@ -11,6 +11,8 @@ except ImportError:
 from config import shared_config
 import json
 import os
+import sd_card
+import time_sync
 
 app = Microdot()
 # Microdot 1.3.4 uses Request class attributes for limits
@@ -121,7 +123,6 @@ async def files_endpoint(request):
 async def sd_status_endpoint(request):
     """Return SD card mount status and storage info."""
     try:
-        import sd_card
         info = await sd_card.get_info()
         info['files_found'] = len([f for f in get_dsk_files() if f.startswith('/sd')])
         return info
@@ -135,7 +136,6 @@ async def status_endpoint(request):
     try:
         # Always include server time (lightweight)
         try:
-            import time_sync
             t = time_sync.get_local_time()
             server_time = f"{t[0]:04d}-{t[1]:02d}-{t[2]:02d} {t[3]:02d}:{t[4]:02d}:{t[5]:02d}"
         except Exception:
