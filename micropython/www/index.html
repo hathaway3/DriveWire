@@ -414,6 +414,22 @@
 
     <!-- CONFIGURATION TAB -->
     <div id="tab-config" class="tab-content active">
+
+        <div class="card">
+            <h2>VIRTUAL DRIVES</h2>
+            <div id="drives-container">
+                <!-- Drives injected by JS -->
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>VIRTUAL SERIAL (TCP/IP)</h2>
+            <div id="serial-map-container">
+                <!-- Injected by JS -->
+            </div>
+            <button class="btn btn-secondary" style="margin-top:15px;" onclick="addSerialMap()">+ ADD STATION</button>
+        </div>
+
         <div class="card">
             <h2>SERIAL PORT</h2>
             <label for="baud">BAUD RATE:</label>
@@ -427,75 +443,68 @@
             </select>
         </div>
 
-        <div class="card">
-            <h2>WIFI CONFIG (REBOOT REQ)</h2>
-            <label for="ssid">SSID:</label>
-            <input type="text" id="ssid">
-            <label for="wifi_pass">PASSWORD:</label>
-            <input type="password" id="wifi_pass">
-        </div>
+        <details style="margin-bottom: 30px;">
+            <summary class="btn btn-secondary"
+                style="display: block; width: 100%; text-align: left; padding: 15px 20px; font-size: 1.5em; text-transform: uppercase; font-family: 'VT323', monospace; border: 2px dashed var(--coco-green); cursor: pointer; outline: none; margin-bottom: 20px;">
+                &#9660; ADVANCED OPTIONS
+            </summary>
 
-        <div class="card">
-            <h2>TIME SETTINGS</h2>
-            <label for="ntp_server">NTP SERVER:</label>
-            <input type="text" id="ntp_server" placeholder="pool.ntp.org">
-            <label for="tz_offset">TIMEZONE OFFSET (HRS):</label>
-            <input type="number" id="tz_offset" placeholder="e.g. -5">
-        </div>
+            <div class="card">
+                <h2>WIFI CONFIG (REBOOT REQ)</h2>
+                <label for="ssid">SSID:</label>
+                <input type="text" id="ssid">
+                <label for="wifi_pass">PASSWORD:</label>
+                <input type="password" id="wifi_pass">
+            </div>
 
-        <div class="card">
-            <h2>SD CARD (SPI PINS)</h2>
-            <div id="sd-status-config"
-                style="margin-bottom:15px; padding:10px; border:1px dashed var(--coco-dark-green);">
-                <span id="sd-config-indicator">CHECKING...</span>
+            <div class="card">
+                <h2>TIME SETTINGS</h2>
+                <label for="ntp_server">NTP SERVER:</label>
+                <input type="text" id="ntp_server" placeholder="pool.ntp.org">
+                <label for="tz_offset">TIMEZONE OFFSET (HRS):</label>
+                <input type="number" id="tz_offset" placeholder="e.g. -5">
             </div>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
-                <div>
-                    <label for="sd_spi_id">SPI BUS:</label>
-                    <select id="sd_spi_id">
-                        <option value="0">SPI 0</option>
-                        <option value="1" selected>SPI 1</option>
-                    </select>
-                </div>
-                <div>
-                    <label for="sd_cs">CS PIN (GP):</label>
-                    <input type="number" id="sd_cs" value="13" placeholder="13">
-                </div>
-                <div>
-                    <label for="sd_sck">SCK PIN (GP):</label>
-                    <input type="number" id="sd_sck" value="10" placeholder="10">
-                </div>
-                <div>
-                    <label for="sd_mosi">MOSI PIN (GP):</label>
-                    <input type="number" id="sd_mosi" value="11" placeholder="11">
-                </div>
-                <div>
-                    <label for="sd_miso">MISO PIN (GP):</label>
-                    <input type="number" id="sd_miso" value="12" placeholder="12">
-                </div>
-                <div>
-                    <label for="sd_mount_point">MOUNT POINT:</label>
-                    <input type="text" id="sd_mount_point" value="/sd" placeholder="/sd">
-                </div>
-            </div>
-            <p style="font-size:0.8em; color:var(--coco-dark-green); margin-top:10px;">REBOOT REQUIRED AFTER PIN CHANGES
-            </p>
-        </div>
 
-        <div class="card">
-            <h2>VIRTUAL SERIAL (TCP/IP)</h2>
-            <div id="serial-map-container">
-                <!-- Injected by JS -->
+            <div class="card">
+                <h2>SD CARD (SPI PINS)</h2>
+                <div id="sd-status-config"
+                    style="margin-bottom:15px; padding:10px; border:1px dashed var(--coco-dark-green);">
+                    <span id="sd-config-indicator">CHECKING...</span>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                    <div>
+                        <label for="sd_spi_id">SPI BUS:</label>
+                        <select id="sd_spi_id">
+                            <option value="0">SPI 0</option>
+                            <option value="1" selected>SPI 1</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="sd_cs">CS PIN (GP):</label>
+                        <input type="number" id="sd_cs" value="13" placeholder="13">
+                    </div>
+                    <div>
+                        <label for="sd_sck">SCK PIN (GP):</label>
+                        <input type="number" id="sd_sck" value="10" placeholder="10">
+                    </div>
+                    <div>
+                        <label for="sd_mosi">MOSI PIN (GP):</label>
+                        <input type="number" id="sd_mosi" value="11" placeholder="11">
+                    </div>
+                    <div>
+                        <label for="sd_miso">MISO PIN (GP):</label>
+                        <input type="number" id="sd_miso" value="12" placeholder="12">
+                    </div>
+                    <div>
+                        <label for="sd_mount_point">MOUNT POINT:</label>
+                        <input type="text" id="sd_mount_point" value="/sd" placeholder="/sd">
+                    </div>
+                </div>
+                <p style="font-size:0.8em; color:var(--coco-dark-green); margin-top:10px;">REBOOT REQUIRED AFTER PIN
+                    CHANGES
+                </p>
             </div>
-            <button class="btn btn-secondary" style="margin-top:15px;" onclick="addSerialMap()">+ ADD STATION</button>
-        </div>
-
-        <div class="card">
-            <h2>VIRTUAL DRIVES</h2>
-            <div id="drives-container">
-                <!-- Drives injected by JS -->
-            </div>
-        </div>
+        </details>
 
         <div class="actions">
             <button class="btn" onclick="saveConfig()">SAVE CONFIGURATION</button>
@@ -624,7 +633,7 @@
         </div>
     </div>
 
-    <script src="static/script.js?v=7"></script>
+    <script src="static/script.js?v=8"></script>
 </body>
 
 </html>
