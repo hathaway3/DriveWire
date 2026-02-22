@@ -1,82 +1,82 @@
 # SPI SD Storage Wiring Guide
 
-This guide explains how to connect SPI SD storage devices to the Raspberry Pi Pico 2 W for use with the DriveWire MicroPython server.
+This guide explains how to connect SPI SD storage devices to the Raspberry Pi Pico 2 W.
 
-## Default SPI Configuration
-
-The current code is configured to use **SPI Bus 1** with the following GPIO pins:
-
-| Signal | Pico 2 W GPIO | Pin Number |
-| :--- | :--- | :--- |
-| **SCK** (Clock) | GP10 | 14 |
-| **MOSI** (Data In) | GP11 | 15 |
-| **MISO** (Data Out) | GP12 | 16 |
-| **CS** (Chip Select) | GP13 | 17 |
-
-> [!NOTE]
-> These assignments can be customized in `config.json`.
+> [!IMPORTANT]
+> **GPIO vs. Physical Pin Numbers**: MicroPython and the server logs use **GPIO numbers** (e.g., GP10). Physical wiring uses the **Board Pins** (1 through 40). These are **NOT** the same. 
+> 
+> *Example: GPIO 10 is Physical Pin 14.*
 
 ---
 
-## Adafruit 4682 (Micro SD Breakout)
+## Default Configuration: SPI Bus 1
 
-The [Adafruit 4682](https://www.adafruit.com/product/4682) is a compact Micro SD breakout. 
+The system defaults to **SPI1** using the following pins. This is what you will see in the server logs: `SD card: Init SPI1 SCK=10 MOSI=11 MISO=12 CS=13`.
+
+### SPI1 Wiring Table (Pico 2 W)
+
+| Signal | GPIO (Software) | Physical Pin (Hardware) | Description |
+| :--- | :--- | :--- | :--- |
+| **SCK** | **GP10** | **14** | SPI Clock |
+| **MOSI** | **GP11** | **15** | Data sent to SD card |
+| **MISO** | **GP12** | **16** | Data received from SD card |
+| **CS** | **GP13** | **17** | Chip Select (Active Low) |
+| **3.3V** | - | **36** | Power (3.3V Out) |
+| **GND** | - | **3, 8, 13, 18, 23, 28, 33, or 38** | Ground |
+
+---
+
+## Alternative Configuration: SPI Bus 0
+
+If you prefer to use **SPI0**, you can change the `sd_spi_id` to `0` in the Web UI or `config.json`. Below is a common pinout for SPI0:
+
+### SPI0 Wiring Table (Pico 2 W)
+
+| Signal | GPIO (Software) | Physical Pin (Hardware) |
+| :--- | :--- | :--- |
+| **SCK** | **GP18** | **24** |
+| **MOSI** | **GP19** | **25** |
+| **MISO** | **GP16** | **21** |
+| **CS** | **GP17** | **22** |
+
+---
+
+## Device-Specific Wiring
+
+### Adafruit 4682 (Micro SD Breakout)
 
 > [!CAUTION]
-> **3.3V LOGIC ONLY!** This board does not have level shifters or a voltage regulator. Do **NOT** connect it to 5V (VBUS). Use only the 3.3V power from the Pico.
+> **3.3V ONLY!** Connect to **Pin 36 (3V3 OUT)** on the Pico. Do **NOT** use Pin 40 (VBUS/5V).
 
-### Wiring Table
-
-| Adafruit 4682 Pin | Pico 2 W Pin | Description |
-| :--- | :--- | :--- |
-| **3V** | **3V3 (Pin 36)** | Power (3.3V) |
-| **GND** | **GND (Pin 3, 8, 13...)** | Ground |
-| **CLK** | **GP10 (Pin 14)** | SPI Clock |
-| **SI** (Serial In) | **GP11 (Pin 15)** | MOSI |
-| **SO** (Serial Out) | **GP12 (Pin 16)** | MISO |
-| **CS** | **GP13 (Pin 17)** | Chip Select |
-
-### Wiring Diagram (Mermaid)
-
-```mermaid
-graph LR
-    Pico[Raspberry Pi Pico 2 W] --- SD[Adafruit 4682]
-    
-    Pico -- "3V3 (Pin 36)" --- SD_3V[3V]
-    Pico -- "GND" --- SD_GND[GND]
-    Pico -- "GP10 (SCK)" --- SD_CLK[CLK]
-    Pico -- "GP11 (MOSI)" --- SD_SI[SI]
-    Pico -- "GP12 (MISO)" --- SD_SO[SO]
-    Pico -- "GP13 (CS)" --- SD_CS[CS]
-```
+| Adafruit 4682 Pin | Pico Physical Pin (SPI1) |
+| :--- | :--- |
+| **3V** | **36** (3.3V) |
+| **GND** | **13** (GND) |
+| **CLK** | **14** (GP10) |
+| **SI** (MOSI) | **15** (GP11) |
+| **SO** (MISO) | **16** (GP12) |
+| **CS** | **17** (GP13) |
 
 ---
 
-## Adafruit 6038 (SPI Flash SD)
+### Adafruit 6038 (SPI Flash SD)
 
-The [Adafruit 6038](https://www.adafruit.com/product/6038) uses a 2GB NAND flash chip that behaves like an SD card. It includes level shifters and a regulator, making it safe for 3V or 5V systems.
+The 6038 includes a regulator and can be powered by 3.3V or 5V safely.
 
-### Wiring Table
+| Adafruit 6038 Pin | Pico Physical Pin (SPI1) |
+| :--- | :--- |
+| **VIN** | **36** (3.3V) or **40** (5V) |
+| **GND** | **13** (GND) |
+| **SCK** | **14** (GP10) |
+| **MOSI** | **15** (GP11) |
+| **MISO** | **16** (GP12) |
+| **CS** | **17** (GP13) |
 
-| Adafruit 6038 Pin | Pico 2 W Pin | Description |
-| :--- | :--- | :--- |
-| **VIN** | **3V3 (Pin 36)** or **VBUS (Pin 40)** | Power (3-5V) |
-| **GND** | **GND (Pin 3, 8, 13...)** | Ground |
-| **SCK** | **GP10 (Pin 14)** | SPI Clock |
-| **MOSI** | **GP11 (Pin 15)** | Data Input |
-| **MISO** | **GP12 (Pin 16)** | Data Output |
-| **CS** | **GP13 (Pin 17)** | Chip Select |
+---
 
-### Wiring Diagram (Mermaid)
+## Troubleshooting "0 entries"
 
-```mermaid
-graph LR
-    Pico[Raspberry Pi Pico 2 W] --- Flash[Adafruit 6038]
-    
-    Pico -- "3V3 or VBUS" --- Flash_VIN[VIN]
-    Pico -- "GND" --- Flash_GND[GND]
-    Pico -- "GP10 (SCK)" --- Flash_SCK[SCK]
-    Pico -- "GP11 (MOSI)" --- Flash_MOSI[MOSI]
-    Pico -- "GP12 (MISO)" --- Flash_MISO[MISO]
-    Pico -- "GP13 (CS)" --- Flash_CS[CS]
-```
+If you see `SD card mounted at /sd (0 entries)` in your logs:
+1. **Empty Card**: The card may be mounted correctly but has no `.dsk` files in the root or `/sd` folder.
+2. **Formatting**: Ensure the card is formatted as **FAT** or **FAT32**. exFAT is not supported by the default driver.
+3. **MISO Pull-up**: SPI communication can be flaky on some modules. Adding a 10kΩ pull-up resistor from **MISO (GP12 / Pin 16)** to **3.3V (Pin 36)** can significantly improve stability.
