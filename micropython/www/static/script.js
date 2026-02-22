@@ -134,6 +134,37 @@ function switchTab(tabName) {
     if (tabName === 'files') {
         refreshFilesTab();
     }
+    if (tabName === 'drives') {
+        refreshDriveSelects();
+    }
+}
+
+async function refreshDriveSelects() {
+    const files = await fetchFiles();
+    const safeFiles = Array.isArray(files) ? files : [];
+
+    // Build fresh options
+    let baseOptions = '<option value="">(NO DISK)</option>';
+    safeFiles.forEach(f => {
+        const fname = String(f).split('/').pop();
+        const badge = String(f).startsWith('/sd') ? '\uD83D\uDCBE' : '\uD83D\uDCC1';
+        baseOptions += `<option value="${escHtml(f)}">${badge} ${escHtml(fname)}</option>`;
+    });
+
+    for (let i = 0; i < 4; i++) {
+        const sel = document.getElementById(`drive_${i}`);
+        if (!sel) continue;
+        const currentVal = sel.value;
+
+        let options = baseOptions;
+        if (currentVal && !safeFiles.includes(currentVal)) {
+            const missingName = String(currentVal).split('/').pop();
+            options += `<option value="${escHtml(currentVal)}">\u26A0 ${escHtml(missingName)} (MISSING)</option>`;
+        }
+
+        sel.innerHTML = options;
+        sel.value = currentVal;
+    }
 }
 
 async function refreshFilesTab() {
@@ -185,6 +216,7 @@ async function deleteFile(path) {
         const result = await response.json();
         if (result.status === 'ok') {
             refreshFilesTab();
+            refreshDriveSelects();
         } else {
             alert('DELETE FAILED: ' + result.error);
         }
@@ -288,6 +320,7 @@ async function handleFileUpload(files) {
         isUploading = false;
         console.log("Upload complete: resuming background polling");
         refreshFilesTab();
+        refreshDriveSelects();
     }, 3000);
 }
 
