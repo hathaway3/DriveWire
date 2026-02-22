@@ -1,9 +1,9 @@
 try:
-    from microdot_asyncio import Microdot, Response, send_file
+    from microdot_asyncio import Microdot, Response, Request, send_file
 except ImportError:
     # Fallback for checking installation
     try:
-        from microdot import Microdot, Response, send_file
+        from microdot import Microdot, Response, Request, send_file
     except ImportError:
         print("Microdot not installed.")
         raise
@@ -13,7 +13,9 @@ import json
 import os
 
 app = Microdot()
-app.max_body_limit = 1024 * 1024  # 1MB limit for .dsk images
+# Microdot 1.3.4 uses Request class attributes for limits
+Request.max_content_length = 2 * 1024 * 1024  # 2MB limit for uploads
+Request.max_body_length = 16 * 1024          # Small body limit to force streaming
 config = shared_config
 
 @app.route('/')
@@ -195,12 +197,19 @@ async def delete_file_endpoint(request):
     except Exception as e:
         return {'error': f'Delete error: {e}'}, 500
 
+@app.errorhandler(413)
+async def request_too_large(request):
+    print(f"413 Error: Request too large. Content-Length: {request.headers.get('Content-Length')}")
+    return {'error': 'Request too large. Max size is 2MB.'}, 413
 
 @app.route('/api/files/upload', methods=['POST'])
 async def upload_file_endpoint(request):
     """Handle file upload via streaming POST with X-Filename header."""
     try:
         filename = request.headers.get('X-Filename')
+        content_length = request.headers.get('Content-Length')
+        print(f"Upload starting: {filename} (Content-Length: {content_length})")
+        
         if not filename:
             return {'error': 'Missing X-Filename header. Please use the Files tab drag-and-drop.'}, 400
             
@@ -224,17 +233,22 @@ async def upload_file_endpoint(request):
         chunk_size = 4096
         bytes_written = 0
         
-        with open(target_path, 'wb') as f:
-            while True:
-                chunk = await request.stream.read(chunk_size)
-                if not chunk:
-                    break
-                f.write(chunk)
-                bytes_written += len(chunk)
+        try:
+            with open(target_path, 'wb') as f:
+                while True:
+                    chunk = await request.stream.read(chunk_size)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    bytes_written += len(chunk)
+        except Exception as e:
+            print(f"Stream write error: {e}")
+            return {'error': f'Write failed: {e}'}, 500
                 
         print(f"Upload complete: {target_path} ({bytes_written} bytes)")
         return {'status': 'ok', 'path': target_path, 'size': bytes_written}
     except Exception as e:
+        print(f"General upload error: {e}")
         return {'error': f'Upload failed: {e}'}, 500
 
 
