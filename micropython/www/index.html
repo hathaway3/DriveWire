@@ -396,8 +396,34 @@
         #terminal-output::-webkit-scrollbar-thumb {
             background: var(--coco-dark-green);
         }
+
+        /* Details/Summary styles */
+        details>summary {
+            list-style: none;
+            /* Hide standard marker */
+        }
+
+        details>summary::-webkit-details-marker {
+            display: none;
+            /* Hide WebKit marker */
+        }
+
+        details>summary::before {
+            content: "\25B6";
+            /* Right-pointing triangle */
+            display: inline-block;
+            margin-right: 15px;
+            font-size: 0.8em;
+            vertical-align: middle;
+            transition: transform 0.2s ease-in-out;
+        }
+
+        details[open]>summary::before {
+            transform: rotate(90deg);
+        }
     </style>
 </head>
+
 
 <body>
     <header>
@@ -446,7 +472,7 @@
         <details style="margin-bottom: 30px;">
             <summary class="btn btn-secondary"
                 style="display: block; width: 100%; text-align: left; padding: 15px 20px; font-size: 1.5em; text-transform: uppercase; font-family: 'VT323', monospace; border: 2px dashed var(--coco-green); cursor: pointer; outline: none; margin-bottom: 20px;">
-                &#9660; ADVANCED OPTIONS
+                ADVANCED OPTIONS
             </summary>
 
             <div class="card">
