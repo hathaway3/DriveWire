@@ -238,20 +238,29 @@ async def upload_file_endpoint(request):
         # We read from request.stream in 4KB chunks
         chunk_size = 4096
         bytes_written = 0
+        total_size = int(content_length) if content_length else 0
         
         try:
             with open(target_path, 'wb') as f:
                 while True:
                     chunk = await request.stream.read(chunk_size)
                     if not chunk:
+                        print("End of stream reached")
                         break
                     f.write(chunk)
                     bytes_written += len(chunk)
+                    
+                    # Log progress every 64KB
+                    if bytes_written % (16 * chunk_size) == 0:
+                        print(f"Uploaded: {bytes_written}/{total_size} bytes")
         except Exception as e:
             print(f"Stream write error: {e}")
             return {'error': f'Write failed: {e}'}, 500
                 
         print(f"Upload complete: {target_path} ({bytes_written} bytes)")
+        if total_size and bytes_written != total_size:
+            print(f"Warning: size mismatch! Expected {total_size}, got {bytes_written}")
+        
         return {'status': 'ok', 'path': target_path, 'size': bytes_written}
     except Exception as e:
         print(f"General upload error: {e}")
