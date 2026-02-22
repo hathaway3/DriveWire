@@ -33,7 +33,7 @@ async function fetchConfig() {
 
 async function fetchFiles() {
     try {
-        const response = await fetch('/api/files');
+        const response = await fetch('/api/files?t=' + Date.now());
         if (!response.ok) {
             console.error("Files API returned", response.status);
             return [];
@@ -223,11 +223,14 @@ async function handleFileUpload(files) {
 
     progressContainer.style.display = 'block';
     statusEl.innerText = 'UPLOADING...';
+    statusEl.className = 'status'; // Reset classes
+    statusEl.style.display = 'block';
 
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
         if (!file.name.toLowerCase().endsWith('.dsk')) {
             statusEl.innerText = `SKIPPING ${file.name}: ONLY .DSK ALLOWED`;
+            statusEl.classList.add('error');
             continue;
         }
 
@@ -241,8 +244,21 @@ async function handleFileUpload(files) {
                     }
                 };
                 xhr.onload = () => {
-                    if (xhr.status === 200) resolve(JSON.parse(xhr.responseText));
-                    else reject(xhr.statusText);
+                    if (xhr.status === 200) {
+                        try {
+                            const data = JSON.parse(xhr.responseText);
+                            resolve(data);
+                        } catch (e) {
+                            reject('INVALID SERVER RESPONSE');
+                        }
+                    } else {
+                        try {
+                            const data = JSON.parse(xhr.responseText);
+                            reject(data.error || `HTTP ${xhr.status}`);
+                        } catch (e) {
+                            reject(`HTTP ${xhr.status}`);
+                        }
+                    }
                 };
                 xhr.onerror = () => reject('NETWORK ERROR');
             });
@@ -253,8 +269,11 @@ async function handleFileUpload(files) {
 
             await promise;
             statusEl.innerText = `SAVED ${file.name} OK`;
+            statusEl.className = 'status success';
         } catch (e) {
             statusEl.innerText = `UPLOAD FAILED FOR ${file.name}: ${e}`;
+            statusEl.className = 'status error';
+            console.error("Upload error", e);
             break;
         }
     }
@@ -262,8 +281,9 @@ async function handleFileUpload(files) {
     progressBar.style.width = '0%';
     setTimeout(() => {
         progressContainer.style.display = 'none';
+        statusEl.style.display = 'none';
         refreshFilesTab();
-    }, 2000);
+    }, 3000);
 }
 
 async function updateMonitorChannel() {
