@@ -172,6 +172,19 @@ async function refreshFilesTab() {
     const listBody = document.getElementById('files-list');
     listBody.innerHTML = '<tr><td colspan="2">LOADING FILES...</td></tr>';
 
+    // First fetch status to ensure mountedFiles is up-to-date
+    try {
+        const statusRes = await fetch('/api/status');
+        if (statusRes.ok) {
+            const data = await statusRes.json();
+            if (data && data.drive_stats) {
+                mountedFiles = data.drive_stats
+                    .filter(s => s && s.full_path)
+                    .map(s => s.full_path);
+            }
+        }
+    } catch (e) { console.warn("Failed to update mount status", e); }
+
     const files = await fetchFiles();
     listBody.innerHTML = '';
 
@@ -228,6 +241,25 @@ async function customConfirm(message) {
     });
 }
 
+async function customAlert(message) {
+    return new Promise(resolve => {
+        const overlay = document.getElementById('custom-alert');
+        const msgEl = document.getElementById('alert-msg');
+        const btnOk = document.getElementById('alert-ok');
+
+        msgEl.innerText = message;
+        overlay.style.display = 'flex';
+        _dialogOpen = true;
+
+        btnOk.onclick = () => {
+            overlay.style.display = 'none';
+            _dialogOpen = false;
+            btnOk.onclick = null;
+            resolve();
+        };
+    });
+}
+
 async function deleteFile(path) {
     const confirmed = await customConfirm(`ARE YOU SURE YOU WANT TO DELETE\n${path}?`);
     if (!confirmed) return;
@@ -243,10 +275,10 @@ async function deleteFile(path) {
             refreshFilesTab();
             refreshDriveSelects();
         } else {
-            alert('DELETE FAILED: ' + result.error);
+            await customAlert('DELETE FAILED:\n\n' + result.error);
         }
     } catch (e) {
-        alert('DELETE FAILED: ' + e);
+        await customAlert('DELETE FAILED:\n\n' + e);
     }
 }
 
