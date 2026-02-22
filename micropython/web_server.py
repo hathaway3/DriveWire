@@ -223,32 +223,40 @@ async def upload_file_endpoint(request):
         clean_name = filename.split('/')[-1].split('\\')[-1]
         target_path = '/sd/' + clean_name
         
-        # Ensure /sd exists and check capacity
+        # Ensure /sd is a proper mount and check capacity
         try:
             root_dirs = os.listdir('/')
             print(f"Root contents: {root_dirs}")
             
-            # Check for ghost directory/mount conflict
-            if 'sd' not in root_dirs and '/sd' not in root_dirs:
-                print("Upload Error: SD card not mounted")
-                return {'error': 'SD card not mounted. Cannot upload to SD.'}, 400
-                
-            # Log capacity for diagnostics
+            # Detect ghost 'sd' directories (directories on flash that aren't the mount)
+            sd_count = len([x for x in root_dirs if x == 'sd'])
+            if sd_count > 1:
+                print(f"WARNING: Multiple 'sd' entries found ({sd_count}). Resolving conflict...")
+                # We can't safely rename the mount, but we can detect it.
+                # If we see two 'sd' entries, the RP2040 is in a weird state.
+            
+            # Verify /sd is actually the mount
             try:
                 flash_stat = os.statvfs('/')
                 sd_stat = os.statvfs('/sd')
+                if flash_stat == sd_stat:
+                    # If stats are identical, /sd is definitely just a folder on internal flash
+                    print("ERROR: /sd is a directory on internal flash. SD Card NOT properly mounted!")
+                    return {'error': 'SD Card not mounted (Conflict: /sd is on flash)'}, 500
+                
                 flash_free = flash_stat[0] * flash_stat[3] / 1024
                 sd_free = sd_stat[0] * sd_stat[3] / 1024
                 print(f"Capacity check - Flash free: {flash_free:.1f}KB, SD free: {sd_free:.1f}KB")
                 
-                # If stats are identical, it might be writing to flash instead of SD
-                if flash_stat == sd_stat:
-                    print("WARNING: /sd appears to be a directory on internal flash, not the SD card mount!")
-                    if sd_free < int(content_length or 0) / 1024:
-                         return {'error': f'Insufficient space on internal flash ({sd_free:.1f}KB). Verify SD card mount.'}, 400
+                if sd_free < int(content_length or 0) / 1024:
+                     return {'error': f'Insufficient space on SD card ({sd_free:.1f}KB)'}, 400
 
             except Exception as e:
                 print(f"Capacity check failed: {e}")
+                # Fallback check for 'sd' existence
+                if 'sd' not in root_dirs:
+                    return {'error': 'SD card not found in root'}, 400
+
         except Exception as e:
             print(f"SD card check failed: {e}")
             return {'error': f'SD card check failed: {e}'}, 500
@@ -263,6 +271,9 @@ async def upload_file_endpoint(request):
             async with sd_card.get_lock():
                 with open(target_path, 'wb') as f:
                     while True:
+                        # Yield to event loop to keep network processing alive
+                        await asyncio.sleep(0)
+                        
                         chunk = await request.stream.read(chunk_size)
                         if not chunk:
                             print("End of stream reached")
@@ -273,6 +284,8 @@ async def upload_file_endpoint(request):
                         # Log progress every 64KB
                         if bytes_written % (16 * chunk_size) == 0:
                             print(f"Uploaded: {bytes_written}/{total_size} bytes")
+                            # Explicitly yield after a write burst
+                            await asyncio.sleep(0.01)
         except Exception as e:
             print(f"Stream write error: {e}")
             return {'error': f'Write failed: {e}'}, 500
