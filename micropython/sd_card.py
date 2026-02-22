@@ -62,7 +62,9 @@ def init_sd():
         _sd = sdcard.SDCard(spi, cs)
 
         # Create mount point if needed
-        if _mount_point not in os.listdir('/'):
+        # os.listdir('/') returns names WITHOUT leading slash (e.g. 'sd' not '/sd')
+        mount_name = _mount_point.strip('/')
+        if mount_name not in os.listdir('/'):
             try:
                 os.mkdir(_mount_point)
                 print(f"SD card: Created mount point {_mount_point}")
