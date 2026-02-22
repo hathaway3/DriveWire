@@ -114,6 +114,7 @@ async function init() {
 const VALID_TABS = ['config', 'status', 'terminal', 'drives', 'files'];
 let mountedFiles = [];
 let isUploading = false;
+let _dialogOpen = false;
 
 function switchTab(tabName) {
     if (!VALID_TABS.includes(tabName)) return;
@@ -205,7 +206,10 @@ async function refreshFilesTab() {
 }
 
 async function deleteFile(path) {
-    if (!confirm(`ARE YOU SURE YOU WANT TO DELETE ${path}?`)) return;
+    _dialogOpen = true;
+    const confirmed = confirm(`ARE YOU SURE YOU WANT TO DELETE ${path}?`);
+    _dialogOpen = false;
+    if (!confirmed) return;
 
     try {
         const response = await fetch('/api/files/delete', {
@@ -347,7 +351,7 @@ async function updateMonitorChannel() {
 }
 
 async function pollStatus() {
-    if (isUploading) {
+    if (isUploading || _dialogOpen) {
         console.log("Skipping pollStatus during upload");
         return;
     }
@@ -650,7 +654,7 @@ async function saveConfig() {
 }
 
 async function pollSdStatus() {
-    if (isUploading) {
+    if (isUploading || _dialogOpen) {
         console.log("Skipping pollSdStatus during upload");
         return;
     }
