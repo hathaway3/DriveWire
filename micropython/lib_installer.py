@@ -31,67 +31,63 @@ def connect_wifi(ssid, password, max_retries=3):
 
 def install_dependencies():
     """Install required dependencies with retry logic and verification."""
-    try:
-        import microdot
-        print("Microdot library already installed.")
-        return
-    except ImportError:
-        print("Microdot library not found. Attempting to install...")
-        
-        # Load config for WiFi credentials
+    # List of (module_name, pip_name, [github_files])
+    # pip_name is used for mip.install()
+    # github_files is used for manual fallback if mip fails
+    dependencies = [
+        ("microdot", "microdot", {
+            "name": "Microdot",
+            "base": "https://raw.githubusercontent.com/miguelgrinberg/microdot/v1.3.4/src",
+            "files": ["microdot.py", "microdot_asyncio.py"]
+        }),
+        ("sdcard", "sdcard", {
+            "name": "SD Card Driver",
+            "base": "https://raw.githubusercontent.com/micropython/micropython-lib/master/micropython/drivers/storage/sdcard",
+            "files": ["sdcard.py"]
+        })
+    ]
+
+    for module_name, pip_name, github_info in dependencies:
         try:
-            from config import Config
-            cfg = Config()
+            __import__(module_name)
+            print(f"{module_name} library already installed.")
         except ImportError:
-            print("Config not found, cannot connect to WiFi.")
-            return
-
-        if not connect_wifi(cfg.get("wifi_ssid"), cfg.get("wifi_password")):
-            print("Cannot install libraries: No WiFi connection.")
-            return
+            print(f"{module_name} library not found. Attempting to install...")
             
-        try:
-            # Try mip (standard on newer MicroPython)
+            # Load config for WiFi credentials if not already connected
             try:
-                import mip
-                print("Using mip to install microdot...")
-                try:
-                    mip.install("microdot")
-                except Exception:
-                    # Fallback to direct github install
-                    mip.install('github:miguelgrinberg/microdot')
-
-                # Verify installation
-                import microdot
-                print("Installation complete via mip.")
+                from config import Config
+                cfg = Config()
+            except ImportError:
+                print("Config not found, cannot connect to WiFi.")
                 return
-            except (ImportError, Exception) as e:
-                print(f"mip install failed or incomplete: {e}")
 
-            # Fallback to manual download using urequests
-            try:
-                import urequests
+            if not connect_wifi(cfg.get("wifi_ssid"), cfg.get("wifi_password")):
+                print(f"Cannot install {module_name}: No WiFi connection.")
+                continue
                 
-                candidates = [
-                    {
-                        "name": "v2 (latest)",
-                        "base": "https://raw.githubusercontent.com/miguelgrinberg/microdot/main/src/microdot",
-                        "files": ["microdot.py", "microdot_asyncio.py"] 
-                    },
-                    {
-                        "name": "v1.3.4 (stable)",
-                        "base": "https://raw.githubusercontent.com/miguelgrinberg/microdot/v1.3.4/src",
-                        "files": ["microdot.py", "microdot_asyncio.py"]
-                    }
-                ]
+            try:
+                # Try mip (standard on newer MicroPython)
+                try:
+                    import mip
+                    print(f"Using mip to install {pip_name}...")
+                    mip.install(pip_name)
+                    # Verify installation
+                    __import__(module_name)
+                    print(f"Installation of {module_name} complete via mip.")
+                    continue
+                except (AttributeError, ImportError, Exception) as e:
+                    print(f"mip install failed for {pip_name}: {e}. Trying github fallback...")
 
-                installed = False
-                for cand in candidates:
-                    print(f"Attempting install from {cand['name']}...")
+                # Fallback to manual download using urequests
+                try:
+                    import urequests
+                    
+                    print(f"Attempting manual install for {github_info['name']}...")
                     success = True
-                    for file in cand['files']:
+                    for file in github_info['files']:
                         print(f"Downloading {file}...")
-                        url = f"{cand['base']}/{file}"
+                        url = f"{github_info['base']}/{file}"
                         try:
                             r = urequests.get(url)
                             try:
@@ -112,27 +108,21 @@ def install_dependencies():
                             break
                     
                     if success:
-                        installed = True
-                        print(f"Installation successful from {cand['name']}.")
                         # Verify installation
                         try:
-                            import microdot
-                            print("Installation verified.")
+                            __import__(module_name)
+                            print(f"Installation of {module_name} verified.")
                         except ImportError:
-                            print("Warning: Installation completed but import failed.")
-                        break
+                            print(f"Warning: {module_name} installed but import failed.")
                     else:
-                        print(f"Failed to install from {cand['name']}. Trying next...")
+                        print(f"Failed to install {github_info['name']} from GitHub.")
 
-                if not installed:
-                    raise Exception("All download attempts failed.")
+                except Exception as e:
+                    print(f"Manual download failed: {e}")
+                    print(f"Please manually copy the files for {module_name} to the device.")
 
             except Exception as e:
-                print(f"Manual download failed: {e}")
-                print("Please manually copy 'microdot.py' and 'microdot_asyncio.py' to the device.")
-
-        except Exception as e:
-            print(f"Failed to install libraries: {e}")
+                print(f"Failed to install {module_name}: {e}")
 
 if __name__ == "__main__":
     install_dependencies()
