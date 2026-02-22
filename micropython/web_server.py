@@ -21,6 +21,7 @@ app = Microdot()
 Request.max_content_length = 2 * 1024 * 1024  # 2MB limit for uploads
 Request.max_body_length = 16 * 1024          # Small body limit to force streaming
 config = shared_config
+_uploading = False  # Flag to prevent SD polling during uploads
 
 @app.route('/')
 async def index(request):
@@ -124,6 +125,9 @@ async def files_endpoint(request):
 @app.route('/api/sd/status')
 async def sd_status_endpoint(request):
     """Return SD card mount status and storage info."""
+    if _uploading:
+        # During uploads, return minimal info to avoid SPI access
+        return {'mounted': True, 'mount_point': '/sd', 'busy': True}
     try:
         info = await sd_card.get_info()
         info['files_found'] = len([f for f in get_dsk_files() if f.startswith('/sd')])
@@ -207,6 +211,7 @@ async def request_too_large(request):
 @app.route('/api/files/upload', methods=['POST'])
 async def upload_file_endpoint(request):
     """Handle file upload via streaming POST with X-Filename header."""
+    global _uploading
     try:
         filename = request.headers.get('X-Filename')
         content_length = request.headers.get('Content-Length')
@@ -214,96 +219,68 @@ async def upload_file_endpoint(request):
         
         if not filename:
             print("Upload Error: Missing X-Filename header")
-            return {'error': 'Missing X-Filename header. Please use the Files tab drag-and-drop.'}, 400
+            return {'error': 'Missing X-Filename header.'}, 400
             
-        # Basic validation
         if not filename.lower().endswith('.dsk'):
             print(f"Upload Error: Invalid file type: {filename}")
             return {'error': 'Only .dsk files are supported.'}, 400
             
-        # Clean filename to prevent path traversal
+        # Clean filename 
         clean_name = filename.split('/')[-1].split('\\')[-1]
         target_path = '/sd/' + clean_name
-        
-        # Ensure /sd is a proper mount and check capacity
-        try:
-            root_dirs = os.listdir('/')
-            print(f"Root contents: {root_dirs}")
-            
-            # Detect ghost 'sd' directories (directories on flash that aren't the mount)
-            sd_count = len([x for x in root_dirs if x == 'sd'])
-            if sd_count > 1:
-                print(f"WARNING: Multiple 'sd' entries found ({sd_count}). Resolving conflict...")
-                # We can't safely rename the mount, but we can detect it.
-                # If we see two 'sd' entries, the RP2040 is in a weird state.
-            
-            # Verify /sd is actually the mount
-            try:
-                flash_stat = os.statvfs('/')
-                sd_stat = os.statvfs('/sd')
-                if flash_stat == sd_stat:
-                    # If stats are identical, /sd is definitely just a folder on internal flash
-                    print("ERROR: /sd is a directory on internal flash. SD Card NOT properly mounted!")
-                    return {'error': 'SD Card not mounted (Conflict: /sd is on flash)'}, 500
-                
-                flash_free = flash_stat[0] * flash_stat[3] / 1024
-                sd_free = sd_stat[0] * sd_stat[3] / 1024
-                print(f"Capacity check - Flash free: {flash_free:.1f}KB, SD free: {sd_free:.1f}KB")
-                
-                if sd_free < int(content_length or 0) / 1024:
-                     return {'error': f'Insufficient space on SD card ({sd_free:.1f}KB)'}, 400
-
-            except Exception as e:
-                print(f"Capacity check failed: {e}")
-                # Fallback check for 'sd' existence
-                if 'sd' not in root_dirs:
-                    return {'error': 'SD card not found in root'}, 400
-
-        except Exception as e:
-            print(f"SD card check failed: {e}")
-            return {'error': f'SD card check failed: {e}'}, 500
-
-        # Stream save to avoid memory issues
-        # We use a lock to prevent concurrent SPI access
-        chunk_size = 4096
-        bytes_written = 0
         total_size = int(content_length) if content_length else 0
         
+        if total_size == 0:
+            return {'error': 'Content-Length is required'}, 400
+        
+        # Quick SD card check
         try:
-            async with sd_card.get_lock():
-                with open(target_path, 'wb') as f:
-                    while True:
-                        # Yield to event loop to keep network processing alive
-                        await asyncio.sleep(0)
-                        
-                        chunk = await request.stream.read(chunk_size)
-                        if not chunk:
-                            print("End of stream reached")
-                            break
-                            
-                        try:
-                            f.write(chunk)
-                            bytes_written += len(chunk)
-                        except Exception as write_err:
-                            print(f"SD Write Error at {bytes_written} bytes: {write_err}")
-                            raise write_err
-                        
-                        # Log progress every 64KB
-                        if bytes_written % (16 * chunk_size) == 0:
-                            print(f"Uploaded: {bytes_written}/{total_size} bytes")
-                            # Explicitly yield and collect garbage after a write burst
-                            gc.collect()
-                            await asyncio.sleep(0.05)
+            sd_stat = os.statvfs('/sd')
+            sd_free = sd_stat[0] * sd_stat[3]
+            print(f"SD free: {sd_free // 1024}KB, need: {total_size // 1024}KB")
+            if sd_free < total_size:
+                return {'error': 'Insufficient SD card space'}, 400
         except Exception as e:
-            print(f"Stream write error: {e}")
+            print(f"SD check failed: {e}")
+            return {'error': f'SD card not accessible: {e}'}, 500
+
+        # Signal that an upload is in progress (prevents SD polling from interfering)
+        _uploading = True
+        chunk_size = 2048
+        bytes_written = 0
+        
+        try:
+            with open(target_path, 'wb') as f:
+                remaining = total_size
+                while remaining > 0:
+                    read_size = min(chunk_size, remaining)
+                    chunk = await request.stream.read(read_size)
+                    if not chunk:
+                        print(f"Stream ended early at {bytes_written}/{total_size}")
+                        break
+                    f.write(chunk)
+                    bytes_written += len(chunk)
+                    remaining -= len(chunk)
+                    
+                    # Log progress every ~32KB
+                    if bytes_written % (16 * chunk_size) == 0:
+                        print(f"Uploaded: {bytes_written}/{total_size} bytes")
+                        gc.collect()
+                        await asyncio.sleep(0)
+        except Exception as e:
+            print(f"Upload write error at {bytes_written}: {e}")
+            _uploading = False
             return {'error': f'Write failed: {e}'}, 500
+        finally:
+            _uploading = False
                 
         print(f"Upload complete: {target_path} ({bytes_written} bytes)")
-        if total_size and bytes_written != total_size:
+        if bytes_written != total_size:
             print(f"Warning: size mismatch! Expected {total_size}, got {bytes_written}")
         
         return {'status': 'ok', 'path': target_path, 'size': bytes_written}
     except Exception as e:
+        _uploading = False
         print(f"General upload error: {e}")
         return {'error': f'Upload failed: {e}'}, 500
 
