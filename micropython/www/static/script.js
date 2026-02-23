@@ -125,17 +125,30 @@ function markConfigDirty() {
     if (configDirty) return;
     configDirty = true;
     const btn = document.getElementById('btn-save-config');
-    const warning = document.getElementById('unsaved-warning');
+    const stickyWarning = document.getElementById('sticky-unsaved-warning');
+    const bottomWarning = document.getElementById('bottom-unsaved-warning');
     if (btn) btn.classList.add('btn-unsaved');
-    if (warning) warning.style.display = 'block';
+    if (stickyWarning) stickyWarning.style.display = 'block';
+    if (bottomWarning) bottomWarning.style.display = 'block';
 }
 
 function clearConfigDirty() {
     configDirty = false;
     const btn = document.getElementById('btn-save-config');
-    const warning = document.getElementById('unsaved-warning');
+    const stickyWarning = document.getElementById('sticky-unsaved-warning');
+    const bottomWarning = document.getElementById('bottom-unsaved-warning');
     if (btn) btn.classList.remove('btn-unsaved');
-    if (warning) warning.style.display = 'none';
+    if (stickyWarning) stickyWarning.style.display = 'none';
+    if (bottomWarning) bottomWarning.style.display = 'none';
+}
+
+async function revertConfig() {
+    const confirmed = await customConfirm("ARE YOU SURE YOU WANT TO REVERT ALL UNSAVED CHANGES?");
+    if (confirmed) {
+        // Re-initialize the form from the server state
+        await init();
+        // init() automatically calls clearConfigDirty() at the end
+    }
 }
 
 const VALID_TABS = ['config', 'status', 'terminal', 'drives', 'files'];

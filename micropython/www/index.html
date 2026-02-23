@@ -421,6 +421,31 @@
         details[open]>summary::before {
             transform: rotate(90deg);
         }
+
+        /* Unsaved Changes Visuals */
+        @keyframes pulse-unsaved {
+            0% {
+                box-shadow: 0 0 0 0 rgba(255, 60, 60, 0.7);
+                border-color: var(--coco-alert);
+                color: var(--coco-alert);
+            }
+
+            50% {
+                box-shadow: 0 0 0 10px rgba(255, 60, 60, 0);
+                border-color: #882222;
+                color: #ff8888;
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(255, 60, 60, 0);
+                border-color: var(--coco-alert);
+                color: var(--coco-alert);
+            }
+        }
+
+        .btn-unsaved {
+            animation: pulse-unsaved 1.5s infinite;
+        }
     </style>
 </head>
 
@@ -440,6 +465,12 @@
 
     <!-- CONFIGURATION TAB -->
     <div id="tab-config" class="tab-content active">
+
+        <!-- Sticky Warning Banner -->
+        <div id="sticky-unsaved-warning"
+            style="display:none; background-color: #330000; border: 2px solid var(--coco-alert); color: var(--coco-alert); font-weight: bold; text-align: center; padding: 15px; margin-bottom: 20px; font-size: 1.2em; position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 15px rgba(0,0,0,0.8);">
+            &#9888; UNSAVED CHANGES - PLEASE SAVE OR REVERT
+        </div>
 
         <div class="card">
             <h2>VIRTUAL DRIVES</h2>
