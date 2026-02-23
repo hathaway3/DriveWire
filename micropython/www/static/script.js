@@ -109,11 +109,39 @@ async function init() {
     // Start Polling
     setInterval(pollStatus, 1000);  // 1 second for live time + heartbeat
     setInterval(pollSdStatus, 10000);  // SD status every 10s
+
+    // Attach listeners for dirty state tracking on the config form
+    const configTab = document.getElementById('tab-config');
+    if (configTab) {
+        configTab.addEventListener('input', markConfigDirty);
+        configTab.addEventListener('change', markConfigDirty);
+    }
+
+    // Config just loaded from server, clear dirty state
+    clearConfigDirty();
+}
+
+function markConfigDirty() {
+    if (configDirty) return;
+    configDirty = true;
+    const btn = document.getElementById('btn-save-config');
+    const warning = document.getElementById('unsaved-warning');
+    if (btn) btn.classList.add('btn-unsaved');
+    if (warning) warning.style.display = 'block';
+}
+
+function clearConfigDirty() {
+    configDirty = false;
+    const btn = document.getElementById('btn-save-config');
+    const warning = document.getElementById('unsaved-warning');
+    if (btn) btn.classList.remove('btn-unsaved');
+    if (warning) warning.style.display = 'none';
 }
 
 const VALID_TABS = ['config', 'status', 'terminal', 'drives', 'files'];
 let mountedFiles = [];
 let isUploading = false;
+let configDirty = false;
 let _dialogOpen = false;
 
 function switchTab(tabName) {
@@ -697,6 +725,7 @@ async function saveConfig() {
         const result = await response.json();
         if (result.status === 'ok') {
             showStatus('Configuration saved successfully!', 'success');
+            clearConfigDirty();
         } else {
             showStatus('Error saving: ' + (result.message || 'Unknown error'), 'error');
         }
