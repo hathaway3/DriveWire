@@ -563,12 +563,15 @@
             </div>
         </details>
 
-        <div class="actions">
-            <button id="btn-save-config" class="btn" onclick="saveConfig()">SAVE CONFIGURATION</button>
-            <div id="unsaved-warning"
-                style="display:none; color: var(--coco-alert); font-weight: bold; text-align: center; margin-top: 15px; font-size: 1.2em; animation: pulse-unsaved 1.5s infinite;">
-                &#9888; UNSAVED CHANGES - CLICK SAVE TO APPLY
-            </div>
+        <div class="actions" style="display: flex; gap: 15px;">
+            <button id="btn-save-config" class="btn" style="flex: 2;" onclick="saveConfig()">SAVE CONFIGURATION</button>
+            <button id="btn-revert-config" class="btn btn-secondary"
+                style="flex: 1; border: 2px solid var(--coco-alert); color: var(--coco-alert);"
+                onclick="revertConfig()">REVERT</button>
+        </div>
+        <div id="bottom-unsaved-warning"
+            style="display:none; color: var(--coco-alert); font-weight: bold; text-align: center; margin-top: 15px; font-size: 1.2em; animation: pulse-unsaved 1.5s infinite;">
+            &#9888; UNSAVED CHANGES - CLICK SAVE TO APPLY
         </div>
         <div id="status-msg" class="status"></div>
     </div> <!-- END CONFIG TAB -->
