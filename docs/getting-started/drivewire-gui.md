@@ -12,10 +12,7 @@ By closing this window, you will terminate the server. You can minimize the serv
 
 See [Using DriveWire](using-drivewire.md#introduction) 
 
-!!! note "Generalization (Review Needed)"
-    Generalized heading to "DriveWire User Interface".
-
-    ## DriveWire User Interface
+## DriveWire User Interface
 
 *(Image:Client.PNG)* 
 

@@ -1,9 +1,6 @@
 # NitrOS-9 Level 2 DriveWire Integration
 
-!!! note "Generalization (Review Needed)"
-    Generalized to refer to standard DriveWire features rather than specific version 4 features.
-
-    This guide categorizes the NitrOS-9 Level 2 modules and device descriptors used for DriveWire integration, helping you understand how the NitrOS-9 "DriveWire" bootfiles are constructed and how they map to DriveWire features.
+This guide categorizes the NitrOS-9 Level 2 modules and device descriptors used for DriveWire integration, helping you understand how the NitrOS-9 "DriveWire" bootfiles are constructed and how they map to DriveWire features.
 
 ## Bootfiles
 

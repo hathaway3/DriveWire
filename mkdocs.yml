@@ -13,26 +13,26 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Getting Started:
-    - Installation: Installation.md
-    - Building from Source: Building_from_source.md
-    - Cables: DriveWire_cables.md
-  - User Guide:
-    - Using DriveWire: Using_DriveWire.md
-    - GUI Manual: The_DriveWire_GUI.md
-    - Command Reference: The_'dw'_commands.md
-    - Troubleshooting Memory: Solving_low_memory_issues.md
-    - CoCo Client Software: Client_CoCo.md
-    - Non-CoCo Client Software: Client_Non_CoCo.md
-    - Getting Help: Getting_help.md
-  - Technical Reference:
-    - Specification: DriveWire_Specification.md
-    - Becker Port Spec: Becker_port_specification.md
-    - Config XML: Config.xml.md
-    - Configuration: Configuration.md
-    - OS9 Modules: OS9_Modules.md
-  - Developer Guide:
-    - Network Programming: Writing_Network_Capable_Software.md
-    - Beta Info: Beta.md
-  - Legacy:
-    - Driver Installation: Add_DriveWire_Drivers.md
-    - Wiki Home: Home.md
+    - Installation: getting-started/installation.md
+    - Configuration: getting-started/configuration.md
+    - Using DriveWire: getting-started/using-drivewire.md
+    - GUI Manual: getting-started/drivewire-gui.md
+    - Cables: getting-started/cables.md
+  - User Guides:
+    - NitrOS-9 Level 2 Integration: guides/nitros9-level2-integration.md
+    - OS-9 Modules: guides/os9-modules.md
+    - Command Reference: guides/dw-commands.md
+    - Troubleshooting Memory: guides/solving-low-memory-issues.md
+    - Adding Drivers: guides/add-drivewire-drivers.md
+  - Supported Clients:
+    - CoCo: clients/coco.md
+    - Non-CoCo: clients/non-coco.md
+  - Technical Specifications:
+    - DriveWire Specification: technical/drivewire-specification.md
+    - Becker Port Spec: technical/becker-port-specification.md
+    - Config XML Reference: technical/config-xml.md
+    - Building from Source: technical/building-from-source.md
+    - Network Programming: technical/writing-network-software.md
+  - Community & Support:
+    - Getting Help: community/getting-help.md
+    - Beta Testing: community/beta-testing.md
