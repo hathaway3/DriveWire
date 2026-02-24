@@ -6,33 +6,25 @@ DriveWire provides many services to your CoCo. These include disk drives that ca
 
 ## Instances
 
-!!! note "Generalization (Review Needed)"
-    Generalized server and GUI terminology.
+## Instances
 
-    The DriveWire server can provide any number of instances. Each instance supports one CoCo via one connection, such as a serial link or TCP/IP connection. A single server can run one or many instances at the same time. Each instance has its own set of virtual disks, ports, etc. Instances can be started and stopped using `dw` commands or across implementations using tools like the Instance Manager in the Java GUI.
+The DriveWire server can provide any number of instances. Each instance supports one CoCo via one connection, such as a serial link or TCP/IP connection. A single server can run one or many instances at the same time. Each instance has its own set of virtual disks, ports, etc. Instances can be started and stopped using `dw` commands or across implementations using tools like the Instance Manager in the Java GUI.
 
 *(Image: drivewireserver block.jpg)*
 
-!!! note "Generalization (Review Needed)"
-    Generalized GUI name.
-
-    There are multiple interfaces which can be used to configure and control these services. The most basic tool for these tasks is the OS-9 command `dw` which comes on a DriveWire bootable NitrOS-9 image and can be found in the DriveWire CVS repository in source form. If you prefer to manage DriveWire from a PC, you can use the Java-based User Interface, a GUI that runs on modern computers.
+There are multiple interfaces which can be used to configure and control these services. The most basic tool for these tasks is the OS-9 command `dw` which comes on a DriveWire bootable NitrOS-9 image. If you prefer to manage DriveWire from a PC, you can use the Java-based User Interface, a GUI that runs on modern computers.
 
 ## Starting the DriveWire Server and GUI
 
-!!! note "Generalization (Review Needed)"
-    The following section on the Java GUI has been flagged for generalization.
+### Java GUI Launchers
 
-    To start the Java-based DriveWire server from a GUI, double click on the launcher file most likely to work on your system:
+To start the Java-based DriveWire server from a GUI, double click on the launcher file most likely to work on your system:
 
 - **Windows**: `DriveWire.exe` or `DriveWire.jar`
 - **macOS**: `DriveWire.command`
 - **Linux/BSD**: `DriveWire.sh`
 
-!!! note "Generalization (Review Needed)"
-    Updated launch instructions to be more generic.
-
-    On all systems except macOS, change to the directory where you unzipped the DriveWire package, and enter:
+On all systems except macOS, change to the directory where you unzipped the DriveWire package, and enter:
 
 ```bash
 java -jar DriveWire.jar
@@ -91,10 +83,7 @@ This diagram displays how the various disk settings effect the operation of the 
 
 The 'dw' utility runs in OS9, it can be found on the latest NitrOS9 disks for DriveWire. The sub commands and options available in dw provide many informational displays and give you a way to configure every aspect of DriveWire operation right from your CoCo. 
 
-!!! note "Generalization (Review Needed)"
-    Generalized GUI command box reference.
-
-    You can also issue any dw command from the Java GUI using the command box at the bottom of the main form. 
+You can also issue any dw command from the Java GUI using the command box at the bottom of the main form. 
 
 All of the sub commands and options to dw may be abbreviated to their shortest unique form. For example, the command "dw server show threads" can be given as "dw s s t". 
 
@@ -106,20 +95,15 @@ HDBDOS for DriveWire allows access to DriveWire disks under DECB.
 
 In DriveWire 3, DriveWire disks 0 - 3 are treated as a virtual hard drive containing 256 disk images. You can communicate with only one of these virtual hard drives at a time, switching between them using the command "DRIVE #x". Within these large files you access the 256 individual disks with the standard DRIVE command. 
 
-!!! note "Generalization (Review Needed)"
-    Generalized DriveWire behavior.
-
-    DriveWire defaults to identical behavior. 
+DriveWire defaults to identical behavior for compatibility. 
 
 **DW3/Default mode:**
 
 *(Image: hdbdos_dw3.gif)* 
 
   
-!!! note "Generalization (Review Needed)"
-    Generalized HDBDOS mode comparison.
-
-    The way DriveWire 3 and HDBDOS work together makes it difficult to do some common tasks. There is no way to copy data between two different .dsk files, for instance. To make these tasks easier, modern DriveWire servers have an alternate mode that can be enabled by specifying: 
+!!! note "Modern DriveWire Features"
+    Modern DriveWire servers have an alternate mode that can be enabled by specifying: 
     
     &lt;HDBDOSMode&gt;true&lt;/HDBDOSMode&gt;
 
@@ -146,10 +130,7 @@ To write a .dsk image to a real floppy, use:
 
 ### Using DW3 style files containing multiple floppy images
 
-!!! note "Generalization (Review Needed)"
-    Generalized multi-disk image support.
-
-    If you have existing 'hard disk' images, containing 256 floppies in a single file, you can still use them in current DriveWire servers. In fact, you can do some things with them that were impossible in legacy versions. 
+If you have existing 'hard disk' images, containing 256 floppies in a single file, you can still use them in current DriveWire servers. In fact, you can do some things with them that were impossible in legacy versions. 
 
 The simplest way to use these types of images is to leave HDBDOS mode turned off. Current DriveWire servers will behave exactly like DW3 did in this mode, and you can use the multi-disk images as you always have. 
 
@@ -157,10 +138,7 @@ However, you can now copy between disk images, something that was impossible in 
 
 When in HDBDOS mode, the server ignores the drive # sent in I/O requests and instead uses the absolute sector of the request to determine which server drive will handle it. This means that you can load a regular single disk .dsk image into any of the 256 drives, and access it from the coco simply as that same drive. To copy between two single disk image files, simply mount each in a different drive # and copy as usual. 
 
-!!! note "Generalization (Review Needed)"
-    Generalized multi-disk image handling.
-
-    To move files between multi-disk images is a bit more complicated, but it's quite easy once you get the hang of it. The multi-disk images contain up to 256 disk images, each containing exactly 630 sectors. We can use the sector offset setting to map any of those individual disks to any of the DriveWire server's drives, and then again we access these as the same drive # on the CoCo. 
+To move files between multi-disk images is a bit more complicated, but it's quite easy once you get the hang of it. The multi-disk images contain up to 256 disk images, each containing exactly 630 sectors. We can use the sector offset setting to map any of those individual disks to any of the DriveWire server's drives, and then again we access these as the same drive # on the CoCo. 
 
 For instance, lets say you have 2 DW3 style multi disk images, multiA.dsk and multiB.dsk. You want to copy a file from disk #10 in multiA.dsk to disk #20 in multiB.dsk. 
 
@@ -175,10 +153,7 @@ You can also use offsets to access files containing partitions, especially parti
 There are a few options that can be specified in config.xml for use specifically with CoCoBoot. These cannot currently be configured from the GUI, although an updated GUI will be available soon that can manage them. All of these settings should be specified in the &lt;Instance&gt; section(s) you wish them to effect. 
 
   
-!!! note "Generalization (Review Needed)"
-    Generalized path rules.
-
-    NamedObjectDir sets a path to use for named object mount requests. CoCoBoot uses these requests to load scripts and save data. You can specify any valid local path or URL, following the same rules as any disk path or other file setting in DriveWire. Example: 
+`NamedObjectDir` sets a path to use for named object mount requests. CoCoBoot uses these requests to load scripts and save data. You can specify any valid local path or URL, following the same rules as any disk path or other file setting in DriveWire. Example: 
 
 &lt;NamedObjectDir&gt;E:\cocodisks\named&lt;/NamedObjectDir&gt;
 
@@ -191,10 +166,7 @@ If you are using the default 40 column mode in CoCoBoot, the dw command help wil
 
 &lt;CommandShortHelp&gt;false&lt;/CommandShortHelp&gt;
 
-!!! note "Generalization (Review Needed)"
-    Generalized file padding behavior.
-
-    Often you will want to create CoCoBoot scripts using your own editor on modern PC and load them into CoCoBoot via DriveWire. Normally the server will complain about images that are not some multiple of 256 bytes in size. This setting will tell the server to simply pad files out to fill the last sector with 0 (Which CoCoBoot understands). 
+Often you will want to create CoCoBoot scripts using your own editor on modern PC and load them into CoCoBoot via DriveWire. Normally the server will complain about images that are not some multiple of 256 bytes in size. This setting will tell the server to simply pad files out to fill the last sector with 0 (Which CoCoBoot understands). 
 
 &lt;DiskPadPartialSectors&gt;true&lt;/DiskPadPartialSectors&gt;
 
@@ -206,17 +178,11 @@ If you are using the default 40 column mode in CoCoBoot, the dw command help wil
 
 ## Paths
 
-!!! note "Generalization (Review Needed)"
-    Generalized VFS library dependence (specific to Java implementation).
-
-    The Java-based DriveWire server uses the [Apache Commons VFS libraries](http://commons.apache.org/vfs) to access disk images. This means you have a wide variety of options available when loading and saving disk images. You can load disk images via HTTP, FTP, SFTP, CIFS, WebDAV, and from local files. You can also access files within ZIP, gzip, tar and other archives. These functions can be combined to (for instance) access a .dsk inside a ZIP file on a web server. 
+The Java-based DriveWire server uses the [Apache Commons VFS libraries](http://commons.apache.org/vfs) to access disk images. This means you have a wide variety of options available when loading and saving disk images. You can load disk images via HTTP, FTP, SFTP, CIFS, WebDAV, and from local files. You can also access files within ZIP, gzip, tar and other archives. These functions can be combined to (for instance) access a .dsk inside a ZIP file on a web server. 
 
 Paths are specified in URI form and generally follow the rules [explained in the VFS documentation](http://commons.apache.org/vfs/filesystems.html). One important exception is that due to use of "!" as the pipe character in OS-9, you must instead use the asterisk in it's place. 
 
-!!! note "Generalization (Review Needed)"
-    Generalized DriveWire loading behavior.
-
-    Many possible locations for disk images are not writable. The DriveWire server loads the disk image into a local buffer where you can make any changes you like, however these changes are not written back to the source file in these situations. You can still write the disk image to an alternate, writable location (local file, ftp, etc) using the "dw disk write" command. 
+Many possible locations for disk images are not writable. The DriveWire server loads the disk image into a local buffer where you can make any changes you like, however these changes are not written back to the source file in these situations. You can still write the disk image to an alternate, writable location (local file, ftp, etc) using the "dw disk write" command. 
 
 For example, this command loads the extras.dsk from inside the file dw_beta_1.3.tar.gz which is on the website aaronwolfe.com into drive 3: 
     
@@ -255,12 +221,7 @@ To save time, remember that all commands may be abbreviated to their shortest un
 
 ## Ports
 
-*(Image: DWPorts.png)* 
-
-!!! note "Generalization (Review Needed)"
-    Generalized port terminology.
-
-    Ports, ports and more ports... Modern DriveWire lets you specify lots of ports. I've received several questions about what they all do, so here's an attempt to clarify. 
+Ports, ports and more ports... Modern DriveWire lets you specify lots of ports. I've received several questions about what they all do, so here's an attempt to clarify. 
 
 First of all, we're talking about TCP/IP ports here. Although there are some defaults, any free valid TCP port number may be used for any DW setting. TCP/IP port numbers range from 1 to 65535. It is generally best to avoid port numbers below 1024 unless you have a specific need, as these are conventionally reserved for system processes. 
 
@@ -308,10 +269,7 @@ Related settings in config.xml:
 
 #### TermPort
 
-!!! note "Generalization (Review Needed)"
-    Generalized virtual channel terminology.
-
-    This instance-specific port is used in conjunction with the special 'headless' NitrOS-9 disks. When booted with these disks, the CoCo sends all I/O that normally would go to the CoCo's console out over a DriveWire virtual channel. To interact with the console, you telnet to the TermPort on the server. When specified, the instance will listen on this TCP port at all times regardless of a CoCo connection. A single incoming TCP connection is supported. 
+This instance-specific port is used in conjunction with the special 'headless' NitrOS-9 disks. When booted with these disks, the CoCo sends all I/O that normally would go to the CoCo's console out over a DriveWire virtual channel. To interact with the console, you telnet to the TermPort on the server. When specified, the instance will listen on this TCP port at all times regardless of a CoCo connection. A single incoming TCP connection is supported. 
 
 Related settings in config.xml: 
     
@@ -388,9 +346,6 @@ The remaining settings only apply to FX80 mode:
 
 ## Note for users of FTDI USB-Serial adapters
 
-!!! note "Generalization (Review Needed)"
-    Generalized performance notes.
-
-    While working on the server code, I found that my FTDI adapter performed about 20% slower than my Prolific adapter and a 16550 "real" serial port. There is a simple change that can be made in the FTDI driver's settings to bring its performance in line with the other hardware. 
+While working on the server code, I found that my FTDI adapter performed about 20% slower than my Prolific adapter and a 16550 "real" serial port. There is a simple change that can be made in the FTDI driver's settings to bring its performance in line with the other hardware. 
 
 Simply change the "receive buffer latency timer" to 4ms (from the default 16ms). In Windows, this is done in the properties of the adapter, accessible from device manager. 

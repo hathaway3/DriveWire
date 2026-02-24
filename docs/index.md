@@ -1,69 +1,57 @@
 # DriveWire Documentation
 
+Welcome to the DriveWire documentation. DriveWire is a flexible server and protocol suite for the TRS-80 Color Computer and compatible systems, providing virtual disks, networking, and other services.
+
 [TOC]
 
-!!! note "Generalization (Review Needed)"
-    The following home page has been updated to reflect the multi-implementation nature of the DriveWire project.
+## Getting Started
 
-    ## Before you start
+If you are new to DriveWire, start here.
 
-    DriveWire is a flexible server and protocol suite for the TRS-80 Color Computer and compatible systems. It provides virtual disks, networking, and other services.
+- [Installation](getting-started/installation.md) - How to install DriveWire on your system.
+- [Configuration](getting-started/configuration.md) - Setting up DriveWire for your hardware.
+- [Using DriveWire](getting-started/using-drivewire.md) - A comprehensive guide to using DriveWire's features.
+- [DriveWire GUI](getting-started/drivewire-gui.md) - Using the Java-based graphical interface.
+- [DriveWire Cables](getting-started/cables.md) - Information on physical connection cables.
 
-    Please consult the [DriveWire 3 documentation](http://cloud9tech.com/Cloud-9/Support/DriveWire%203%20User%20Manual.pdf) for the legacy information needed to get your CoCo ready to talk to DriveWire.
+## User Guides
 
-    ## Get started with DriveWire
+Detailed guides for specific tasks and features.
 
-    ### Step 1: Choose a DriveWire implementation
+- [NitrOS-9 Level 2 Integration](guides/nitros9-level2-integration.md) - Using DriveWire with NitrOS-9.
+- [OS-9 Modules](guides/os9-modules.md) - Information about OS-9 implementation details.
+- [The 'dw' Commands](guides/dw-commands.md) - Using the DriveWire command-line tools.
+- [Solving Low Memory Issues](guides/solving-low-memory-issues.md) - Tips for running on systems with limited RAM.
+- [Adding DriveWire Drivers](guides/add-drivewire-drivers.md) - How to add drivers to your system.
 
-    This project contains multiple implementations of the DriveWire server:
-    - **Java Server & GUI**: The classic cross-platform implementation.
-    - **MicroPython Server**: A lightweight version for microcontrollers like the Raspberry Pi Pico.
+## Supported Clients
 
-    Download the current version from the [project repository](https://github.com/hathaway3/DriveWire).
+Documentation for specific computer systems.
 
-### Step 2: Install DriveWire
+- [Color Computer](clients/coco.md) - Using DriveWire with the TRS-80 CoCo.
+- [Non-CoCo Systems](clients/non-coco.md) - Information for other compatible systems.
 
-See [Installation](Installation.md) for detailed instructions.
+## Technical Specifications
 
-### Step 3: Run DriveWire
+Deep dives into the protocols and internals.
 
-To start the Java-based server and GUI, see [The DriveWire GUI](The_DriveWire_GUI.md). For other implementations, see their respective documentation.
+- [DriveWire Specification](technical/drivewire-specification.md) - The core protocol details.
+- [Becker Port Specification](technical/becker-port-specification.md) - Hardware interface details.
+- [Config.xml Reference](technical/config-xml.md) - Details on the `config.xml` file.
+- [Building from Source](technical/building-from-source.md) - How to compile DriveWire yourself.
+- [Writing Network Software](technical/writing-network-software.md) - A guide for developers.
 
-### Step 4: Configure DriveWire
+## Community & Support
 
-To configure DriveWire, see [Configuration](Configuration.md).
+- [Getting Help](community/getting-help.md) - Where to find help and community support.
+- [Beta Testing](community/beta-testing.md) - Information on testing developmental versions.
 
-## Carry on
-
-Here are some additional topics that all users may find interesting or helpful.
-
-- [Using DriveWire](Using_DriveWire.md)
-- [Getting Help](Getting_help.md)
-- [Solving Low Memory Issues](Solving_low_memory_issues.md)
-
-## Technical Information
-
-These topics are probably only of interest to programmers, hackers, and advanced users.
-
-- [Config.xml](Config.xml.md) (wip, and not applicable to current release)
-- [OS-9 Modules](OS9_Modules.md)
-- [The 'dw' Commands](The_'dw'_commands.md)
-- [Building from Source](Building_from_source.md)
-- [Writing Network Capable Software](Writing_Network_Capable_Software.md)
-- [DriveWire Specification](DriveWire_Specification.md)
-- [Becker Port Specification](Becker_port_specification.md)
+---
 
 ## Bugs
 
-Feel free to post bug reports in the tickets tracker (**Tickets** tab above). However this is largely unmaintained at this point.
-
-## Source Code
-
-The code is hosted in git (see the **Git** tab above). To get a copy of the repository:
-`git clone git://git.code.sf.net/p/drivewireserver/git drivewireserver`
+Feel free to post bug reports in the tickets tracker on the project repository. Please note that this project is in maintenance mode.
 
 ## License
 
 DriveWire is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-
-DriveWire is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the [GNU General Public License](https://www.gnu.org/licenses/gpl-3.0.txt) for more details.

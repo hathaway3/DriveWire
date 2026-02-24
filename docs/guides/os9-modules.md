@@ -7,7 +7,7 @@ If you'd like to add DriveWire functionality to your existing OS-9 system, you'l
 Premade NitrOS-9 boot disks with all the modules included are available from the [NitrOS-9 project](http://www.nitros9.org/latest/).
 
 The DriveWire modules are included in the NitrOS-9 source code if you'd like to build them yourself.
-For specific details on NitrOS-9 Level 2 integration, please see [NitrOS9 Level 2 Integration](NitrOS9_Level2_Integration.md).
+For specific details on NitrOS-9 Level 2 integration, please see [NitrOS-9 Level 2 Integration](nitros9-level2-integration.md).
 
 ## Modules
 
@@ -15,10 +15,7 @@ For specific details on NitrOS-9 Level 2 integration, please see [NitrOS9 Level 
 
 The I/O routines for all DriveWire functionality are contained in the dwio module. The stock dwio module is called **dwio.sb**. This module uses the bit banger for it's I/O. You can use alternate dwio modules if you'd like to use another device. In the NitrOS9 CVS you will find dw3_becker.sb which enables high speed functionality in Gary Becker's Coco3FPGA project, and dw3_mess.sb which is used with John Linville's MESS patch. 
 
-!!! note "Generalization (Review Needed)"
-    The following TODO has been generalized to refer to enhanced serial protocols rather than just "DW4".
-
-    TODO - find the dwsub for 6551 TODO - document enhanced "Turbo" I/O protocols.
+TODO - find the dwsub for 6551 TODO - document enhanced "Turbo" I/O protocols.
 
 You must load one dwio module in order to use any DriveWire functionality. 
 

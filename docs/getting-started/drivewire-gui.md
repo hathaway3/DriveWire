@@ -1,7 +1,4 @@
-!!! note "Generalization (Review Needed)"
-    The following describes the Java-based graphical interface. Other implementations (like MicroPython) may use different configuration methods.
-
-    The DriveWire Java GUI is a special client designed to allow you to configure the DriveWire server. It contains menus and buttons that simplify and speed up issuing commands to the server. It also allows you to create and maintain Disk sets and load virtual disks (or real floppy drives) for the Color Computer to use. To learn more about the commands in DriveWire, see [Using_DriveWire](Using_DriveWire.md). 
+The DriveWire Java GUI is a special client designed to allow you to configure the DriveWire server. It contains menus and buttons that simplify and speed up issuing commands to the server. It also allows you to create and maintain Disk sets and load virtual disks (or real floppy drives) for the Color Computer to use. To learn more about the commands in DriveWire, see [Using DriveWire](using-drivewire.md). 
 
 [TOC]
 
@@ -13,7 +10,7 @@ When you double-click Go.cmd, the Server Console window is the first thing you w
 
 By closing this window, you will terminate the server. You can minimize the server window if viewing is not required. 
 
-See [Using_DriveWire#Introduction](Using_DriveWire.md#Introduction) 
+See [Using DriveWire](using-drivewire.md#introduction) 
 
 !!! note "Generalization (Review Needed)"
     Generalized heading to "DriveWire User Interface".
@@ -45,7 +42,7 @@ the port
 `[0]` 
 the instance number 
 
-See [Using_DriveWire#Introduction](Using_DriveWire.md#Introduction) for more on instances. 
+See [Using DriveWire](using-drivewire.md#introduction) for more on instances. 
 
 * * *
 
@@ -73,7 +70,7 @@ The button bar is divided into three groups, Diskset, Virtual Drives, and Server
   2. Load Diskset - loads a new diskset 
   3. Save Diskset - saves the current diskset 
 
-For more information on disksets, see [Using_DriveWire#Disk_Sets](Using_DriveWire.md#Disk_Sets). 
+For more information on disksets, see [Using DriveWire](using-drivewire.md#disk-sets). 
 
 **Virtual Drives:**
 
@@ -182,7 +179,7 @@ Refresh the disk list
 Apply
 Apply changes to the disk in the currently selected slot 
 
-See [Using_DriveWire](Using_DriveWire.md) for more information. 
+See [Using DriveWire](using-drivewire.md) for more information. 
 
 * * *
 
@@ -196,7 +193,7 @@ Below the disk list is the server information box. When the server returns infor
 
 At the bottom of the window is the command line. Here you can type any valid DriveWire command. Pressing `[ENTER]` sends the command to the server. 
 
-For more details on DriveWire commands, see [Using_DriveWire#The_'dw'_command](Using_DriveWire.md#The_'dw'_command). 
+For more details on DriveWire commands, see [Using DriveWire](using-drivewire.md#the-dw-command). 
 
 ## Menus
 
