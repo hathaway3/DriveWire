@@ -7,32 +7,54 @@ import micropython
 import activity_led
 
 # OpCodes - using const() to save RAM on MicroPython
-OP_BKPT = micropython.const(0x21)
-OP_TIME = micropython.const(0x23)
-OP_INIT = micropython.const(0x49)
-OP_TERM = micropython.const(0x54)
-OP_READ = micropython.const(0x52)
-OP_READEX = micropython.const(0x58)
-OP_REREAD = micropython.const(0xD2)
-OP_REREADEX = micropython.const(0xD8)
-OP_WRITE = micropython.const(0x57)
-OP_REWRITE = micropython.const(0xD7)
-OP_RESET = micropython.const(0xFE)
-OP_RESET2 = micropython.const(0xFF)
-OP_RESET3 = micropython.const(0xF8)
-OP_DWINIT = micropython.const(0x5A)
+# OpCodes - using const() to save RAM on MicroPython
+OP_NOP = micropython.const(0x00)
 OP_NAMEOBJ_MOUNT = micropython.const(0x01)
 OP_NAMEOBJ_CREATE = micropython.const(0x02)
-OP_GETSTAT = micropython.const(0x47)
-OP_SETSTAT = micropython.const(0x53)
-OP_PRINT = micropython.const(0x50)
-OP_PRINTFLUSH = micropython.const(0x46)
-OP_WIREBUG = micropython.const(0x42)
+OP_BKPT = micropython.const(0x21)
+OP_TIME = micropython.const(0x23)
 OP_SERREAD = micropython.const(0x43)
+OP_SERGETSTAT = micropython.const(0x44)
+OP_SERINIT = micropython.const(0x45)
+OP_PRINTFLUSH = micropython.const(0x46)
+OP_GETSTAT = micropython.const(0x47)
+OP_INIT = micropython.const(0x49)
+OP_PRINT = micropython.const(0x50)
+OP_READ = micropython.const(0x52)
+OP_SETSTAT = micropython.const(0x53)
+OP_TERM = micropython.const(0x54)
+OP_WRITE = micropython.const(0x57)
+OP_DWINIT = micropython.const(0x5A)
+OP_SERREADM = micropython.const(0x63)
+OP_SERWRITEM = micropython.const(0x64)
+OP_REREAD = micropython.const(0x72)
+OP_REWRITE = micropython.const(0x77)
+OP_FASTWRITE = micropython.const(0x80)
+OP_READEX = micropython.const(0xD2)
 OP_SERWRITE = micropython.const(0xC3)
-OP_SERINIT = micropython.const(0x4E)
-OP_SERTERM = micropython.const(0x45)
-OP_SERSETSTAT = micropython.const(0xD3)
+OP_SERSETSTAT = micropython.const(0xC4)
+OP_SERTERM = micropython.const(0xC5)
+OP_RFM = micropython.const(0xD6)
+OP_REREADEX = micropython.const(0xF2)
+OP_RESET3 = micropython.const(0xF8)
+OP_RESET2 = micropython.const(0xFE)
+OP_RESET = micropython.const(0xFF)
+OP_WIREBUG = micropython.const(0x42)
+
+# RFM Sub-Operations
+OP_RFM_CREATE = micropython.const(0x01)
+OP_RFM_OPEN = micropython.const(0x02)
+OP_RFM_MAKDIR = micropython.const(0x03)
+OP_RFM_CHGDIR = micropython.const(0x04)
+OP_RFM_DELETE = micropython.const(0x05)
+OP_RFM_SEEK = micropython.const(0x06)
+OP_RFM_READ = micropython.const(0x07)
+OP_RFM_WRITE = micropython.const(0x08)
+OP_RFM_READLN = micropython.const(0x09)
+OP_RFM_WRITLN = micropython.const(0x0A)
+OP_RFM_GETSTT = micropython.const(0x0B)
+OP_RFM_SETSTT = micropython.const(0x0C)
+OP_RFM_CLOSE = micropython.const(0x0D)
 
 # Constants for memory management
 MAX_READ_CACHE_ENTRIES = micropython.const(8)
@@ -168,6 +190,7 @@ class DriveWireServer:
         self.terminal_buffer = bytearray()
         self.channels = [bytearray() for _ in range(NUM_CHANNELS)]
         self.tcp_connections = {}  # Key: Channel (int), Value: (reader, writer, task)
+        self.rfm_paths = {}        # Key: path_addr (int), Value: {'handle': file, 'mode': int}
         self.reload_config()
 
     def reload_config(self):
@@ -573,6 +596,214 @@ class DriveWireServer:
                         # We just stay silent now, as we are the server and we initiate commands.
                         # If we don't send commands, CoCo just waits. 
                         # To exit, we could send OP_WIREBUG_GO ($47) but usually we wait for user input.
+
+                    elif opcode == OP_RFM:
+                        # OP_RFM ($D6) + SubOp(1)
+                        sub_op_bytes = await self.read_bytes(1)
+                        if sub_op_bytes:
+                            sub_op = sub_op_bytes[0]
+                            
+                            if sub_op == OP_RFM_OPEN:
+                                # OPEN: ProcessID(1) + PathNum(1) + PathAddr(2) + Mode(1) + PathLen(2) + PathStr(PathLen)
+                                hdr = await self.read_bytes(7)
+                                if hdr:
+                                    path_addr = (hdr[2] << 8) | hdr[3]
+                                    mode = hdr[4]
+                                    path_len = (hdr[5] << 8) | hdr[6]
+                                    path_bytes = await self.read_bytes(path_len)
+                                    
+                                    err_code = 216 # Default error
+                                    lsn0 = lsn1 = lsn2 = 0
+                                    
+                                    if path_bytes:
+                                        path_str = path_bytes.decode('ascii', 'ignore')
+                                        try:
+                                            # We run locally, but should restrict it to a specific directory in a real server.
+                                            # For now, rely on standard MP open()
+                                            file_mode = 'rb' if not (mode & 0x02) else 'r+b' # Simplified mode handling
+                                            f = open(path_str, file_mode)
+                                            self.rfm_paths[path_addr] = {'handle': f, 'mode': mode}
+                                            err_code = 0
+                                            lsn0, lsn1, lsn2 = 3, 2, 1 # Dummy unique identifier per Swift
+                                            print(f"RFM OPEN: {path_str} (mode {mode}) -> Addr: {path_addr}")
+                                        except Exception as e:
+                                            print(f"RFM OPEN error: {e}")
+                                            err_code = 216 # Path not found / access error
+                                    
+                                    self.uart.write(bytes([err_code, lsn0, lsn1, lsn2]))
+
+                            elif sub_op == OP_RFM_CHGDIR:
+                                # CHGDIR: ProcessID(1) + PathNum(1) + PathAddr(2) + Mode(1) + PathLen(2) + PathStr(PathLen)
+                                hdr = await self.read_bytes(7)
+                                if hdr:
+                                    mode = hdr[4]
+                                    path_len = (hdr[5] << 8) | hdr[6]
+                                    path_bytes = await self.read_bytes(path_len)
+                                    
+                                    err_code = 0 # Assume success for now, or validate directory exists
+                                    if path_bytes:
+                                        path_str = path_bytes.decode('ascii', 'ignore')
+                                        try:
+                                            # Validate by checking stat
+                                            os.stat(path_str)
+                                            err_code = 0
+                                        except OSError:
+                                            err_code = 216 # Path not found
+                                            
+                                    self.uart.write(bytes([err_code, 3, 2, 1]))
+
+                            elif sub_op == OP_RFM_SEEK:
+                                # SEEK: PathAddr(2) + PathNum(1) + Pos(4)
+                                hdr = await self.read_bytes(7)
+                                if hdr:
+                                    path_addr = (hdr[0] << 8) | hdr[1]
+                                    pos = (hdr[3] << 24) | (hdr[4] << 16) | (hdr[5] << 8) | hdr[6]
+                                    
+                                    err_code = 207 # Bad path
+                                    if path_addr in self.rfm_paths:
+                                        try:
+                                            self.rfm_paths[path_addr]['handle'].seek(pos)
+                                            err_code = 0
+                                        except Exception as e:
+                                            print(f"RFM SEEK error: {e}")
+                                            err_code = 211 # Read error/EOF
+                                    
+                                    self.uart.write(bytes([err_code]))
+
+                            elif sub_op == OP_RFM_READ:
+                                # READ: PathAddr(2) + PathNum(1) + BytesToRead(2)
+                                hdr = await self.read_bytes(5)
+                                if hdr:
+                                    path_addr = (hdr[0] << 8) | hdr[1]
+                                    bytes_to_read = (hdr[3] << 8) | hdr[4]
+                                    
+                                    err_code = 207 # Bad path
+                                    data_chunk = b""
+                                    
+                                    if path_addr in self.rfm_paths:
+                                        try:
+                                            data_chunk = self.rfm_paths[path_addr]['handle'].read(bytes_to_read)
+                                            if data_chunk is None:
+                                                 data_chunk = b""
+                                            if len(data_chunk) > 0:
+                                                 err_code = 0
+                                            else:
+                                                 err_code = 211 # EOF
+                                        except Exception as e:
+                                            print(f"RFM READ error: {e}")
+                                            err_code = 211
+                                            
+                                    valid_len = len(data_chunk)
+                                    # Phase 1 response: ErrorCode(1) + ValidLen(2)
+                                    self.uart.write(bytes([err_code, (valid_len >> 8) & 0xFF, valid_len & 0xFF]))
+                                    
+                                    if err_code == 0:
+                                        # Phase 2: Wait for ACK (1 byte = 0), then send data
+                                        ack = await self.read_bytes(1)
+                                        if ack and ack[0] == 0:
+                                            self.uart.write(data_chunk)
+                            
+                            elif sub_op == OP_RFM_READLN:
+                                # READLN: PathAddr(2) + PathNum(1) + BytesToRead(2)
+                                hdr = await self.read_bytes(5)
+                                if hdr:
+                                    path_addr = (hdr[0] << 8) | hdr[1]
+                                    max_bytes = (hdr[3] << 8) | hdr[4]
+                                    
+                                    err_code = 207 
+                                    data_chunk = bytearray()
+                                    
+                                    if path_addr in self.rfm_paths:
+                                        f = self.rfm_paths[path_addr]['handle']
+                                        try:
+                                            for _ in range(max_bytes):
+                                                char = f.read(1)
+                                                if not char:
+                                                    if len(data_chunk) == 0: err_code = 211 # EOF
+                                                    break
+                                                if char[0] == 0x0A:
+                                                    char = b'\x0D'
+                                                data_chunk.extend(char)
+                                                err_code = 0
+                                                if char[0] == 0x0D:
+                                                    break
+                                        except Exception as e:
+                                            print(f"RFM READLN error: {e}")
+                                            err_code = 211
+
+                                    valid_len = len(data_chunk)
+                                    self.uart.write(bytes([err_code, (valid_len >> 8) & 0xFF, valid_len & 0xFF]))
+                                    
+                                    if err_code == 0:
+                                        ack = await self.read_bytes(1)
+                                        if ack and ack[0] == 0:
+                                            self.uart.write(data_chunk)
+
+                            elif sub_op == OP_RFM_GETSTT:
+                                # GETSTT: PathAddr(2) + PathNum(1) + StatCode(1)
+                                hdr = await self.read_bytes(4)
+                                if hdr:
+                                    path_addr = (hdr[0] << 8) | hdr[1]
+                                    stat_code = hdr[3]
+                                    
+                                    err_code = 207 
+                                    if path_addr in self.rfm_paths:
+                                        err_code = 0
+                                        if stat_code == 2: # Get File Size
+                                            try:
+                                                f = self.rfm_paths[path_addr]['handle']
+                                                current_pos = f.tell()
+                                                f.seek(0, 2) # end
+                                                size = f.tell()
+                                                f.seek(current_pos)
+                                                
+                                                self.uart.write(bytes([
+                                                    err_code, 
+                                                    (size >> 24) & 0xFF, 
+                                                    (size >> 16) & 0xFF, 
+                                                    (size >> 8) & 0xFF, 
+                                                    size & 0xFF
+                                                ]))
+                                            except Exception:
+                                                self.uart.write(bytes([211, 0, 0, 0, 0])) # Error getting size
+                                        else:
+                                            # Other stat codes not fully supported, return error 0
+                                            self.uart.write(bytes([0]))
+                                    else:
+                                        self.uart.write(bytes([err_code]))
+                                        
+                            elif sub_op == OP_RFM_SETSTT:
+                                # SETSTT: PathAddr(2) + PathNum(1) + StatCode(1)
+                                hdr = await self.read_bytes(4)
+                                if hdr:
+                                    # Stubbed success, Swift does the same
+                                    self.uart.write(bytes([0]))
+
+                            elif sub_op == OP_RFM_CLOSE:
+                                # CLOSE: ProcessID(1) + PathNum(1) + PathAddr(2)
+                                hdr = await self.read_bytes(4)
+                                if hdr:
+                                    path_addr = (hdr[2] << 8) | hdr[3]
+                                    err_code = 0
+                                    
+                                    if path_addr in self.rfm_paths:
+                                        try:
+                                            self.rfm_paths[path_addr]['handle'].close()
+                                            del self.rfm_paths[path_addr]
+                                            print(f"RFM CLOSE: Addr {path_addr}")
+                                        except Exception:
+                                            err_code = 214
+                                    else:
+                                        err_code = 207
+
+                                    self.uart.write(bytes([err_code]))
+                            
+                            elif sub_op in (OP_RFM_CREATE, OP_RFM_MAKDIR, OP_RFM_DELETE, OP_RFM_WRITE, OP_RFM_WRITLN):
+                                # Unsupported/stub operations
+                                # Usually they return success or error, but determining exact packet length to discard
+                                # requires complex state. Swift stubs these by just returning 1 (meaning it reads 1 byte and drops it).
+                                # To avoid sync loss, we must fail gracefully if we don't know the exact length expected from Guest.
+                                print(f"RFM SubOp {sub_op} unsupported")
 
                     elif opcode == OP_INIT:
                          pass # No response needed

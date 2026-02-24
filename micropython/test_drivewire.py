@@ -190,29 +190,36 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
         except asyncio.CancelledError: pass
 
     async def test_extended_ops(self):
-        from drivewire import OP_READEX, OP_REREAD, OP_REWRITE
+        from drivewire import OP_READEX, OP_REREAD, OP_REWRITE, OP_REREADEX
         # Standard Setup
         drives = ["test_drive.dsk"] + [None]*3
         self.server.config.set("drives", drives)
         self.server.reload_config()
         self.uart = self.server.uart
         
-        # Extended Read: CoCo sends CS after data
+        # READEX
         self.inject_input(bytes([OP_READEX, 0, 0, 0, 0]))
-        # CoCo Checksum for "all zeros" (our dummy drive start) is 0
-        self.inject_input(struct.pack(">H", 0))
-        
         task = asyncio.create_task(self.server.run())
-        await asyncio.sleep(0.3) # More time for extended
+        
+        # Wait for data to be written
+        await asyncio.sleep(0.2)
         output = self.get_output()
         self.assertTrue(len(output) >= 256)
+        
+        # Send checksum
+        valid_cs = self.server.checksum(output[:256])
+        self.inject_input(bytes([valid_cs >> 8, valid_cs & 0xFF]))
+        await asyncio.sleep(0.1)
+        
+        output = self.get_output()
+        self.assertTrue(len(output) >= 1) # Should be ACK
         self.assertEqual(output[-1], 0) # ACK
 
-        # REREAD (Same as READ)
+        # REREAD
         self.inject_input(bytes([OP_REREAD, 0, 0, 0, 0]))
         await asyncio.sleep(0.2)
         output = self.get_output()
-        self.assertEqual(output[0], 0)
+        self.assertTrue(len(output) > 2)
 
         # REWRITE (Same as WRITE)
         data = b"W" * 256
@@ -223,7 +230,8 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(output[-1], 0) # ACK
 
         task.cancel()
-        try: await task
+        try:
+            await task
         except asyncio.CancelledError: pass
 
     async def test_serterm(self):

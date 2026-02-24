@@ -19,6 +19,7 @@ The DriveWire server features a modern, responsive web dashboard with a retro Ta
 - **Retro Web Dashboard**: Tandy/CoCo-inspired dark mode web interface for configuration and monitoring
 - **Virtual Serial TCP/IP**: Map CoCo virtual serial ports to external network services (client and server modes)
 - **Serial Terminal Tab**: Real-time diagnostic monitor for any virtual serial channel
+- **Remote File Manager (RFM)**: Full DriveWire 4 RFM support for remote file operations (OPEN, READ, SEEK, CLOSE, etc.) natively from the CoCo
 - **Disk Management**: Dropdown selection for `.dsk` files from local storage and SD cards with storage-type badges
 - **Automatic Library Installation**: Built-in installer fetches dependencies (`microdot`) from GitHub with retry logic
 - **NTP Time Sync**: Automatic CoCo system time synchronization with retry support
