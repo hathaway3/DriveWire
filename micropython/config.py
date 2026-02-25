@@ -59,6 +59,19 @@ class Config:
             return
         self.config[key] = value
         self.save()
+
+    def update(self, changes_dict):
+        """Update multiple configuration keys and save once."""
+        changed = False
+        for key, value in changes_dict.items():
+            if key not in DEFAULT_CONFIG:
+                print(f"Warning: Unknown config key '{key}'")
+                continue
+            self.config[key] = value
+            changed = True
+        
+        if changed:
+            self.save()
     
     def validate(self):
         """Validate configuration values."""

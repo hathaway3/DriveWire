@@ -48,26 +48,22 @@ async def config_endpoint(request):
         try:
             new_config = request.json
             
-            if 'baud_rate' in new_config:
-                config.set('baud_rate', new_config['baud_rate'])
-            if 'wifi_ssid' in new_config:
-                config.set('wifi_ssid', new_config['wifi_ssid'])
-            if 'wifi_password' in new_config:
-                config.set('wifi_password', new_config['wifi_password'])
-            if 'ntp_server' in new_config:
-                config.set('ntp_server', new_config['ntp_server'])
-            if 'timezone_offset' in new_config:
-                config.set('timezone_offset', new_config['timezone_offset'])
-            if 'serial_map' in new_config:
-                config.set('serial_map', new_config['serial_map'])
+            update_data = {}
+            for key in ('baud_rate', 'wifi_ssid', 'wifi_password', 'ntp_server', 'timezone_offset', 'serial_map'):
+                if key in new_config:
+                    update_data[key] = new_config[key]
+                    
             if 'drives' in new_config:
                 drives = new_config['drives']
                 if isinstance(drives, list) and len(drives) == 4:
-                    config.set('drives', drives)
+                    update_data['drives'] = drives
+
             # SD card SPI pin config
             for sd_key in ('sd_spi_id', 'sd_sck', 'sd_mosi', 'sd_miso', 'sd_cs', 'sd_mount_point'):
                 if sd_key in new_config:
-                    config.set(sd_key, new_config[sd_key])
+                    update_data[sd_key] = new_config[sd_key]
+            
+            config.update(update_data)
             
             # Trigger reload on DriveWire Server if attached
             if hasattr(app, 'dw_server'):
