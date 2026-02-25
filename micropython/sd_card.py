@@ -39,6 +39,7 @@ def init_sd():
     mosi_pin = shared_config.get('sd_mosi')
     miso_pin = shared_config.get('sd_miso')
     cs_pin = shared_config.get('sd_cs')
+    baudrate = shared_config.get('sd_spi_baudrate') or 1_000_000
 
     if spi_id is None or sck_pin is None or mosi_pin is None or miso_pin is None or cs_pin is None:
         print("SD card: SPI pins not configured, skipping")
@@ -48,10 +49,10 @@ def init_sd():
         from machine import SPI, Pin
         import sdcard
 
-        print(f"SD card: Init SPI{spi_id} SCK={sck_pin} MOSI={mosi_pin} MISO={miso_pin} CS={cs_pin}")
+        print(f"SD card: Init SPI{spi_id} SCK={sck_pin} MOSI={mosi_pin} MISO={miso_pin} CS={cs_pin} Speed={baudrate}")
 
         spi = SPI(spi_id,
-                   baudrate=1_000_000,
+                   baudrate=baudrate,
                    polarity=0,
                    phase=0,
                    sck=Pin(sck_pin),

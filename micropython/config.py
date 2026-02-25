@@ -19,6 +19,7 @@ DEFAULT_CONFIG = {
     "sd_mosi": 11,         # GP11
     "sd_miso": 12,         # GP12
     "sd_cs": 13,           # GP13
+    "sd_spi_baudrate": 10_000_000,
     "sd_mount_point": "/sd"
 }
 

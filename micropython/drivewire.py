@@ -1,4 +1,5 @@
 import uasyncio as asyncio
+import utime
 import struct
 import os
 from machine import UART
@@ -77,7 +78,8 @@ class VirtualDrive:
         self.stats = {
             'read_hits': 0,
             'read_misses': 0,
-            'write_count': 0
+            'write_count': 0,
+            'latency_us': 0
         }
         try:
             self.file = open(filename, "r+b")
@@ -296,9 +298,11 @@ class DriveWireServer:
                             is_extended = opcode in (OP_READEX, OP_REREADEX)
                             
                             if drive_num < NUM_DRIVES and self.drives[drive_num]:
+                                start_t = utime.ticks_us()
                                 data = self.drives[drive_num].read_sector(lsn)
                                 if data:
                                     cs = self.checksum(data)
+                                    self.drives[drive_num].stats['latency_us'] = utime.ticks_diff(utime.ticks_us(), start_t)
                                     if is_extended:
                                         # Extended Read: 256 bytes data -> CoCo calcs checksum -> CoCo sends checksum -> Server ACKs
                                         self.uart.write(data)
@@ -358,7 +362,9 @@ class DriveWireServer:
                                     # Write to disk cache
                                     success = False
                                     if drive_num < NUM_DRIVES and self.drives[drive_num]:
+                                        start_t = utime.ticks_us()
                                         success = self.drives[drive_num].write_sector(lsn, data)
+                                        self.drives[drive_num].stats['latency_us'] = utime.ticks_diff(utime.ticks_us(), start_t)
                                     
                                     if success:
                                         self.uart.write(bytes([0]))    # ACK

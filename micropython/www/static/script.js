@@ -561,6 +561,7 @@ function renderDriveStats(stats) {
             <div class="serial-stat-row">READ HITS: ${s.read_hits || 0}</div>
             <div class="serial-stat-row">READ MISSES: ${s.read_misses || 0}</div>
             <div class="serial-stat-row">HIT RATE: ${hitRate}%</div>
+            <div class="serial-stat-row">LATENCY: ${s.latency_us ? s.latency_us + ' \u00B5s' : '--'}</div>
             <div class="serial-stat-row" style="margin-top:10px">TOTAL WRITES: ${s.write_count || 0}</div>
             <div class="serial-stat-row">DIRTY SECTORS: ${s.dirty_count || 0}</div>
         `;
