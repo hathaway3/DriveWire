@@ -1,6 +1,6 @@
-# SPI SD Storage Wiring Guide
+# DriveWire Wiring Guide
 
-This guide explains how to connect SPI SD storage devices to the Raspberry Pi Pico 2 W.
+This guide explains how to connect SPI SD storage devices and the serial port (RS232) to the Raspberry Pi Pico W / Pico 2 W.
 
 > [!IMPORTANT]
 > **GPIO vs. Physical Pin Numbers**: MicroPython and the server logs use **GPIO numbers** (e.g., GP10). Physical wiring uses the **Board Pins** (1 through 40). These are **NOT** the same. 
@@ -80,3 +80,25 @@ If you see `SD card mounted at /sd (0 entries)` in your logs:
 1. **Empty Card**: The card may be mounted correctly but has no `.dsk` files in the root or `/sd` folder.
 2. **Formatting**: Ensure the card is formatted as **FAT** or **FAT32**. exFAT is not supported by the default driver.
 3. **MISO Pull-up**: SPI communication can be flaky on some modules. Adding a 10kΩ pull-up resistor from **MISO (GP12 / Pin 16)** to **3.3V (Pin 36)** can significantly improve stability.
+
+---
+
+## Serial Connection (DriveWire Protocol)
+
+To connect the Pico W to a Tandy Color Computer (or other host) via RS232, you will need a 3.3V compatible RS232-to-TTL adapter, such as a **MAX3232** board with a DB9 connector.
+
+> [!CAUTION]
+> Ensure you use a **MAX3232** (3.3V compatible) and not a standard MAX232 (usually 5V only), as 5V logic signals can damage the Pico's GPIO pins. Connect the board's VCC to the Pico's 3.3V OUT, **never** to VBUS/5V.
+
+The MicroPython DriveWire server defaults to using **UART 0**.
+
+### Serial Wiring Table (Pico W / Pico 2 W)
+
+| MAX3232 Board Pin | Pico Signal | GPIO (Software) | Physical Pin (Hardware) | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| **VCC** | **3.3V** | - | **36** | Power (3.3V Out) |
+| **GND** | **GND** | - | **3, 8, 13, 18, 23, 28, 33, or 38** | Ground |
+| **RXD** | **TX** | **GP0** | **1** | Pico transmits to MAX3232 RXD |
+| **TXD** | **RX** | **GP1** | **2** | Pico receives from MAX3232 TXD |
+
+*Note: You may need to cross over RX/TX depending on how your MAX3232 board labels its pins. If communication fails, try swapping the RXD and TXD connections on the adapter side.*
