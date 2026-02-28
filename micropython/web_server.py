@@ -303,18 +303,21 @@ async def create_blank_dsk_endpoint(request):
             written = 0
             empty_chunk = bytearray(chunk_size)
             
-            with open(target_path, 'wb') as f:
-                while written < size_bytes:
-                    to_write = min(chunk_size, size_bytes - written)
-                    if to_write < chunk_size:
-                        f.write(bytearray(to_write)) # Last partial chunk
-                    else:
-                        f.write(empty_chunk)
-                    written += to_write
-                    
-                    if written % (16 * chunk_size) == 0:
-                        activity_led.blink()
-                        await asyncio.sleep(0) # yield periodically for massive files
+            try:
+                activity_led.on() # Keep LED solid during heavy SD write operation
+                with open(target_path, 'wb') as f:
+                    while written < size_bytes:
+                        to_write = min(chunk_size, size_bytes - written)
+                        if to_write < chunk_size:
+                            f.write(bytearray(to_write)) # Last partial chunk
+                        else:
+                            f.write(empty_chunk)
+                        written += to_write
+                        
+                        if written % (16 * chunk_size) == 0:
+                            await asyncio.sleep(0) # yield periodically for massive files
+            finally:
+                activity_led.off()
                         
             print(f"Successfully created: {target_path}")
             return {'status': 'ok', 'filename': clean_name, 'size': size_bytes}, 201
