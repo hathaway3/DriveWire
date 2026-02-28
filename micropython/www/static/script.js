@@ -240,21 +240,26 @@ async function refreshFilesTab() {
         const fname = f.split('/').pop();
         const isMounted = mountedFiles.includes(f);
 
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = isMounted ? 'btn btn-sm btn-disabled' : 'btn btn-sm btn-danger';
-        deleteBtn.textContent = 'DELETE';
-        if (isMounted) {
-            deleteBtn.title = 'Disk image mounted and in use';
-            deleteBtn.onclick = null;
-        } else {
-            deleteBtn.onclick = () => deleteFile(f);
-        }
-
         tr.innerHTML = `
             <td><span class="file-icon">${f.startsWith('/sd') ? '\uD83D\uDCBE' : '\uD83D\uDCC1'}</span> ${escHtml(fname)}</td>
             <td></td>
         `;
-        tr.cells[1].appendChild(deleteBtn);
+
+        if (isMounted) {
+            const inUseSpan = document.createElement('span');
+            inUseSpan.style.color = 'var(--coco-alert)';
+            inUseSpan.style.fontWeight = 'bold';
+            inUseSpan.title = 'Disk image mounted and in use';
+            inUseSpan.textContent = '[IN USE]';
+            tr.cells[1].appendChild(inUseSpan);
+        } else {
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'btn btn-danger';
+            deleteBtn.textContent = 'DELETE';
+            deleteBtn.onclick = () => deleteFile(f);
+            tr.cells[1].appendChild(deleteBtn);
+        }
+
         listBody.appendChild(tr);
     });
 }
