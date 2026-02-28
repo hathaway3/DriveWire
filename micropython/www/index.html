@@ -658,6 +658,15 @@
     <div id="tab-files" class="tab-content">
         <div class="card">
             <h2>UPLOAD DISK IMAGE TO SD</h2>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <button class="btn btn-secondary" style="width:auto; flex: 1; margin-right: 10px;"
+                    onclick="document.getElementById('file-input').click()">
+                    UPLOAD DISK IMAGE(S)
+                </button>
+                <button class="btn btn-secondary" style="width:auto; flex: 1;" onclick="showCreateDiskModal()">
+                    CREATE BLANK DISK
+                </button>
+            </div>
             <div id="drop-zone" class="drop-zone">
                 DRAG & DROP .DSK FILES HERE OR CLICK TO SELECT
                 <input type="file" id="file-input" multiple style="display:none">
@@ -693,6 +702,34 @@
                 <button id="confirm-yes" class="btn btn-danger">YES</button>
                 <button id="confirm-no" class="btn btn-secondary"
                     style="border: 2px solid var(--coco-green)">NO</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CREATE BLANK DISK MODAL -->
+    <div id="create-disk-modal" class="modal-overlay">
+        <div class="modal-box" style="border-color:var(--coco-green); box-shadow:0 0 20px var(--coco-green);">
+            <h2 style="color:var(--coco-green);">CREATE BLANK DISK</h2>
+            <div style="text-align:left; margin-top:20px;">
+                <label for="new-disk-name">FILENAME (.dsk):</label>
+                <input type="text" id="new-disk-name" placeholder="blank_disk.dsk"
+                    style="width:100%; padding:10px; margin-top:5px; margin-bottom:15px; background:#000; color:var(--coco-green); border:1px solid var(--coco-green); font-family:'VT323', monospace; font-size:1.2em;">
+
+                <label for="new-disk-size">DISK SIZE (GEOMETRY):</label>
+                <select id="new-disk-size"
+                    style="width:100%; padding:10px; margin-top:5px; background:#000; color:var(--coco-green); border:1px solid var(--coco-green); font-family:'VT323', monospace; font-size:1.2em; appearance:auto;">
+                    <option value="161280">157.5 KB (35 Track SS)</option>
+                    <option value="184320">180 KB (40 Track SS)</option>
+                    <option value="368640" selected>360 KB (40 Track DS)</option>
+                    <option value="737280">720 KB (80 Track DS)</option>
+                    <option value="1474560">1.44 MB (High Density)</option>
+                </select>
+            </div>
+            <div class="modal-buttons" style="justify-content:center;">
+                <button onclick="submitCreateDisk()" class="btn btn-secondary" id="btn-create-submit"
+                    style="padding:10px 30px; background:var(--coco-green); color:#000;">CREATE</button>
+                <button onclick="hideCreateDiskModal()" class="btn btn-secondary"
+                    style="padding:10px 30px;">CANCEL</button>
             </div>
         </div>
     </div>

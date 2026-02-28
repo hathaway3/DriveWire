@@ -849,3 +849,57 @@ async function pollSdStatus() {
         console.log('SD status poll failed', e);
     }
 }
+
+// ---------------------------------------------------------
+// BLANK DISK CREATION MODAL
+// ---------------------------------------------------------
+function showCreateDiskModal() {
+    _dialogOpen = true;
+    document.getElementById('new-disk-name').value = 'blank_disk.dsk';
+    document.getElementById('create-disk-modal').style.display = 'flex';
+}
+
+function hideCreateDiskModal() {
+    document.getElementById('create-disk-modal').style.display = 'none';
+    _dialogOpen = false;
+}
+
+async function submitCreateDisk() {
+    const nameInput = document.getElementById('new-disk-name').value.trim();
+    const sizeInput = document.getElementById('new-disk-size').value;
+    const btn = document.getElementById('btn-create-submit');
+
+    if (!nameInput) {
+        alert("Please enter a filename.");
+        return;
+    }
+
+    // UI Loading state
+    btn.disabled = true;
+    btn.textContent = 'CREATING...';
+    btn.style.opacity = '0.7';
+
+    try {
+        const response = await fetch('/api/files/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: nameInput, size: sizeInput })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            hideCreateDiskModal();
+            refreshFilesTab(); // Reload files list to see the newly generated disk
+        } else {
+            alert('Failed to create disk: ' + (data.error || 'Unknown error.'));
+        }
+    } catch (error) {
+        alert('Network error while creating disk: ' + error.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'CREATE';
+        btn.style.opacity = '1';
+    }
+}
+

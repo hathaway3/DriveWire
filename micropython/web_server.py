@@ -253,6 +253,85 @@ async def download_file_endpoint(request):
     finally:
         gc.collect()
 
+@app.route('/api/files/create', methods=['POST'])
+async def create_blank_dsk_endpoint(request):
+    """Create a new blank zero-filled .dsk image file."""
+    try:
+        if not hasattr(app, 'dw_server'):
+            return {'error': 'DriveWire Server not attached'}, 500
+            
+        body = request.json
+        if not body or 'filename' not in body or 'size' not in body:
+            return {'error': 'Missing filename or size parameter'}, 400
+            
+        filename = body['filename']
+        try:
+            size_bytes = int(body['size'])
+        except ValueError:
+            return {'error': 'Size must be an integer (bytes)'}, 400
+            
+        if size_bytes <= 0:
+            return {'error': 'Size must be greater than zero'}, 400
+            
+        # Security: ensure it goes to /sd and ends with .dsk
+        clean_name = filename.split('/')[-1].split('\\')[-1]
+        if not clean_name.lower().endswith('.dsk'):
+            clean_name += '.dsk'
+        target_path = '/sd/' + clean_name
+        
+        # Check if file already exists
+        try:
+            os.stat(target_path)
+            return {'error': f'File {clean_name} already exists. Please delete it first.'}, 400
+        except OSError:
+            pass # File doesn't exist, this is good
+            
+        # Check SD card space
+        try:
+            sd_stat = os.statvfs('/sd')
+            sd_free = sd_stat[0] * sd_stat[3]
+            if sd_free < size_bytes:
+                return {'error': f'Insufficient SD card space. Need {size_bytes} bytes, have {sd_free} bytes.'}, 400
+        except Exception as e:
+            return {'error': f'SD card check failed: {e}'}, 500
+            
+        # Generate the file with zero-fill chunks to prevent memory exhaustion
+        print(f"Creating blank disk image: {target_path} ({size_bytes} bytes)")
+        
+        try:
+            chunk_size = 4096
+            written = 0
+            empty_chunk = bytearray(chunk_size)
+            
+            with open(target_path, 'wb') as f:
+                while written < size_bytes:
+                    to_write = min(chunk_size, size_bytes - written)
+                    if to_write < chunk_size:
+                        f.write(bytearray(to_write)) # Last partial chunk
+                    else:
+                        f.write(empty_chunk)
+                    written += to_write
+                    
+                    if written % (16 * chunk_size) == 0:
+                        activity_led.blink()
+                        await asyncio.sleep(0) # yield periodically for massive files
+                        
+            print(f"Successfully created: {target_path}")
+            return {'status': 'ok', 'filename': clean_name, 'size': size_bytes}, 201
+            
+        except Exception as e:
+            try:
+                os.remove(target_path) # cleanup partial broken file
+            except:
+                pass
+            return {'error': f'File creation failed: {e}'}, 500
+            
+    except Exception as e:
+        print(f"Disk creation request error: {e}")
+        return {'error': f'Failed to process request: {e}'}, 500
+    finally:
+        gc.collect()
+
 @app.route('/api/files/upload', methods=['POST'])
 async def upload_file_endpoint(request):
     """Handle file upload via streaming POST with X-Filename header."""
