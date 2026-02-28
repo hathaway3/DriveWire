@@ -210,6 +210,49 @@ async def request_too_large(request):
     print(f"413 Error: Request too large. Content-Length: {request.headers.get('Content-Length')}")
     return {'error': 'Request too large. Max size is 100MB.'}, 413
 
+@app.route('/api/files/download', methods=['GET'])
+async def download_file_endpoint(request):
+    """Download a file if not currently mounted."""
+    try:
+        if not hasattr(app, 'dw_server'):
+            return {'error': 'DriveWire Server not attached'}, 500
+            
+        path = request.args.get('path')
+        if not path:
+            return {'error': 'Missing file path query parameter'}, 400
+            
+        # Security: only allow downloading from /sd or non-system files
+        if not path.startswith('/sd/') and not path.endswith('.dsk'):
+            return {'error': 'Access denied: Cannot download system files'}, 403
+            
+        # Check if mounted
+        for i, drive in enumerate(app.dw_server.drives):
+            if drive and drive.filename == path:
+                return {'error': f'Cannot download: File is mounted in DRIVE {i}'}, 400
+        
+        # Verify file exists
+        try:
+            os.stat(path)
+        except OSError:
+            return {'error': 'File not found'}, 404
+            
+        print(f"Downloading file: {path}")
+        # Send file as attachment
+        filename = path.split('/')[-1]
+        headers = {
+            'Content-Disposition': f'attachment; filename="{filename}"',
+            'Cache-Control': 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0'
+        }
+        res = send_file(path)
+        res.headers.update(headers)
+        return res
+            
+    except Exception as e:
+        print(f"Download error: {e}")
+        return {'error': f'Download error: {e}'}, 500
+    finally:
+        gc.collect()
+
 @app.route('/api/files/upload', methods=['POST'])
 async def upload_file_endpoint(request):
     """Handle file upload via streaming POST with X-Filename header."""

@@ -246,13 +246,38 @@ async function refreshFilesTab() {
         `;
 
         if (isMounted) {
+            tr.cells[1].style.display = 'flex';
+            tr.cells[1].style.gap = '8px';
+
+            // Download button (disabled)
+            const dlBtn = document.createElement('button');
+            dlBtn.className = 'btn btn-disabled';
+            dlBtn.textContent = 'DOWNLOAD';
+            dlBtn.title = 'Cannot download mounted image';
+            tr.cells[1].appendChild(dlBtn);
+
+            // In-use indicator
             const inUseSpan = document.createElement('span');
             inUseSpan.style.color = 'var(--coco-alert)';
             inUseSpan.style.fontWeight = 'bold';
+            inUseSpan.style.padding = '8px';
             inUseSpan.title = 'Disk image mounted and in use';
             inUseSpan.textContent = '[IN USE]';
             tr.cells[1].appendChild(inUseSpan);
         } else {
+            tr.cells[1].style.display = 'flex';
+            tr.cells[1].style.gap = '8px';
+
+            // Download button (active)
+            const dlBtn = document.createElement('button');
+            dlBtn.className = 'btn btn-primary';
+            dlBtn.textContent = 'DOWNLOAD';
+            dlBtn.onclick = () => {
+                window.location.href = `/api/files/download?path=${encodeURIComponent(f)}`;
+            };
+            tr.cells[1].appendChild(dlBtn);
+
+            // Delete button (active)
             const deleteBtn = document.createElement('button');
             deleteBtn.className = 'btn btn-danger';
             deleteBtn.textContent = 'DELETE';
