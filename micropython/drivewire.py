@@ -250,8 +250,11 @@ class DriveWireServer:
                 self.terminal_buffer = self.terminal_buffer[-MAX_TERMINAL_BUFFER_SIZE:]
 
     async def run(self):
-        print("Starting DriveWire Loop...")
+        print("DriveWire server started.")
         self.running = True
+        
+        # Track loop count to trigger GC safely without penalizing latency
+        loop_counter = 0
         
         # Start background tasks
         asyncio.create_task(self.flush_loop())
@@ -818,6 +821,12 @@ class DriveWireServer:
                          pass # No response needed
                         
                 else:
+                    # If UART buffer is empty, it's safe to do background tasks (flush, GC)
+                    loop_counter += 1
+                    if loop_counter >= 10: # approx every 10 idle ticks
+                        import gc
+                        gc.collect()
+                        loop_counter = 0
                     await asyncio.sleep(0.01)  # Yield to other tasks (reduced CPU usage when idle)
                     
             except Exception as e:

@@ -8,6 +8,9 @@ import machine
 async def main():
     print("Initializing DriveWire Server...")
     
+    # Configure GC to run aggressively early to prevent pausing later under load
+    gc.threshold(50000)
+    
     # Report memory status
     gc.collect()
     print(f"Free memory: {gc.mem_free()} bytes")

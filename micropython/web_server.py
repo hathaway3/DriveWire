@@ -72,8 +72,11 @@ async def config_endpoint(request):
 
             return {'status': 'ok'}
         except Exception as e:
-            print(f"Error saving config: {e}")
-            return {'status': 'error', 'message': str(e)}, 500
+            print(f"Failed to save config: {e}")
+            syslog.logger.log(f"Failed to save config: {e}", severity=3)
+            return {"status": "error", "message": str(e)}, 500
+        finally:
+            gc.collect() # Clean up memory after parsing JSON payload
 
 def _scan_dsk_dir(base_path, depth=0, max_depth=1):
     """Recursively scan a directory for .dsk files up to max_depth levels deep."""
@@ -198,6 +201,8 @@ async def delete_file_endpoint(request):
             
     except Exception as e:
         return {'error': f'Delete error: {e}'}, 500
+    finally:
+        gc.collect() # Cleanup JSON parsing in serial config POST
 
 @app.errorhandler(413)
 async def request_too_large(request):
