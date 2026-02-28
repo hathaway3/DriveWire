@@ -369,14 +369,29 @@ async function handleFileUpload(files) {
 
         try {
             const xhr = new XMLHttpRequest();
+            let uploadPollInterval;
+
             const promise = new Promise((resolve, reject) => {
-                xhr.upload.onprogress = (e) => {
-                    if (e.lengthComputable) {
-                        const pct = (e.loaded / e.total) * 100;
-                        progressBar.style.width = pct + '%';
+                // Remove xhr.upload.onprogress to avoid browser TCP buffering jumps
+
+                // Start polling the server for TRUE SD card write progress
+                uploadPollInterval = setInterval(async () => {
+                    try {
+                        const res = await fetch('/api/files/upload_status');
+                        if (res.ok) {
+                            const stats = await res.json();
+                            if (stats.total > 0) {
+                                const pct = (stats.written / stats.total) * 100;
+                                progressBar.style.width = pct + '%';
+                            }
+                        }
+                    } catch (e) {
+                        // Ignore polling errors, let the XHR error handler deal with fatal network issues
                     }
-                };
+                }, 500);
+
                 xhr.onload = () => {
+                    clearInterval(uploadPollInterval);
                     if (xhr.status === 200) {
                         try {
                             const data = JSON.parse(xhr.responseText);
@@ -393,7 +408,11 @@ async function handleFileUpload(files) {
                         }
                     }
                 };
-                xhr.onerror = () => reject('NETWORK ERROR');
+
+                xhr.onerror = () => {
+                    clearInterval(uploadPollInterval);
+                    reject('NETWORK ERROR');
+                };
             });
 
             xhr.open('POST', '/api/files/upload');

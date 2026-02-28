@@ -247,6 +247,8 @@ async def upload_file_endpoint(request):
 
         # Signal that an upload is in progress (prevents SD polling from interfering)
         _uploading = True
+        app.upload_total = total_size
+        app.upload_written = 0
         chunk_size = 2048
         bytes_written = 0
         
@@ -262,6 +264,7 @@ async def upload_file_endpoint(request):
                     f.write(chunk)
                     bytes_written += len(chunk)
                     remaining -= len(chunk)
+                    app.upload_written = bytes_written
                     
                     # Log progress every ~32KB
                     if bytes_written % (16 * chunk_size) == 0:
@@ -285,6 +288,13 @@ async def upload_file_endpoint(request):
         print(f"General upload error: {e}")
         return {'error': f'Upload failed: {e}'}, 500
 
+@app.route('/api/files/upload_status', methods=['GET'])
+async def upload_status_endpoint(request):
+    """Return the exact number of bytes written to the SD card during an active upload."""
+    if _uploading:
+        return {'written': getattr(app, 'upload_written', 0), 'total': getattr(app, 'upload_total', 0)}
+    else:
+        return {'written': 0, 'total': 0}
 
 @app.route('/api/serial/monitor', methods=['POST'])
 async def monitor_chan_endpoint(request):
