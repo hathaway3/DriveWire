@@ -249,32 +249,70 @@ async def upload_file_endpoint(request):
         _uploading = True
         app.upload_total = total_size
         app.upload_written = 0
-        chunk_size = 2048
+        chunk_size = 4096  # Increased chunk size for better async batching
         bytes_written = 0
         
+        # Async writing pipeline
+        write_queue = asyncio.Queue(maxsize=3) # Allow backpressure if SD falls behind network
+        write_error = None
+        
+        async def sd_writer():
+            nonlocal write_error
+            try:
+                with open(target_path, 'wb') as f:
+                    while True:
+                        chunk = await write_queue.get()
+                        if chunk is None: # EOF signal
+                            break
+                        f.write(chunk)
+                        app.upload_written += len(chunk)
+            except Exception as e:
+                write_error = e
+                print(f"SD Background Writer Error: {e}")
+
+        # Start the background writer task
+        writer_task = asyncio.create_task(sd_writer())
+        
         try:
-            with open(target_path, 'wb') as f:
-                remaining = total_size
-                while remaining > 0:
-                    read_size = min(chunk_size, remaining)
-                    chunk = await request.stream.read(read_size)
-                    if not chunk:
-                        print(f"Stream ended early at {bytes_written}/{total_size}")
-                        break
-                    f.write(chunk)
-                    bytes_written += len(chunk)
-                    remaining -= len(chunk)
-                    app.upload_written = bytes_written
+            remaining = total_size
+            while remaining > 0:
+                if write_error:
+                    raise Exception(f"Background write failed: {write_error}")
                     
-                    # Log progress every ~32KB
-                    if bytes_written % (16 * chunk_size) == 0:
-                        print(f"Uploaded: {bytes_written}/{total_size} bytes")
-                        gc.collect()
-                        await asyncio.sleep(0)
+                read_size = min(chunk_size, remaining)
+                chunk = await request.stream.read(read_size)
+                if not chunk:
+                    print(f"Stream ended early at {bytes_written}/{total_size}")
+                    break
+                
+                # Push off to background writer
+                await write_queue.put(chunk)
+                
+                bytes_written += len(chunk)
+                remaining -= len(chunk)
+                
+                # Manual memory optimization
+                if bytes_written % (16 * chunk_size) == 0:
+                    print(f"Received: {bytes_written}/{total_size} bytes")
+                    gc.collect()
+                    
+            # After receiving all chunks, sendEOF marker
+            await write_queue.put(None)
+            await iter([writer_task]) # Wait for the background writer to finish emptying queue
+            
+            if write_error:
+                raise Exception(f"Background write failed at EOF: {write_error}")
+                
         except Exception as e:
-            print(f"Upload write error at {bytes_written}: {e}")
+            print(f"Upload pipeline error at {bytes_written}: {e}")
             _uploading = False
-            return {'error': f'Write failed: {e}'}, 500
+            
+            # Cancel writer on error
+            try:
+                writer_task.cancel()
+            except:
+                pass
+            return {'error': f'Upload pipeline failed: {e}'}, 500
         finally:
             _uploading = False
                 
