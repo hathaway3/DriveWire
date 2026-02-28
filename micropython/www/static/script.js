@@ -268,40 +268,12 @@ async function refreshFilesTab() {
             tr.cells[1].style.display = 'flex';
             tr.cells[1].style.gap = '8px';
 
-            // Download button (active, Blob-based to bypass Chrome HTTP warnings)
+            // Download button (active)
             const dlBtn = document.createElement('button');
             dlBtn.className = 'btn btn-primary';
             dlBtn.textContent = 'DOWNLOAD';
-            dlBtn.onclick = async () => {
-                try {
-                    dlBtn.disabled = true;
-                    dlBtn.textContent = 'DOWNLOADING...';
-                    dlBtn.style.opacity = '0.7';
-
-                    const response = await fetch(`/api/files/download?path=${encodeURIComponent(f)}`);
-                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-                    const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.style.display = 'none';
-                    a.href = url;
-                    a.download = fname; // Force filename
-                    document.body.appendChild(a);
-                    a.click();
-
-                    // Cleanup
-                    window.URL.revokeObjectURL(url);
-                    document.body.removeChild(a);
-
-                } catch (e) {
-                    console.error('Download failed:', e);
-                    alert(`Download failed: ${e.message}`);
-                } finally {
-                    dlBtn.disabled = false;
-                    dlBtn.textContent = 'DOWNLOAD';
-                    dlBtn.style.opacity = '1';
-                }
+            dlBtn.onclick = () => {
+                window.location.href = `/api/files/download?path=${encodeURIComponent(f)}`;
             };
             tr.cells[1].appendChild(dlBtn);
 
