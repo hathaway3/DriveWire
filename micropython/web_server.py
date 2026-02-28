@@ -15,6 +15,7 @@ import gc
 import uasyncio as asyncio
 import sd_card
 import time_sync
+import activity_led
 
 app = Microdot()
 # Microdot 1.3.4 uses Request class attributes for limits
@@ -264,14 +265,19 @@ async def upload_file_endpoint(request):
                     while True:
                         await data_ready.wait()
                         
+                        if write_buffer:
+                            activity_led.on() # Solid LED while flushing network chunks to disk
+                            
                         while write_buffer:
                             chunk = write_buffer.pop(0)
                             if chunk is None: # EOF signal
+                                activity_led.off()
                                 return
                             f.write(chunk)
                             app.upload_written += len(chunk)
                             
                         # Empty buffer, clear event and wait for more data
+                        activity_led.off()
                         data_ready.clear()
             except Exception as e:
                 write_error = e
