@@ -1,5 +1,6 @@
 import ntptime
 import time
+import uasyncio as asyncio
 from config import shared_config
 
 def sync_time(max_retries=3):
@@ -40,3 +41,16 @@ def get_local_time():
     except Exception as e:
         print(f"get_local_time error: {e}")
         return (2000, 1, 1, 0, 0, 0, 0, 1)
+
+async def keep_time_synced(interval_hours=12):
+    """
+    Background task that periodically resyncs the system clock via NTP.
+    Defaults to syncing every 12 hours.
+    """
+    interval_seconds = interval_hours * 3600
+    while True:
+        await asyncio.sleep(interval_seconds)
+        print(f"Periodic time sync ({interval_hours}h interval)...")
+        # Run sync_time in the background without blocking the loop
+        # ntptime.settime() is blocking, but it's very fast.
+        sync_time()

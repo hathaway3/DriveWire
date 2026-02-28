@@ -18,7 +18,7 @@ import time_sync
 
 app = Microdot()
 # Microdot 1.3.4 uses Request class attributes for limits
-Request.max_content_length = 2 * 1024 * 1024  # 2MB limit for uploads
+Request.max_content_length = 100 * 1024 * 1024  # 100MB limit for uploads
 Request.max_body_length = 16 * 1024          # Small body limit to force streaming
 config = shared_config
 _uploading = False  # Flag to prevent SD polling during uploads
@@ -202,7 +202,7 @@ async def delete_file_endpoint(request):
 @app.errorhandler(413)
 async def request_too_large(request):
     print(f"413 Error: Request too large. Content-Length: {request.headers.get('Content-Length')}")
-    return {'error': 'Request too large. Max size is 2MB.'}, 413
+    return {'error': 'Request too large. Max size is 100MB.'}, 413
 
 @app.route('/api/files/upload', methods=['POST'])
 async def upload_file_endpoint(request):

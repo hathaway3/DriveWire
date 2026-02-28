@@ -14,6 +14,9 @@ async def main():
     # Sync time on startup (best effort)
     time_sync.sync_time()
     
+    # Start background task to keep system time synced every 12 hours
+    asyncio.create_task(time_sync.keep_time_synced(interval_hours=12))
+    
     # Instantiate the DriveWire Server
     dw_server = DriveWireServer()
     
