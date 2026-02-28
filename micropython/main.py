@@ -3,6 +3,7 @@ from drivewire import DriveWireServer
 from web_server import app
 import time_sync
 import gc
+import machine
 
 async def main():
     print("Initializing DriveWire Server...")
@@ -44,3 +45,7 @@ except Exception as e:
     except OSError:
         pass
     print(f"Unexpected error: {e}")
+    print("Rebooting in 5 seconds to recover...")
+    import time
+    time.sleep(5)
+    machine.reset()

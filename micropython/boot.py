@@ -2,6 +2,14 @@ import lib_installer
 import config
 import gc
 import fs_repair
+import time
+import machine
+
+# Give USB power delivery time to stabilize on headless boot
+print("Powering on... Waiting for voltage stabilization.")
+time.sleep(2)
+
+try:
 
 # Scrub root filesystem for conflicts (duplicate sd folders)
 fs_repair.scrub_root()
@@ -45,4 +53,15 @@ except Exception as e:
             f.write(f"Boot error: {e}\n")
     except OSError:
         pass
+
+except Exception as fatal_e:
+    print(f"Fatal boot error: {fatal_e}")
+    try:
+        with open("boot_error.log", "a") as f:
+            f.write(f"Fatal boot crash: {fatal_e}\n")
+    except OSError:
+        pass
+    print("Rebooting in 5 seconds...")
+    time.sleep(5)
+    machine.reset()
 
