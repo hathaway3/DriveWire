@@ -241,7 +241,9 @@ async function refreshFilesTab() {
         const isMounted = mountedFiles.includes(f);
 
         tr.innerHTML = `
-            <td><span class="file-icon">${f.startsWith('/sd') ? '\uD83D\uDCBE' : '\uD83D\uDCC1'}</span> ${escHtml(fname)}</td>
+            <td class="filename-cell" title="${escHtml(fname)}">
+                <span class="file-icon">${f.startsWith('/sd') ? '\uD83D\uDCBE' : '\uD83D\uDCC1'}</span> ${escHtml(fname)}
+            </td>
             <td></td>
         `;
 

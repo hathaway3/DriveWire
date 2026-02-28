@@ -122,6 +122,7 @@
             width: 100%;
             border-collapse: collapse;
             margin-top: 10px;
+            table-layout: fixed;
         }
 
         th,
@@ -129,6 +130,12 @@
             text-align: left;
             padding: 10px;
             border-bottom: 1px dotted var(--coco-dark-green);
+        }
+
+        td.filename-cell {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         th {
@@ -682,8 +689,8 @@
             <table id="files-table">
                 <thead>
                     <tr>
-                        <th>FILENAME</th>
-                        <th>ACTION</th>
+                        <th style="width: 65%;">FILENAME</th>
+                        <th style="width: 35%;">ACTION</th>
                     </tr>
                 </thead>
                 <tbody id="files-list">
