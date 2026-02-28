@@ -44,6 +44,13 @@ except Exception as e:
             f.write(f"[{time.localtime()}] Startup error: {e}\n")
     except OSError:
         pass
+        
+    try:
+        from syslog import logger
+        logger.log(f"Unexpected server crash: {e}", severity=2)
+    except Exception:
+        pass
+        
     print(f"Unexpected error: {e}")
     print("Rebooting in 5 seconds to recover...")
     import time

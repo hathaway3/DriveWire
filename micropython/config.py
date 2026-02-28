@@ -20,7 +20,9 @@ DEFAULT_CONFIG = {
     "sd_miso": 12,         # GP12
     "sd_cs": 13,           # GP13
     "sd_spi_baudrate": 10_000_000,
-    "sd_mount_point": "/sd"
+    "sd_mount_point": "/sd",
+    "syslog_server": "",
+    "syslog_port": 514
 }
 
 class Config:
