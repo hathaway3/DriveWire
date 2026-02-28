@@ -22,7 +22,7 @@ The DriveWire server features a modern, responsive web dashboard with a retro Ta
 - **Remote File Manager (RFM)**: Full DriveWire 4 RFM support for remote file operations (OPEN, READ, SEEK, CLOSE, etc.) natively from the CoCo
 - **Disk Management**: Dropdown selection for `.dsk` files from local storage and SD cards with storage-type badges
 - **Automatic Library Installation**: Built-in installer fetches dependencies (`microdot`) from GitHub with retry logic
-- **NTP Time Sync**: Automatic CoCo system time synchronization with retry support
+- **NTP Time Sync**: Automatic CoCo system time synchronization on boot, plus a background 12-hour periodic sync with retry support
 
 ## Hardware Requirements
 
@@ -74,6 +74,7 @@ The DriveWire server features a modern, responsive web dashboard with a retro Ta
 | `lib_installer.py` | Automated dependency installer |
 | `time_sync.py` | NTP time synchronization |
 | `boot.py` | Boot sequence (WiFi, SD card, libraries) |
+| `fs_repair.py` | Scrubs root filesystem for conflicts on boot |
 | `www/` | Static assets for the web dashboard |
 
 ## SD Card Support
@@ -105,6 +106,7 @@ SPI pins are configurable via the web UI or `config.json`:
   "sd_mosi": 11,
   "sd_miso": 12,
   "sd_cs": 13,
+  "sd_spi_baudrate": 10000000,
   "sd_mount_point": "/sd"
 }
 ```
@@ -149,7 +151,7 @@ The dashboard utilizes a lightweight JSON API. Polling occurs every 1 second (st
 | **DASHBOARD** | Large live clock, opcode/drive stats, SD storage info, and system logs. |
 | **CONFIG** | WiFi, NTP, SD pin configuration, and virtual serial station mapping. |
 | **TERMINAL** | Real-time "snoop" monitor for any virtual serial channel (0-14). |
-| **FILES** | Remote file manager for the SD card. Upload images via drag-and-drop and delete old images. |
+| **FILES** | Remote file manager for the SD card. Upload images via drag-and-drop (up to 100MB, natively streamed to preserve RAM) and delete old images. |
 | **DRIVES** | Detailed I/O statistics, read hit/miss ratios, and dirty sector counts for all 4 drives. |
 
 #### Web Interface Preview
