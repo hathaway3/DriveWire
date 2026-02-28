@@ -22,5 +22,7 @@
     "sd_miso": 12,
     "sd_cs": 13,
     "sd_spi_baudrate": 10000000,
-    "sd_mount_point": "/sd"
+    "sd_mount_point": "/sd",
+    "syslog_server": "",
+    "syslog_port": 514
 }
