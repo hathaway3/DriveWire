@@ -453,6 +453,75 @@
         .btn-unsaved {
             animation: pulse-unsaved 1.5s infinite;
         }
+
+        /* ---------------------------------------------------
+           RESPONSIVE MOBILE DESIGN
+           --------------------------------------------------- */
+        .responsive-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .actions {
+            display: flex;
+            gap: 15px;
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 10px;
+                font-size: 16px;
+            }
+
+            h1 {
+                font-size: 2em;
+                margin-bottom: 20px;
+            }
+
+            .card {
+                padding: 10px;
+            }
+
+            .tabs {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+
+            .tab-btn {
+                flex: 1 1 40%;
+                font-size: 1rem;
+                padding: 10px;
+                margin-bottom: 5px;
+            }
+
+            .responsive-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .serial-row {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 5px;
+            }
+
+            .serial-row select,
+            .serial-row input {
+                width: 100%;
+            }
+
+            .actions {
+                flex-direction: column;
+            }
+
+            .actions button {
+                width: 100%;
+            }
+
+            .modal-buttons {
+                flex-direction: column;
+            }
+        }
     </style>
 </head>
 
@@ -535,7 +604,7 @@
                     style="margin-bottom:15px; padding:10px; border:1px dashed var(--coco-dark-green);">
                     <span id="sd-config-indicator">CHECKING...</span>
                 </div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                <div class="responsive-grid">
                     <div>
                         <label for="sd_spi_id">SPI BUS:</label>
                         <select id="sd_spi_id">
@@ -570,10 +639,10 @@
             </div>
         </details>
 
-        <div class="actions" style="display: flex; gap: 15px;">
-            <button id="btn-save-config" class="btn" style="flex: 2;" onclick="saveConfig()">SAVE CONFIGURATION</button>
+        <div class="actions">
+            <button id="btn-save-config" class="btn" onclick="saveConfig()">SAVE CONFIGURATION</button>
             <button id="btn-revert-config" class="btn btn-secondary"
-                style="flex: 1; border: 2px solid var(--coco-alert); color: var(--coco-alert);"
+                style="border: 2px solid var(--coco-alert); color: var(--coco-alert);"
                 onclick="revertConfig()">REVERT</button>
         </div>
         <div id="bottom-unsaved-warning"
@@ -665,12 +734,11 @@
     <div id="tab-files" class="tab-content">
         <div class="card">
             <h2>UPLOAD DISK IMAGE TO SD</h2>
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-                <button class="btn btn-secondary" style="width:auto; flex: 1; margin-right: 10px;"
-                    onclick="document.getElementById('file-input').click()">
+            <div class="actions" style="margin-bottom:15px;">
+                <button class="btn btn-secondary" onclick="document.getElementById('file-input').click()">
                     UPLOAD DISK IMAGE(S)
                 </button>
-                <button class="btn btn-secondary" style="width:auto; flex: 1;" onclick="showCreateDiskModal()">
+                <button class="btn btn-secondary" onclick="showCreateDiskModal()">
                     CREATE BLANK DISK
                 </button>
             </div>
