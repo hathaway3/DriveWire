@@ -253,7 +253,7 @@ async function refreshFilesTab() {
 
             // Download button (disabled)
             const dlBtn = document.createElement('button');
-            dlBtn.className = 'btn btn-disabled';
+            dlBtn.className = 'btn btn-action btn-disabled';
             dlBtn.textContent = 'DOWNLOAD';
             dlBtn.title = 'Cannot download mounted image';
             tr.cells[1].appendChild(dlBtn);
@@ -263,6 +263,7 @@ async function refreshFilesTab() {
             inUseSpan.style.color = 'var(--coco-alert)';
             inUseSpan.style.fontWeight = 'bold';
             inUseSpan.style.padding = '8px';
+            inUseSpan.style.whiteSpace = 'nowrap';
             inUseSpan.title = 'Disk image mounted and in use';
             inUseSpan.textContent = '[IN USE]';
             tr.cells[1].appendChild(inUseSpan);
@@ -272,7 +273,7 @@ async function refreshFilesTab() {
 
             // Download button (active)
             const dlBtn = document.createElement('button');
-            dlBtn.className = 'btn btn-primary';
+            dlBtn.className = 'btn btn-action btn-primary';
             dlBtn.textContent = 'DOWNLOAD';
             dlBtn.onclick = () => {
                 window.location.href = `/api/files/download?path=${encodeURIComponent(f)}`;
@@ -281,7 +282,7 @@ async function refreshFilesTab() {
 
             // Delete button (active)
             const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'btn btn-danger';
+            deleteBtn.className = 'btn btn-action btn-danger';
             deleteBtn.textContent = 'DELETE';
             deleteBtn.onclick = () => deleteFile(f);
             tr.cells[1].appendChild(deleteBtn);
