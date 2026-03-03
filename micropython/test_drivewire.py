@@ -41,6 +41,12 @@ sys.modules['machine'] = MagicMock()
 sys.modules['machine'].UART = MockUART
 sys.modules['uasyncio'] = asyncio
 
+# Mock utime 
+mock_utime = MagicMock()
+mock_utime.ticks_us.return_value = 0
+mock_utime.ticks_diff.return_value = 0
+sys.modules['utime'] = mock_utime
+
 # Mock time_sync
 mock_time_sync = MagicMock()
 mock_time_sync.get_local_time.return_value = (2026, 2, 12, 9, 0, 0, 3, 43)
@@ -48,6 +54,10 @@ sys.modules['time_sync'] = mock_time_sync
 
 # Mock ntptime
 sys.modules['ntptime'] = MagicMock()
+
+# Mock urequests for RemoteDrive tests
+mock_urequests = MagicMock()
+sys.modules['urequests'] = mock_urequests
 
 # Mock config
 import json
@@ -63,9 +73,11 @@ if not os.path.exists("config.json"):
 # Now we can import DriveWireServer
 sys.path.append(os.getcwd())
 from drivewire import (
-    DriveWireServer, OP_DWINIT, OP_READ, OP_WRITE, OP_TIME, OP_RESET,
+    DriveWireServer, RemoteDrive, VirtualDrive,
+    OP_DWINIT, OP_READ, OP_WRITE, OP_TIME, OP_RESET,
     OP_PRINT, OP_PRINTFLUSH, OP_SERREAD, OP_SERWRITE, OP_SERINIT, OP_SERTERM,
-    OP_NAMEOBJ_MOUNT
+    OP_NAMEOBJ_MOUNT, SECTOR_SIZE,
+    E_NONE, E_UNIT, E_WP, E_READ, E_NOTRDY
 )
 
 class TestDriveWire(unittest.IsolatedAsyncioTestCase):
@@ -285,6 +297,130 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
         task.cancel()
         try: await task
         except asyncio.CancelledError: pass
+
+class TestRemoteDrive(unittest.TestCase):
+    def setUp(self):
+        # Reset urequests mock
+        mock_urequests.reset_mock()
+        mock_urequests.get.side_effect = None  # Clear any side_effect from previous tests
+        # Mock the /info response for RemoteDrive constructor
+        info_resp = MagicMock()
+        info_resp.status_code = 200
+        info_resp.json.return_value = {'name': 'Test Server', 'version': '1.0'}
+        mock_urequests.get.return_value = info_resp
+
+        self.drive = RemoteDrive('http://192.168.1.100:8080')
+        mock_urequests.reset_mock()
+
+    def test_remote_read_sector(self):
+        """Remote read should HTTP GET and return sector data."""
+        sector_data = bytes(range(256))
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = sector_data
+        mock_urequests.get.return_value = resp
+
+        result = self.drive.read_sector(5)
+        self.assertEqual(result, sector_data)
+        mock_urequests.get.assert_called_once_with('http://192.168.1.100:8080/sector/5')
+        self.assertEqual(self.drive.stats['read_misses'], 1)
+
+    def test_remote_write_protected(self):
+        """Remote drives should reject writes."""
+        result = self.drive.write_sector(0, bytes(256))
+        self.assertFalse(result)
+
+    def test_remote_cache_hit(self):
+        """Second read of same sector should come from cache."""
+        sector_data = bytes(range(256))
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = sector_data
+        mock_urequests.get.return_value = resp
+
+        # First read = cache miss
+        self.drive.read_sector(10)
+        self.assertEqual(self.drive.stats['read_misses'], 1)
+        self.assertEqual(self.drive.stats['read_hits'], 0)
+
+        mock_urequests.reset_mock()
+
+        # Second read = cache hit (no HTTP call)
+        result = self.drive.read_sector(10)
+        self.assertEqual(result, sector_data)
+        self.assertEqual(self.drive.stats['read_hits'], 1)
+        mock_urequests.get.assert_not_called()
+
+    def test_remote_network_error_sets_notrdy(self):
+        """Network failure should set last_error to E_NOTRDY."""
+        mock_urequests.get.side_effect = OSError("Network unreachable")
+
+        result = self.drive.read_sector(0)
+        self.assertIsNone(result)
+        self.assertEqual(self.drive.last_error, E_NOTRDY)
+
+    def test_remote_write_sets_wp_error(self):
+        """Write attempts should set last_error to E_WP."""
+        result = self.drive.write_sector(0, bytes(256))
+        self.assertFalse(result)
+        self.assertEqual(self.drive.last_error, E_WP)
+
+
+class TestSwapDrive(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        with open("test_drive.dsk", "wb") as f:
+            f.write(b"\x00" * 256 * 10)
+        with open("test_swap.dsk", "wb") as f:
+            f.write(b"\xff" * 256 * 10)
+        self.server = DriveWireServer()
+
+    async def asyncTearDown(self):
+        self.server.stop()
+        for fn in ["test_drive.dsk", "test_swap.dsk"]:
+            if os.path.exists(fn):
+                try: os.remove(fn)
+                except: pass
+
+    async def test_swap_drive_replaces_only_target(self):
+        """swap_drive should replace only the target drive slot."""
+        old_drive = VirtualDrive("test_drive.dsk")
+        self.server.drives[0] = old_drive
+        self.server.drives[1] = None
+
+        new_drive = VirtualDrive("test_swap.dsk")
+        result = self.server.swap_drive(0, new_drive)
+
+        self.assertTrue(result)
+        self.assertEqual(self.server.drives[0].filename, "test_swap.dsk")
+        self.assertIsNone(self.server.drives[1])  # Other drives unaffected
+
+    async def test_swap_drive_transfers_cache(self):
+        """swap_drive should copy read cache to new drive."""
+        old_drive = VirtualDrive("test_drive.dsk")
+        old_drive.read_cache = {0: bytes(256), 5: bytes(256)}
+        self.server.drives[2] = old_drive
+
+        new_drive = VirtualDrive("test_swap.dsk")
+        self.server.swap_drive(2, new_drive)
+
+        self.assertIn(0, self.server.drives[2].read_cache)
+        self.assertIn(5, self.server.drives[2].read_cache)
+
+    async def test_reload_config_http_url(self):
+        """reload_config should create RemoteDrive for http:// paths."""
+        info_resp = MagicMock()
+        info_resp.status_code = 200
+        info_resp.json.return_value = {'name': 'TestSrv'}
+        mock_urequests.get.return_value = info_resp
+
+        self.server.config.config['drives'] = [
+            'http://192.168.1.100:8080', None, None, None
+        ]
+        self.server.reload_config()
+
+        self.assertIsInstance(self.server.drives[0], RemoteDrive)
+        self.assertIsNone(self.server.drives[1])
+
 
 if __name__ == "__main__":
     unittest.main()

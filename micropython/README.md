@@ -13,6 +13,7 @@ The DriveWire server features a modern, responsive web dashboard with a retro Ta
 
 - **Flash Wear Protection**: Sector-level write-back cache buffers all disk writes in RAM and syncs to flash only once per minute of inactivity, significantly extending flash lifespan
 - **SD Card Support**: External SD card storage via SPI with automatic FAT/FAT32 mounting — disk images from internal flash and SD appear seamlessly in the same UI
+- **Remote Disk Images**: Mount read-only disk images from a remote HTTP sector server over WiFi, with auto-discovery and Clone & Hot-Swap to local storage
 - **Activity LED**: Onboard LED blinks during disk read/write operations and stays lit during flush — a visual indicator of DriveWire activity
 - **Robust Error Handling**: Comprehensive exception handling across all I/O operations with graceful fallbacks, input validation, and resource cleanup
 - **Memory Optimized**: Reduced cache sizes and const() declarations minimize RAM usage (~80-120KB typical)
@@ -20,7 +21,7 @@ The DriveWire server features a modern, responsive web dashboard with a retro Ta
 - **Virtual Serial TCP/IP**: Map CoCo virtual serial ports to external network services (client and server modes)
 - **Serial Terminal Tab**: Real-time diagnostic monitor for any virtual serial channel
 - **Remote File Manager (RFM)**: Full DriveWire 4 RFM support for remote file operations (OPEN, READ, SEEK, CLOSE, etc.) natively from the CoCo
-- **Disk Management**: Dropdown selection for `.dsk` files from local storage and SD cards with storage-type badges
+- **Disk Management**: Dropdown selection for `.dsk` files from local, SD, and remote sources with storage-type badges (📁 📀 🌐)
 - **Automatic Library Installation**: Built-in installer fetches dependencies (`microdot`) from GitHub with retry logic
 - **NTP Time Sync**: Automatic CoCo system time synchronization on boot, plus a background 12-hour periodic sync with retry support
 
@@ -73,9 +74,11 @@ The DriveWire server features a modern, responsive web dashboard with a retro Ta
 | `activity_led.py` | Onboard LED activity indicator |
 | `lib_installer.py` | Automated dependency installer |
 | `time_sync.py` | NTP time synchronization |
+| `syslog.py` | Syslog client for remote logging |
 | `boot.py` | Boot sequence (WiFi, SD card, libraries) |
 | `fs_repair.py` | Scrubs root filesystem for conflicts on boot |
 | `www/` | Static assets for the web dashboard |
+| `tools/sector_server.py` | Linux-side HTTP sector server for remote disk images |
 
 ## SD Card Support
 
@@ -129,6 +132,121 @@ mip.install("sdcard")
 ```
 Or manually copy `sdcard.py` from [micropython-lib](https://github.com/micropython/micropython-lib/blob/master/micropython/drivers/storage/sdcard/sdcard.py) to your device.
 
+## Remote Disk Images
+
+Mount disk images hosted on a remote server (Linux, Mac, or Windows) over your local network. Remote drives are **read-only** to protect source images — use Clone & Hot-Swap to create a local read/write copy.
+
+### When to Use
+
+- **Development**: Compile a new `.dsk` image on your Linux build server and immediately access it from the CoCo without manual file transfer
+- **Image Library**: Keep a large collection of disk images on a server and browse/mount them from the web UI
+- **Testing**: Quickly iterate on OS9 or Disk BASIC builds by compiling on your workstation and mounting from the Pico
+
+### Setting Up the Sector Server
+
+The sector server is a zero-dependency Python script that runs on your workstation:
+
+```bash
+# Basic usage — serve all .dsk files in current directory
+python tools/sector_server.py
+
+# Specify directory and port
+python tools/sector_server.py --dir /home/user/coco/disks --port 8080
+
+# Custom server name (shown in the web UI)
+python tools/sector_server.py --dir ./disks --port 8080 --name "Build Server"
+
+# Bind to specific interface
+python tools/sector_server.py --bind 192.168.1.100 --port 8080
+```
+
+The server will display a summary of available disk images on startup:
+```
+╔═══════════════════════════════════════════════╗
+║  DriveWire Remote Sector Server v1.0          ║
+╠═══════════════════════════════════════════════╣
+║  Directory: /home/user/coco/disks             ║
+║  Disks:     3                                 ║
+║  Bind:      0.0.0.0:8080                      ║
+╚═══════════════════════════════════════════════╝
+
+  📀 NitrOS9.dsk (368,640 bytes, 1440 sectors)
+  📀 toolkit.dsk (161,280 bytes, 630 sectors)
+  📀 games.dsk (161,280 bytes, 630 sectors)
+```
+
+**Requirements**: Python 3.6+ (uses only standard library — no `pip install` needed).
+
+### Sector Server API
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/info` | GET | Server name, version, and list of available disks with sizes |
+| `/files` | GET | List of `.dsk` filenames |
+| `/sector/<filename>/<lsn>` | GET | Read a single 256-byte sector |
+| `/sectors/<filename>/<lsn>?count=N` | GET | Read N consecutive sectors (bulk, max 64) |
+| `/sector/<filename>/<lsn>` | PUT | Write a single 256-byte sector |
+
+### Configuring Remote Servers in the Web UI
+
+1. Open the DriveWire web UI in your browser
+2. Go to the **CONFIGURATION** tab
+3. Expand **▸ ADVANCED OPTIONS**
+4. Scroll to the **REMOTE SERVERS** card
+5. Click **+ ADD SERVER**
+6. Enter a **Name** (e.g., `Build Server`) and the **URL** (e.g., `http://192.168.1.100:8080`)
+7. Click **TEST** — a 🟢 indicator confirms the connection, 🔴 indicates a problem
+8. Click **SAVE CONFIG**
+
+Once saved, remote disk images automatically appear in:
+- **Drive assignment dropdowns** with a 🌐 icon and server name: `🌐 [Build Server] NitrOS9.dsk`
+- **Files tab → REMOTE FILES section** with server badge and CLONE button
+- **Drives tab** with 🌐 icon and READ-ONLY badge when mounted
+
+### Configuring via config.json
+
+Remote servers can also be added directly to `config.json`:
+```json
+{
+  "remote_servers": [
+    {"name": "Build Server", "url": "http://192.168.1.100:8080"},
+    {"name": "Image Library", "url": "http://192.168.1.200:8080"}
+  ]
+}
+```
+
+### Mounting a Remote Disk
+
+1. In **CONFIGURATION → VIRTUAL DRIVES**, select a remote image from a drive dropdown (look for the 🌐 icon)
+2. Click **SAVE CONFIG** — the drive is now mounted as read-only
+3. The **DRIVES** tab will show the remote drive with a `READ-ONLY` badge
+
+> **Note**: Remote drives reject all write operations. The CoCo will receive a write-protect error (E_WP) if it attempts to write to a remote drive. Use Clone & Hot-Swap to get a writable copy.
+
+### Clone & Hot-Swap
+
+Clone a remote disk image to local SD card storage and seamlessly switch from read-only remote to read/write local — all without rebooting the CoCo or interrupting other drives.
+
+**From the Files tab:**
+1. Go to **FILES → REMOTE FILES**
+2. Click **CLONE** next to the image you want
+3. In the Clone modal:
+   - **LOCAL FILENAME** auto-fills from the source (editable)
+   - **ASSIGN TO DRIVE** — optionally auto-mount the clone to a drive slot (hot-swap)
+4. Click **CLONE** — a progress bar shows sector download progress
+5. When complete, the image is on your SD card and (if a drive was selected) the drive is hot-swapped to the local copy
+
+**From the Drives tab:**
+- Remote drives show a **CLONE TO LOCAL** button directly in their stats card
+- Click it to clone and hot-swap that specific drive slot
+
+**Technical details:**
+- Downloads in 4KB bulk chunks (16 sectors per request) — aligned to SD card physical sector boundaries
+- Uses ~4KB of RAM during transfer regardless of image size
+- A 360KB disk clones in ~5-10 seconds over WiFi
+- Read cache is transferred from the old remote drive to the new local drive for seamless CoCo continuity
+- The config is automatically updated to point the drive at the local file
+
 ## Activity LED
 
 The onboard LED on the Pico W / Pico 2 W provides visual feedback during disk I/O:
@@ -149,10 +267,10 @@ The dashboard utilizes a lightweight JSON API. Polling occurs every 1 second (st
 | Tab | Description |
 | :--- | :--- |
 | **DASHBOARD** | Large live clock, opcode/drive stats, SD storage info, and system logs. |
-| **CONFIG** | WiFi, NTP, SD pin configuration, and virtual serial station mapping. |
+| **CONFIG** | WiFi, NTP, SD pin configuration, virtual serial station mapping, and remote server configuration. |
 | **TERMINAL** | Real-time "snoop" monitor for any virtual serial channel (0-14). |
-| **FILES** | Remote file manager for the SD card. Upload images via drag-and-drop (up to 100MB, natively streamed to preserve RAM) and delete old images. |
-| **DRIVES** | Detailed I/O statistics, read hit/miss ratios, and dirty sector counts for all 4 drives. |
+| **FILES** | Remote file manager for SD card and remote servers. Upload images via drag-and-drop (up to 100MB), clone remote images to local storage, and delete old images. |
+| **DRIVES** | Detailed I/O statistics, read hit/miss ratios, dirty sector counts, and clone-to-local buttons for remote drives. |
 
 #### Web Interface Preview
 
@@ -210,6 +328,23 @@ The dashboard utilizes a lightweight JSON API. Polling occurs every 1 second (st
 - **Problem**: "Time sync failed after all retries"
 - **Solution**: Verify NTP server is reachable. Try changing `ntp_server` in config to `"time.google.com"` or `"time.nist.gov"`
 
+### Remote Disk Connection Issues
+- **Problem**: TEST button shows 🔴 or remote images don't appear in dropdowns
+- **Solution**:
+  - Verify the sector server is running on your workstation (`python tools/sector_server.py`)
+  - Ensure the URL includes the port (e.g., `http://192.168.1.100:8080`, not just the IP)
+  - Check that the Pico W and your workstation are on the same network/subnet
+  - Confirm no firewall is blocking the sector server port
+  - Try accessing `http://<server-ip>:8080/info` from a browser to verify the server is reachable
+
+### Clone Fails or Stalls
+- **Problem**: Clone progress stops or shows an error
+- **Solution**:
+  - Verify the SD card has enough free space for the image
+  - Check the sector server console for error messages
+  - Ensure WiFi signal is stable (weak signal causes HTTP timeouts)
+  - Only one clone operation can run at a time — wait for the current one to finish
+
 ## Advanced Configuration
 
 ### Virtual Serial Mapping
@@ -219,6 +354,15 @@ Map CoCo serial channels to TCP connections in `config.json`:
   "0": {"host": "towel.blinkenlights.nl", "port": 23, "mode": "client"}
 }
 ```
+
+### Remote Servers
+Configure HTTP sector servers for remote disk images in `config.json`:
+```json
+"remote_servers": [
+  {"name": "Build Server", "url": "http://192.168.1.100:8080"}
+]
+```
+See [Remote Disk Images](#remote-disk-images) for full setup instructions.
 
 ### Timezone Configuration
 Set timezone offset from UTC (-12 to +14):
@@ -238,6 +382,10 @@ Supported rates: 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600
 | `/api/status` | GET | Real-time server stats, logs, drive info |
 | `/api/sd/status` | GET | SD card mount status and storage info |
 | `/api/serial/monitor` | POST | Set serial monitor channel |
+| `/api/remote/files` | GET | List `.dsk` files from all configured remote servers |
+| `/api/remote/test` | POST | Test connectivity to a remote sector server |
+| `/api/remote/clone` | POST | Clone a remote disk image to local storage (with optional hot-swap) |
+| `/api/remote/clone/status` | GET | Poll clone operation progress |
 
 ## Error Handling
 

@@ -50,7 +50,7 @@ async def config_endpoint(request):
             new_config = request.json
             
             update_data = {}
-            for key in ('baud_rate', 'wifi_ssid', 'wifi_password', 'ntp_server', 'timezone_offset', 'serial_map', 'syslog_server', 'syslog_port'):
+            for key in ('baud_rate', 'wifi_ssid', 'wifi_password', 'ntp_server', 'timezone_offset', 'serial_map', 'syslog_server', 'syslog_port', 'remote_servers'):
                 if key in new_config:
                     update_data[key] = new_config[key]
                     
@@ -155,6 +155,7 @@ async def status_endpoint(request):
                     ds['filename'] = d.filename.split('/')[-1]
                     ds['full_path'] = d.filename
                     ds['dirty_count'] = len(d.dirty_sectors)
+                    ds['is_remote'] = getattr(d, 'is_remote', False)
                     drive_stats.append(ds)
                 else:
                     drive_stats.append(None)
@@ -495,6 +496,200 @@ async def monitor_chan_endpoint(request):
         except (ValueError, TypeError) as e:
             return {'error': f'Invalid channel: {e}'}, 400
     return {'error': 'DriveWire Server not attached'}, 500
+
+# ---------------------------------------------------------------
+# REMOTE DISK IMAGE ENDPOINTS
+# ---------------------------------------------------------------
+
+_cloning = False
+_clone_progress = {'state': 'idle', 'progress': 0, 'total': 0, 'error': None}
+
+def _fetch_remote_files(server_url):
+    """Fetch list of .dsk files from a remote sector server."""
+    try:
+        import urequests
+        resp = urequests.get(server_url.rstrip('/') + '/files')
+        if resp.status_code == 200:
+            files = resp.json()
+            resp.close()
+            return files
+        resp.close()
+    except Exception as e:
+        print(f"Remote files fetch error ({server_url}): {e}")
+    return []
+
+@app.route('/api/remote/files')
+async def remote_files_endpoint(request):
+    """List .dsk files from all configured remote servers."""
+    remote_servers = config.get('remote_servers') or []
+    result = []
+    for srv in remote_servers:
+        url = srv.get('url', '')
+        name = srv.get('name', url)
+        if not url:
+            continue
+        files = _fetch_remote_files(url)
+        for f in files:
+            result.append({
+                'name': f,
+                'server': name,
+                'url': url,
+                'path': url.rstrip('/') + '/disk/' + f
+            })
+    return result
+
+@app.route('/api/remote/test', methods=['POST'])
+async def remote_test_endpoint(request):
+    """Test connectivity to a remote sector server."""
+    try:
+        body = request.json
+        url = body.get('url', '').rstrip('/')
+        if not url:
+            return {'error': 'Missing URL'}, 400
+        import urequests
+        resp = urequests.get(url + '/info')
+        if resp.status_code == 200:
+            info = resp.json()
+            resp.close()
+            return {'status': 'ok', 'info': info}
+        resp.close()
+        return {'status': 'error', 'message': f'HTTP {resp.status_code}'}, 502
+    except Exception as e:
+        return {'status': 'error', 'message': str(e)}, 502
+    finally:
+        gc.collect()
+
+@app.route('/api/remote/clone', methods=['POST'])
+async def remote_clone_endpoint(request):
+    """Clone a remote disk image to local storage and hot-swap."""
+    global _cloning, _clone_progress
+    try:
+        if _cloning:
+            return {'error': 'Clone already in progress'}, 409
+
+        if not hasattr(app, 'dw_server'):
+            return {'error': 'DriveWire Server not attached'}, 500
+
+        body = request.json
+        remote_url = body.get('remote_url', '').rstrip('/')
+        disk_name = body.get('disk_name', '')
+        local_path = body.get('local_path', '')
+        drive_num = body.get('drive_num', -1)
+
+        if not remote_url or not disk_name:
+            return {'error': 'Missing remote_url or disk_name'}, 400
+
+        # Auto-generate local path if not specified
+        if not local_path:
+            local_path = '/sd/' + disk_name
+
+        # Check SD card space
+        try:
+            import urequests
+            resp = urequests.get(remote_url + '/info')
+            if resp.status_code != 200:
+                resp.close()
+                return {'error': 'Cannot reach remote server'}, 502
+            info = resp.json()
+            resp.close()
+
+            # Find the disk in info
+            total_sectors = 0
+            for d in info.get('disks', []):
+                if d['name'] == disk_name:
+                    total_sectors = d.get('total_sectors', 0)
+                    break
+            if total_sectors == 0:
+                return {'error': f'Disk {disk_name} not found on remote server'}, 404
+
+            total_bytes = total_sectors * 256
+            try:
+                sd_stat = os.statvfs('/sd')
+                sd_free = sd_stat[0] * sd_stat[3]
+                if sd_free < total_bytes:
+                    return {'error': f'Insufficient SD space: need {total_bytes}, have {sd_free}'}, 400
+            except:
+                pass  # May not be on SD
+
+        except Exception as e:
+            return {'error': f'Remote server query failed: {e}'}, 502
+
+        # Start clone in background
+        _cloning = True
+        _clone_progress = {'state': 'downloading', 'progress': 0, 'total': total_sectors, 'error': None}
+
+        async def _do_clone():
+            global _cloning, _clone_progress
+            try:
+                import urequests
+                BULK_COUNT = 16  # 16 sectors = 4KB per request (SD-aligned)
+                activity_led.on()
+
+                with open(local_path, 'wb') as f:
+                    lsn = 0
+                    while lsn < total_sectors:
+                        count = min(BULK_COUNT, total_sectors - lsn)
+                        resp = urequests.get(f"{remote_url}/sectors/{disk_name}/{lsn}?count={count}")
+                        if resp.status_code == 200:
+                            f.write(resp.content)
+                            resp.close()
+                        else:
+                            resp.close()
+                            raise Exception(f"HTTP {resp.status_code} at LSN {lsn}")
+                        lsn += count
+                        _clone_progress['progress'] = lsn
+                        await asyncio.sleep(0)  # Yield to other tasks
+                        if lsn % 128 == 0:
+                            gc.collect()
+
+                activity_led.off()
+                _clone_progress['state'] = 'swapping'
+
+                # Hot-swap if drive_num specified
+                if 0 <= drive_num < 4:
+                    from drivewire import VirtualDrive
+                    new_drive = VirtualDrive(local_path)
+                    if new_drive.file:
+                        app.dw_server.swap_drive(drive_num, new_drive)
+                        # Update config to point to local path
+                        drives = config.get('drives')
+                        drives[drive_num] = local_path
+                        config.set('drives', drives)
+                        _clone_progress['state'] = 'complete'
+                    else:
+                        _clone_progress['state'] = 'error'
+                        _clone_progress['error'] = 'Failed to open cloned file'
+                else:
+                    _clone_progress['state'] = 'complete'
+
+                print(f"Clone complete: {disk_name} -> {local_path}")
+            except Exception as e:
+                print(f"Clone error: {e}")
+                _clone_progress['state'] = 'error'
+                _clone_progress['error'] = str(e)
+                activity_led.off()
+                # Cleanup partial file
+                try:
+                    os.remove(local_path)
+                except:
+                    pass
+            finally:
+                _cloning = False
+                gc.collect()
+
+        asyncio.create_task(_do_clone())
+        return {'status': 'started', 'total_sectors': total_sectors}
+
+    except Exception as e:
+        _cloning = False
+        return {'error': f'Clone request failed: {e}'}, 500
+    finally:
+        gc.collect()
+
+@app.route('/api/remote/clone/status')
+async def remote_clone_status_endpoint(request):
+    """Return clone operation progress."""
+    return _clone_progress
 
 def start():
     print("Starting Web Server...")

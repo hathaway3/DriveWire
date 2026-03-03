@@ -65,7 +65,15 @@ MAX_TERMINAL_BUFFER_SIZE = micropython.const(512)
 SECTOR_SIZE = micropython.const(256)
 NUM_DRIVES = micropython.const(4)
 NUM_CHANNELS = micropython.const(32)
-# Let's define the class.
+
+# OS-9 / DriveWire error codes sent to CoCo
+E_NONE = micropython.const(0)      # No error
+E_UNIT = micropython.const(240)    # E$Unit - Illegal unit (drive not found)
+E_CRC = micropython.const(243)     # E$CRC  - Checksum error
+E_WP = micropython.const(242)      # E$WP   - Write protect error
+E_READ = micropython.const(244)    # E$Read - Read error
+E_NOTRDY = micropython.const(246)  # E$NotRdy - Device not ready (network down)
+
 
 class VirtualDrive:
     """Manages a virtual disk drive with write-back caching for flash wear protection."""
@@ -172,6 +180,86 @@ class VirtualDrive:
             self.read_cache.pop(next(iter(self.read_cache)))
         return True
 
+class RemoteDrive:
+    """Read-only remote disk image accessed via HTTP sector server."""
+
+    def __init__(self, url):
+        self.url = url.rstrip('/')
+        self.filename = url
+        self.file = True  # Sentinel for compatibility checks
+        self.is_remote = True
+        self.dirty_sectors = {}  # Always empty (read-only)
+        self.read_cache = {}
+        self.stats = {
+            'read_hits': 0,
+            'read_misses': 0,
+            'write_count': 0,
+            'latency_us': 0
+        }
+        self.last_error = E_NONE  # Last error code for opcode handler
+        # Verify server is reachable
+        try:
+            import urequests
+            resp = urequests.get(self.url + '/info')
+            if resp.status_code == 200:
+                info = resp.json()
+                print(f"Remote drive connected: {info.get('name', url)}")
+            resp.close()
+        except Exception as e:
+            print(f"Remote drive warning ({url}): {e}")
+
+    def read_sector(self, lsn):
+        """Read a sector from remote server, checking caches first."""
+        self.last_error = E_NONE
+        # 1. Check read cache (LRU)
+        if lsn in self.read_cache:
+            self.stats['read_hits'] += 1
+            data = self.read_cache.pop(lsn)
+            self.read_cache[lsn] = data  # Move to end (most recent)
+            return data
+
+        # 2. Fetch from remote server
+        self.stats['read_misses'] += 1
+        try:
+            import urequests
+            resp = urequests.get(f"{self.url}/sector/{lsn}")
+            if resp.status_code == 200:
+                data = resp.content
+                resp.close()
+                activity_led.blink()
+                if len(data) < SECTOR_SIZE:
+                    data = data + bytes(SECTOR_SIZE - len(data))
+
+                # Add to read cache
+                self.read_cache[lsn] = data
+                if len(self.read_cache) > MAX_READ_CACHE_ENTRIES:
+                    self.read_cache.pop(next(iter(self.read_cache)))
+                return data
+            resp.close()
+            print(f"Remote Read Error LSN {lsn}: HTTP {resp.status_code}")
+            self.last_error = E_READ
+            return None
+        except Exception as e:
+            print(f"Remote Read Error LSN {lsn}: {e}")
+            self.last_error = E_NOTRDY
+            return None
+
+    def write_sector(self, lsn, data):
+        """Remote drives are read-only. Returns error code E_WP."""
+        print(f"Write rejected: Remote drive is read-only (LSN {lsn})")
+        self.last_error = E_WP
+        return False
+
+    def flush(self):
+        """No-op for read-only remote drives."""
+        pass
+
+    def close(self):
+        """Clear caches."""
+        self.read_cache = {}
+        self.file = None
+
+
 class DriveWireServer:
     """DriveWire 4 protocol server implementation for MicroPython."""
     
@@ -208,7 +296,10 @@ class DriveWireServer:
             path = drive_paths[i]
             if path:
                 try:
-                    self.drives[i] = VirtualDrive(path)
+                    if path.startswith('http://') or path.startswith('https://'):
+                        self.drives[i] = RemoteDrive(path)
+                    else:
+                        self.drives[i] = VirtualDrive(path)
                 except Exception as e:
                     print(f"Failed to mount drive {i}: {e}")
                     self.drives[i] = None
@@ -226,6 +317,22 @@ class DriveWireServer:
             print(f"UART Initialized at {baud} baud")
         except Exception as e:
             print(f"Failed to init UART: {e}")
+
+    def swap_drive(self, drive_num, new_drive):
+        """Hot-swap a single drive without disturbing others or UART."""
+        if drive_num < 0 or drive_num >= NUM_DRIVES:
+            print(f"swap_drive: Invalid drive number {drive_num}")
+            return False
+        old = self.drives[drive_num]
+        # Transfer read cache from old drive for seamless transition
+        if old and new_drive and hasattr(old, 'read_cache'):
+            new_drive.read_cache = old.read_cache.copy()
+        self.drives[drive_num] = new_drive  # Atomic reference swap
+        if old:
+            old.read_cache = {}  # Clear before close to avoid double-free
+            old.close()
+        print(f"Drive {drive_num}: swapped to {new_drive.filename if new_drive else 'None'}")
+        return True
 
     def checksum(self, data):
         s = sum(data)
@@ -324,27 +431,22 @@ class DriveWireServer:
                                         resp += data
                                         self.uart.write(resp)
                                 else:
-                                    # Read Failure
+                                    # Read Failure — use drive-specific error if available
+                                    err = getattr(self.drives[drive_num], 'last_error', E_UNIT) or E_UNIT
                                     if is_extended:
-                                        self.uart.write(bytes([0] * 256)) # Send zeros? Spec says 0-255 value.. wait.
-                                        # Spec says: "If an error occurs... it shall return the Read Failure packet: 0-255 | 0 (256 bytes of 0)"
-                                        # Actually it implies sending 256 bytes of zero?
                                         self.uart.write(bytes([0] * 256))
-                                        # Then we still expect checksum from CoCo?
-                                        # "Upon receipt of either the Read Success or the Read Failure packet, the CoCo shall... Compute checksum... Send checksum"
-                                        # So yes, we send 256 bytes of garbage, consume checksum, then send error code.
                                         await self.read_bytes(2) 
-                                        self.uart.write(bytes([240])) # E_UNIT
+                                        self.uart.write(bytes([err]))
                                     else:
-                                        self.uart.write(bytes([240])) # E_UNIT
+                                        self.uart.write(bytes([err]))
                             else:
                                 # Unit error
                                 if is_extended:
                                      self.uart.write(bytes([0] * 256))
                                      await self.read_bytes(2) 
-                                     self.uart.write(bytes([240]))
+                                     self.uart.write(bytes([E_UNIT]))
                                 else:
-                                     self.uart.write(bytes([240])) # E_UNIT
+                                     self.uart.write(bytes([E_UNIT]))
 
                     elif opcode in (OP_WRITE, OP_REWRITE):
                         # Write / ReWrite
@@ -370,9 +472,11 @@ class DriveWireServer:
                                         self.drives[drive_num].stats['latency_us'] = utime.ticks_diff(utime.ticks_us(), start_t)
                                     
                                     if success:
-                                        self.uart.write(bytes([0]))    # ACK
+                                        self.uart.write(bytes([E_NONE]))  # ACK
                                     else:
-                                        self.uart.write(bytes([240]))  # E_UNIT
+                                        # Use drive-specific error (E_WP for remote, E_UNIT for missing)
+                                        err = getattr(self.drives[drive_num], 'last_error', E_UNIT) or E_UNIT
+                                        self.uart.write(bytes([err]))
                                 else:
                                     self.uart.write(bytes([243]))  # E_CRC
 

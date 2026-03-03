@@ -22,7 +22,8 @@ DEFAULT_CONFIG = {
     "sd_spi_baudrate": 10_000_000,
     "sd_mount_point": "/sd",
     "syslog_server": "",
-    "syslog_port": 514
+    "syslog_port": 514,
+    "remote_servers": []  # [{"name": "Dev", "url": "http://192.168.1.100:8080"}, ...]
 }
 
 class Config:
@@ -95,5 +96,11 @@ class Config:
         if not isinstance(drives, list) or len(drives) != 4:
             print("Warning: Invalid drives config, using defaults")
             self.config['drives'] = [None] * 4
+
+        # Validate remote_servers is a list of dicts
+        rs = self.config.get('remote_servers')
+        if not isinstance(rs, list):
+            print("Warning: Invalid remote_servers config, using defaults")
+            self.config['remote_servers'] = []
 
 shared_config = Config()

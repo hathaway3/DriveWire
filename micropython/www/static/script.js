@@ -99,6 +99,10 @@ async function init() {
     }
 
     renderSerialMap(config.serial_map || {});
+    renderRemoteServers(config.remote_servers || []);
+
+    // Fetch remote files
+    await fetchRemoteFiles();
 
     // Check SD card status on load
     pollSdStatus();
@@ -156,6 +160,9 @@ let mountedFiles = [];
 let isUploading = false;
 let configDirty = false;
 let _dialogOpen = false;
+let _remoteFiles = [];    // Cached remote file list
+let _cloneServerUrl = ''; // For clone modal
+let _cloneDiskName = '';  // For clone modal
 
 function switchTab(tabName) {
     if (!VALID_TABS.includes(tabName)) return;
@@ -193,6 +200,12 @@ async function refreshDriveSelects() {
         baseOptions += `<option value="${escHtml(f)}">${badge} ${escHtml(fname)}</option>`;
     });
 
+    // Add remote files with globe icon
+    _remoteFiles.forEach(rf => {
+        const driveUrl = rf.url.replace(/\/$/, '') + '/disk/' + rf.name;
+        baseOptions += `<option value="${escHtml(driveUrl)}">\uD83C\uDF10 [${escHtml(rf.server)}] ${escHtml(rf.name)}</option>`;
+    });
+
     for (let i = 0; i < 4; i++) {
         const sel = document.getElementById(`drive_${i}`);
         if (!sel) continue;
@@ -200,8 +213,18 @@ async function refreshDriveSelects() {
 
         let options = baseOptions;
         if (currentVal && !safeFiles.includes(currentVal)) {
-            const missingName = String(currentVal).split('/').pop();
-            options += `<option value="${escHtml(currentVal)}">\u26A0 ${escHtml(missingName)} (MISSING)</option>`;
+            // Check if it's a known remote URL
+            const isRemoteKnown = _remoteFiles.some(rf => {
+                const driveUrl = rf.url.replace(/\/$/, '') + '/disk/' + rf.name;
+                return driveUrl === currentVal;
+            });
+            if (!isRemoteKnown && currentVal.startsWith('http')) {
+                const missingName = String(currentVal).split('/').pop();
+                options += `<option value="${escHtml(currentVal)}">\uD83C\uDF10 ${escHtml(missingName)}</option>`;
+            } else if (!isRemoteKnown) {
+                const missingName = String(currentVal).split('/').pop();
+                options += `<option value="${escHtml(currentVal)}">\u26A0 ${escHtml(missingName)} (MISSING)</option>`;
+            }
         }
 
         sel.innerHTML = options;
@@ -231,65 +254,93 @@ async function refreshFilesTab() {
 
     if (!files || files.length === 0) {
         listBody.innerHTML = '<tr><td colspan="2">NO DISK IMAGES FOUND.</td></tr>';
-        return;
+    } else {
+        // Only show files on SD or root that are .dsk
+        files.forEach(f => {
+            const tr = document.createElement('tr');
+            const fname = f.split('/').pop();
+            const isMounted = mountedFiles.includes(f);
+
+            tr.innerHTML = `
+                <td class="filename-cell" title="${escHtml(fname)}">
+                    <span class="file-icon">${f.startsWith('/sd') ? '\uD83D\uDCBE' : '\uD83D\uDCC1'}</span> ${escHtml(fname)}
+                </td>
+                <td></td>
+            `;
+
+            if (isMounted) {
+                tr.cells[1].style.display = 'flex';
+                tr.cells[1].style.gap = '8px';
+
+                const dlBtn = document.createElement('button');
+                dlBtn.className = 'btn btn-action btn-disabled';
+                dlBtn.textContent = 'DOWNLOAD';
+                dlBtn.title = 'Cannot download mounted image';
+                tr.cells[1].appendChild(dlBtn);
+
+                const inUseSpan = document.createElement('span');
+                inUseSpan.style.color = 'var(--coco-alert)';
+                inUseSpan.style.fontWeight = 'bold';
+                inUseSpan.style.padding = '8px';
+                inUseSpan.style.whiteSpace = 'nowrap';
+                inUseSpan.title = 'Disk image mounted and in use';
+                inUseSpan.textContent = '[IN USE]';
+                tr.cells[1].appendChild(inUseSpan);
+            } else {
+                tr.cells[1].style.display = 'flex';
+                tr.cells[1].style.gap = '8px';
+
+                const dlBtn = document.createElement('button');
+                dlBtn.className = 'btn btn-action btn-primary';
+                dlBtn.textContent = 'DOWNLOAD';
+                dlBtn.onclick = () => {
+                    window.location.href = `/api/files/download?path=${encodeURIComponent(f)}`;
+                };
+                tr.cells[1].appendChild(dlBtn);
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'btn btn-action btn-danger';
+                deleteBtn.textContent = 'DELETE';
+                deleteBtn.onclick = () => deleteFile(f);
+                tr.cells[1].appendChild(deleteBtn);
+            }
+
+            listBody.appendChild(tr);
+        });
     }
 
-    // Only show files on SD or root that are .dsk
-    files.forEach(f => {
-        const tr = document.createElement('tr');
-        const fname = f.split('/').pop();
-        const isMounted = mountedFiles.includes(f);
+    // Remote files section
+    const remoteListBody = document.getElementById('remote-files-list');
+    if (remoteListBody) {
+        await fetchRemoteFiles();
+        remoteListBody.innerHTML = '';
 
-        tr.innerHTML = `
-            <td class="filename-cell" title="${escHtml(fname)}">
-                <span class="file-icon">${f.startsWith('/sd') ? '\uD83D\uDCBE' : '\uD83D\uDCC1'}</span> ${escHtml(fname)}
-            </td>
-            <td></td>
-        `;
-
-        if (isMounted) {
-            tr.cells[1].style.display = 'flex';
-            tr.cells[1].style.gap = '8px';
-
-            // Download button (disabled)
-            const dlBtn = document.createElement('button');
-            dlBtn.className = 'btn btn-action btn-disabled';
-            dlBtn.textContent = 'DOWNLOAD';
-            dlBtn.title = 'Cannot download mounted image';
-            tr.cells[1].appendChild(dlBtn);
-
-            // In-use indicator
-            const inUseSpan = document.createElement('span');
-            inUseSpan.style.color = 'var(--coco-alert)';
-            inUseSpan.style.fontWeight = 'bold';
-            inUseSpan.style.padding = '8px';
-            inUseSpan.style.whiteSpace = 'nowrap';
-            inUseSpan.title = 'Disk image mounted and in use';
-            inUseSpan.textContent = '[IN USE]';
-            tr.cells[1].appendChild(inUseSpan);
+        if (_remoteFiles.length === 0) {
+            remoteListBody.innerHTML = '<tr><td colspan="3">NO REMOTE SERVERS CONFIGURED.</td></tr>';
         } else {
-            tr.cells[1].style.display = 'flex';
-            tr.cells[1].style.gap = '8px';
+            _remoteFiles.forEach(rf => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="filename-cell" title="${escHtml(rf.name)}">
+                        <span class="file-icon">\uD83C\uDF10</span> ${escHtml(rf.name)}
+                    </td>
+                    <td><span class="remote-badge remote-badge-name">${escHtml(rf.server)}</span></td>
+                    <td></td>
+                `;
+                tr.cells[2].style.display = 'flex';
+                tr.cells[2].style.gap = '8px';
 
-            // Download button (active)
-            const dlBtn = document.createElement('button');
-            dlBtn.className = 'btn btn-action btn-primary';
-            dlBtn.textContent = 'DOWNLOAD';
-            dlBtn.onclick = () => {
-                window.location.href = `/api/files/download?path=${encodeURIComponent(f)}`;
-            };
-            tr.cells[1].appendChild(dlBtn);
+                const cloneBtn = document.createElement('button');
+                cloneBtn.className = 'btn btn-action btn-primary';
+                cloneBtn.textContent = 'CLONE';
+                cloneBtn.title = 'Clone to local SD card';
+                cloneBtn.onclick = () => showCloneModal(rf.url, rf.name, rf.server);
+                tr.cells[2].appendChild(cloneBtn);
 
-            // Delete button (active)
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'btn btn-action btn-danger';
-            deleteBtn.textContent = 'DELETE';
-            deleteBtn.onclick = () => deleteFile(f);
-            tr.cells[1].appendChild(deleteBtn);
+                remoteListBody.appendChild(tr);
+            });
         }
-
-        listBody.appendChild(tr);
-    });
+    }
 }
 
 async function customConfirm(message) {
@@ -605,11 +656,16 @@ function renderDriveStats(stats) {
 
         const totalReads = (s.read_hits || 0) + (s.read_misses || 0);
         const hitRate = totalReads > 0 ? (((s.read_hits || 0) / totalReads) * 100).toFixed(1) : 0;
+        const isRemote = s.is_remote || false;
+        const icon = isRemote ? '\uD83C\uDF10' : '';
+        const modeBadge = isRemote
+            ? '<span class="remote-badge" style="margin-left:10px;">READ-ONLY</span>'
+            : '';
 
         const card = document.createElement('div');
         card.className = 'card';
         card.innerHTML = `
-            <h2>DRIVE ${idx}: ${escHtml(s.filename)}</h2>
+            <h2>DRIVE ${idx}: ${icon} ${escHtml(s.filename)}${modeBadge}</h2>
             <div class="serial-stat-row">READ HITS: ${s.read_hits || 0}</div>
             <div class="serial-stat-row">READ MISSES: ${s.read_misses || 0}</div>
             <div class="serial-stat-row">HIT RATE: ${hitRate}%</div>
@@ -617,6 +673,24 @@ function renderDriveStats(stats) {
             <div class="serial-stat-row" style="margin-top:10px">TOTAL WRITES: ${s.write_count || 0}</div>
             <div class="serial-stat-row">DIRTY SECTORS: ${s.dirty_count || 0}</div>
         `;
+
+        // Add clone button for remote drives
+        if (isRemote) {
+            const cloneBtn = document.createElement('button');
+            cloneBtn.className = 'btn btn-secondary';
+            cloneBtn.style.marginTop = '15px';
+            cloneBtn.textContent = 'CLONE TO LOCAL';
+            cloneBtn.onclick = () => {
+                // Parse server URL from drive filename
+                const url = s.full_path;
+                const parts = url.split('/disk/');
+                if (parts.length === 2) {
+                    showCloneModal(parts[0], parts[1], '', idx);
+                }
+            };
+            card.appendChild(cloneBtn);
+        }
+
         grid.appendChild(card);
     });
 }
@@ -724,6 +798,7 @@ async function saveConfig() {
         timezone_offset: tzOffset,
         drives: [],
         serial_map: {},
+        remote_servers: [],
         // SD card SPI config
         sd_spi_id: sdSpiId,
         sd_sck: sdSck,
@@ -777,6 +852,19 @@ async function saveConfig() {
         showStatus('Invalid serial config: port 1-65535, channel 0-31', 'error');
         return;
     }
+
+    // Harvest Remote Servers
+    const remoteRows = document.querySelectorAll('.remote-row');
+    remoteRows.forEach(row => {
+        const nameEl = row.querySelector('.remote-name');
+        const urlEl = row.querySelector('.remote-url');
+        if (!nameEl || !urlEl) return;
+        const name = nameEl.value.trim();
+        const url = urlEl.value.trim();
+        if (name && url) {
+            data.remote_servers.push({ name: name, url: url });
+        }
+    });
 
     try {
         const response = await fetch('/api/config', {
@@ -903,6 +991,213 @@ async function submitCreateDisk() {
         btn.disabled = false;
         btn.textContent = 'CREATE';
         btn.style.opacity = '1';
+    }
+}
+
+// ---------------------------------------------------------
+// REMOTE SERVER MANAGEMENT
+// ---------------------------------------------------------
+
+async function fetchRemoteFiles() {
+    try {
+        const response = await fetch('/api/remote/files?t=' + Date.now());
+        if (response.ok) {
+            _remoteFiles = await response.json();
+        } else {
+            _remoteFiles = [];
+        }
+    } catch (e) {
+        console.warn('Failed to fetch remote files', e);
+        _remoteFiles = [];
+    }
+}
+
+function renderRemoteServers(servers) {
+    const container = document.getElementById('remote-servers-container');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (!Array.isArray(servers) || servers.length === 0) {
+        container.innerHTML = '<p style="color:var(--coco-dark-green);">NO REMOTE SERVERS CONFIGURED.</p>';
+        return;
+    }
+
+    servers.forEach(srv => {
+        addRemoteServerRow(srv.name || '', srv.url || '');
+    });
+}
+
+function addRemoteServer() {
+    const container = document.getElementById('remote-servers-container');
+    if (container.querySelector('p')) container.innerHTML = '';
+    addRemoteServerRow('', '');
+    markConfigDirty();
+}
+
+function addRemoteServerRow(name, url) {
+    const container = document.getElementById('remote-servers-container');
+    const div = document.createElement('div');
+    div.className = 'remote-row';
+
+    div.innerHTML = `
+        <div style="flex:2">
+            <label>NAME</label>
+            <input type="text" class="remote-name" value="${escHtml(name)}" placeholder="DEV SERVER">
+        </div>
+        <div style="flex:3">
+            <label>URL</label>
+            <input type="text" class="remote-url" value="${escHtml(url)}" placeholder="http://192.168.1.100:8080">
+        </div>
+        <div class="remote-status" title="Connection status">⚪</div>
+        <div style="display:flex; align-items:flex-end; gap:5px;">
+            <button class="btn btn-action" onclick="testRemoteServer(this)" style="font-size:1em; padding:8px 10px;">TEST</button>
+            <button class="btn btn-danger" onclick="this.closest('.remote-row').remove(); markConfigDirty();">X</button>
+        </div>
+    `;
+    container.appendChild(div);
+}
+
+async function testRemoteServer(btn) {
+    const row = btn.closest('.remote-row');
+    const urlEl = row.querySelector('.remote-url');
+    const statusEl = row.querySelector('.remote-status');
+    const url = urlEl.value.trim();
+
+    if (!url) {
+        statusEl.textContent = '\uD83D\uDD34';
+        statusEl.title = 'No URL specified';
+        return;
+    }
+
+    statusEl.textContent = '\u23F3';
+    statusEl.title = 'Testing...';
+
+    try {
+        const response = await fetch('/api/remote/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: url })
+        });
+        const data = await response.json();
+        if (data.status === 'ok') {
+            const diskCount = data.info?.disk_count || 0;
+            statusEl.textContent = '\uD83D\uDFE2';
+            statusEl.title = `Connected: ${diskCount} disk(s) found`;
+        } else {
+            statusEl.textContent = '\uD83D\uDD34';
+            statusEl.title = data.message || 'Connection failed';
+        }
+    } catch (e) {
+        statusEl.textContent = '\uD83D\uDD34';
+        statusEl.title = 'Network error: ' + e;
+    }
+}
+
+// ---------------------------------------------------------
+// CLONE MODAL
+// ---------------------------------------------------------
+
+function showCloneModal(serverUrl, diskName, serverName, driveNum) {
+    _cloneServerUrl = serverUrl;
+    _cloneDiskName = diskName;
+    _dialogOpen = true;
+
+    const infoEl = document.getElementById('clone-info');
+    infoEl.textContent = `CLONE "${diskName}" FROM ${serverName || serverUrl} TO LOCAL SD CARD`;
+
+    document.getElementById('clone-local-name').value = diskName;
+    document.getElementById('clone-drive-num').value = driveNum != null ? driveNum : -1;
+    document.getElementById('clone-progress-container').style.display = 'none';
+    document.getElementById('clone-progress-bar').style.width = '0%';
+    document.getElementById('clone-status-text').textContent = '';
+    document.getElementById('btn-clone-submit').disabled = false;
+    document.getElementById('btn-clone-submit').textContent = 'CLONE';
+    document.getElementById('btn-clone-cancel').disabled = false;
+    document.getElementById('clone-modal').style.display = 'flex';
+}
+
+function hideCloneModal() {
+    document.getElementById('clone-modal').style.display = 'none';
+    _dialogOpen = false;
+}
+
+async function submitClone() {
+    const localName = document.getElementById('clone-local-name').value.trim();
+    const driveNum = parseInt(document.getElementById('clone-drive-num').value);
+    const btn = document.getElementById('btn-clone-submit');
+    const cancelBtn = document.getElementById('btn-clone-cancel');
+
+    if (!localName) {
+        document.getElementById('clone-status-text').textContent = 'PLEASE ENTER A FILENAME';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'CLONING...';
+    cancelBtn.disabled = true;
+    document.getElementById('clone-progress-container').style.display = 'block';
+    document.getElementById('clone-status-text').textContent = 'STARTING CLONE...';
+
+    try {
+        const response = await fetch('/api/remote/clone', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                remote_url: _cloneServerUrl,
+                disk_name: _cloneDiskName,
+                local_path: '/sd/' + localName,
+                drive_num: driveNum
+            })
+        });
+
+        const data = await response.json();
+        if (data.error) {
+            document.getElementById('clone-status-text').textContent = 'ERROR: ' + data.error;
+            btn.disabled = false;
+            btn.textContent = 'CLONE';
+            cancelBtn.disabled = false;
+            return;
+        }
+
+        // Poll for progress
+        const pollInterval = setInterval(async () => {
+            try {
+                const statusRes = await fetch('/api/remote/clone/status');
+                const status = await statusRes.json();
+
+                if (status.total > 0) {
+                    const pct = (status.progress / status.total) * 100;
+                    document.getElementById('clone-progress-bar').style.width = pct + '%';
+                    document.getElementById('clone-status-text').textContent =
+                        `${status.state.toUpperCase()}: ${status.progress} / ${status.total} SECTORS`;
+                }
+
+                if (status.state === 'complete') {
+                    clearInterval(pollInterval);
+                    document.getElementById('clone-progress-bar').style.width = '100%';
+                    document.getElementById('clone-status-text').textContent = 'CLONE COMPLETE!';
+                    setTimeout(() => {
+                        hideCloneModal();
+                        refreshFilesTab();
+                        refreshDriveSelects();
+                    }, 1500);
+                } else if (status.state === 'error') {
+                    clearInterval(pollInterval);
+                    document.getElementById('clone-status-text').textContent = 'ERROR: ' + (status.error || 'Unknown');
+                    btn.disabled = false;
+                    btn.textContent = 'RETRY';
+                    cancelBtn.disabled = false;
+                }
+            } catch (e) {
+                console.warn('Clone status poll error', e);
+            }
+        }, 500);
+
+    } catch (e) {
+        document.getElementById('clone-status-text').textContent = 'NETWORK ERROR: ' + e;
+        btn.disabled = false;
+        btn.textContent = 'CLONE';
+        cancelBtn.disabled = false;
     }
 }
 
