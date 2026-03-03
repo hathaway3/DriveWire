@@ -101,14 +101,19 @@ async function init() {
     renderSerialMap(config.serial_map || {});
     renderRemoteServers(config.remote_servers || []);
 
-    // Fetch remote files
+    // Fetch remote files and wait for them, then rebuild dropdown options so they include remote drives
     await fetchRemoteFiles();
+    refreshDriveSelects();
 
     // Check SD card status on load
     pollSdStatus();
 
     // Initialize File Manager listeners
     initFilesTab();
+
+    // Automatically test each configured remote server connection on startup
+    const remoteTestBtns = document.querySelectorAll('#remote-servers-container .remote-row .btn-action');
+    remoteTestBtns.forEach(btn => testRemoteServer(btn));
 
     // Start Polling
     setInterval(pollStatus, 1000);  // 1 second for live time + heartbeat
@@ -1083,6 +1088,9 @@ async function testRemoteServer(btn) {
             const diskCount = data.info?.disk_count || 0;
             statusEl.textContent = '\uD83D\uDFE2';
             statusEl.title = `Connected: ${diskCount} disk(s) found`;
+            // Remote connection established, fetch files again to ensure dropdowns are populated
+            await fetchRemoteFiles();
+            refreshDriveSelects();
         } else {
             statusEl.textContent = '\uD83D\uDD34';
             statusEl.title = data.message || 'Connection failed';
