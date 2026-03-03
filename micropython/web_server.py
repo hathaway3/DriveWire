@@ -547,35 +547,24 @@ def stream_remote_files(server_url):
 
 @app.route('/api/remote/files')
 async def remote_files_endpoint(request):
-    """List .dsk files from all configured remote servers using a memory-efficient stream."""
-    async def generate_response():
-        yield '[\n'
-        first = True
-        
-        remote_servers = config.get('remote_servers') or []
-        for srv in remote_servers:
-            url = srv.get('url', '')
-            name = srv.get('name', url)
-            if not url:
-                continue
-                
-            for filename in stream_remote_files(url):
-                if not first:
-                    yield ',\n'
-                first = False
-                
-                # Manual JSON fragment assembly to save memory
-                escaped_name = filename.replace('\\', '\\\\').replace('"', '\\"')
-                escaped_server = name.replace('\\', '\\\\').replace('"', '\\"')
-                escaped_url = url.replace('\\', '\\\\').replace('"', '\\"')
-                escaped_path = (url.rstrip('/') + '/disk/' + filename).replace('\\', '\\\\').replace('"', '\\"')
-                
-                yield f'{{"name": "{escaped_name}", "server": "{escaped_server}", "url": "{escaped_url}", "path": "{escaped_path}"}}'
-                await asyncio.sleep(0) # yield to asyncio loop
-                
-        yield '\n]'
-
-    return Response(generate_response(), headers={'Content-Type': 'application/json'})
+    """List .dsk files from all configured remote servers."""
+    remote_servers = config.get('remote_servers') or []
+    result = []
+    for srv in remote_servers:
+        url = srv.get('url', '')
+        name = srv.get('name', url)
+        if not url:
+            continue
+        # stream_remote_files yields one filename at a time from the socket
+        # without buffering the full HTTP response body in RAM
+        for filename in stream_remote_files(url):
+            result.append({
+                'name': filename,
+                'server': name,
+                'url': url,
+                'path': url.rstrip('/') + '/disk/' + filename
+            })
+    return result
 
 @app.route('/api/remote/test', methods=['POST'])
 async def remote_test_endpoint(request):
