@@ -651,10 +651,11 @@ async def remote_clone_endpoint(request):
                     new_drive = VirtualDrive(local_path)
                     if new_drive.file:
                         app.dw_server.swap_drive(drive_num, new_drive)
-                        # Update config to point to local path
+                        # Update config to point to local path and persist
                         drives = config.get('drives')
                         drives[drive_num] = local_path
                         config.set('drives', drives)
+                        config.save()
                         _clone_progress['state'] = 'complete'
                     else:
                         _clone_progress['state'] = 'error'

@@ -1176,10 +1176,17 @@ async function submitClone() {
                     clearInterval(pollInterval);
                     document.getElementById('clone-progress-bar').style.width = '100%';
                     document.getElementById('clone-status-text').textContent = 'CLONE COMPLETE!';
-                    setTimeout(() => {
+                    setTimeout(async () => {
                         hideCloneModal();
                         refreshFilesTab();
-                        refreshDriveSelects();
+                        // Re-fetch config so drive selects reflect the new local path
+                        const freshConfig = await fetchConfig();
+                        const freshDrives = freshConfig.drives || [null, null, null, null];
+                        await refreshDriveSelects();
+                        for (let i = 0; i < 4; i++) {
+                            const sel = document.getElementById(`drive_${i}`);
+                            if (sel) sel.value = freshDrives[i] || '';
+                        }
                     }, 1500);
                 } else if (status.state === 'error') {
                     clearInterval(pollInterval);
