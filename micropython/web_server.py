@@ -16,6 +16,7 @@ import uasyncio as asyncio
 import sd_card
 import time_sync
 import activity_led
+import utime
 
 app = Microdot()
 # Microdot 1.3.4 uses Request class attributes for limits
@@ -504,50 +505,139 @@ async def monitor_chan_endpoint(request):
 _cloning = False
 _clone_progress = {'state': 'idle', 'progress': 0, 'total': 0, 'error': None}
 
-def stream_remote_files(server_url):
-    """Fetch list of .dsk files from a remote sector server iteratively."""
-    gc.collect()
+_remote_files_cache = None   # Cached result list
+_remote_files_cache_ts = 0   # Timestamp of last fetch (ticks_ms)
+_REMOTE_CACHE_TTL_MS = 30000  # 30 second TTL
+
+def _raw_http_get_stream(url):
+    """Open a raw socket HTTP GET and return the socket after consuming headers.
+    
+    This avoids urequests which buffers the entire response body into RAM.
+    Returns the socket object for incremental reading, or None on failure.
+    """
+    import usocket
     try:
-        import urequests
-        resp = urequests.get(server_url.rstrip('/') + '/files')
-        if resp.status_code == 200:
-            in_string = False
-            escape = False
-            current_str = []
+        # Parse URL: http://host:port/path
+        url_no_proto = url.split('://', 1)[1] if '://' in url else url
+        slash_pos = url_no_proto.find('/')
+        if slash_pos >= 0:
+            hostport = url_no_proto[:slash_pos]
+            path = url_no_proto[slash_pos:]
+        else:
+            hostport = url_no_proto
+            path = '/'
+        
+        if ':' in hostport:
+            host, port_str = hostport.rsplit(':', 1)
+            port = int(port_str)
+        else:
+            host = hostport
+            port = 80
+        
+        addr = usocket.getaddrinfo(host, port)[0][-1]
+        sock = usocket.socket()
+        sock.settimeout(5)
+        sock.connect(addr)
+        
+        # Send minimal HTTP/1.0 request (Connection: close implied)
+        sock.send(b'GET ')
+        sock.send(path.encode())
+        sock.send(b' HTTP/1.0\r\nHost: ')
+        sock.send(host.encode())
+        sock.send(b'\r\n\r\n')
+        
+        # Read headers byte-by-byte looking for \r\n\r\n end marker
+        # Use a 4-byte ring buffer to detect the boundary without large allocs
+        hdr_end = bytearray(4)
+        status_line = bytearray(16)  # First few bytes to check status
+        status_pos = 0
+        
+        while True:
+            b = sock.recv(1)
+            if not b:
+                sock.close()
+                return None
             
-            while True:
-                chunk = resp.raw.read(64)
-                if not chunk:
-                    break
-                for b in chunk:
-                    # In MicroPython, reading from socket might return bytes or ints depending on context
-                    c = chr(b) if isinstance(b, int) else chr(b)
-                    if escape:
-                        if c == 'n': current_str.append('\n')
-                        elif c == 'r': current_str.append('\r')
-                        elif c == 't': current_str.append('\t')
-                        else: current_str.append(c)
-                        escape = False
-                    elif c == '\\':
-                        escape = True
-                    elif c == '"':
-                        if in_string:
-                            yield ''.join(current_str)
-                            current_str = []
-                            in_string = False
-                        else:
-                            in_string = True
-                    elif in_string:
-                        current_str.append(c)
-            resp.close()
+            # Capture first 16 bytes for status code check
+            if status_pos < 16:
+                status_line[status_pos] = b[0]
+                status_pos += 1
+            
+            # Shift ring buffer
+            hdr_end[0] = hdr_end[1]
+            hdr_end[1] = hdr_end[2]
+            hdr_end[2] = hdr_end[3]
+            hdr_end[3] = b[0]
+            
+            if hdr_end == b'\r\n\r\n':
+                break
+        
+        # Check for 200 status
+        if b'200' not in bytes(status_line):
+            sock.close()
+            return None
+        
+        return sock
     except Exception as e:
-        print(f"Remote files fetch error ({server_url}): {e}")
+        print(f"Raw HTTP error ({url}): {e}")
+        return None
+
+def stream_remote_files(server_url):
+    """Fetch list of .dsk files from a remote server using raw sockets.
+    
+    Yields one filename at a time, never holding more than ~100 bytes.
+    """
+    gc.collect()
+    sock = _raw_http_get_stream(server_url.rstrip('/') + '/files')
+    if not sock:
+        return
+    
+    try:
+        in_string = False
+        escape = False
+        current_str = []
+        
+        while True:
+            chunk = sock.recv(64)
+            if not chunk:
+                break
+            for b in chunk:
+                c = chr(b) if isinstance(b, int) else chr(b)
+                if escape:
+                    if c == 'n': current_str.append('\n')
+                    elif c == 'r': current_str.append('\r')
+                    elif c == 't': current_str.append('\t')
+                    else: current_str.append(c)
+                    escape = False
+                elif c == '\\':
+                    escape = True
+                elif c == '"':
+                    if in_string:
+                        yield ''.join(current_str)
+                        current_str = []
+                        in_string = False
+                    else:
+                        in_string = True
+                elif in_string:
+                    current_str.append(c)
+    except Exception as e:
+        print(f"Remote files stream error ({server_url}): {e}")
     finally:
+        try:
+            sock.close()
+        except:
+            pass
         gc.collect()
 
 @app.route('/api/remote/files')
 async def remote_files_endpoint(request):
-    """List .dsk files from all configured remote servers."""
+    """List .dsk files from all configured remote servers (cached for 30s)."""
+    global _remote_files_cache, _remote_files_cache_ts
+    
+    now = utime.ticks_ms()
+    if _remote_files_cache is not None and utime.ticks_diff(now, _remote_files_cache_ts) < _REMOTE_CACHE_TTL_MS:
+        return _remote_files_cache
+    
     remote_servers = config.get('remote_servers') or []
     result = []
     for srv in remote_servers:
@@ -555,8 +645,6 @@ async def remote_files_endpoint(request):
         name = srv.get('name', url)
         if not url:
             continue
-        # stream_remote_files yields one filename at a time from the socket
-        # without buffering the full HTTP response body in RAM
         for filename in stream_remote_files(url):
             result.append({
                 'name': filename,
@@ -564,6 +652,9 @@ async def remote_files_endpoint(request):
                 'url': url,
                 'path': url.rstrip('/') + '/disk/' + filename
             })
+    
+    _remote_files_cache = result
+    _remote_files_cache_ts = utime.ticks_ms()
     return result
 
 @app.route('/api/remote/test', methods=['POST'])
