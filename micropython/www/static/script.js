@@ -115,9 +115,9 @@ async function init() {
     const remoteTestBtns = document.querySelectorAll('#remote-servers-container .remote-row .btn-action');
     remoteTestBtns.forEach(btn => testRemoteServer(btn));
 
-    // Start Polling
-    setInterval(pollStatus, 1000);  // 1 second for live time + heartbeat
-    setInterval(pollSdStatus, 10000);  // SD status every 10s
+    // Start Polling (staggered to avoid concurrent bursts)
+    setInterval(pollStatus, 3000);  // 3 seconds for live time + heartbeat
+    setInterval(pollSdStatus, 15000);  // SD status every 15s
 
     // Attach listeners for dirty state tracking on the config form
     const configTab = document.getElementById('tab-config');
@@ -163,6 +163,7 @@ async function revertConfig() {
 const VALID_TABS = ['config', 'status', 'terminal', 'drives', 'files'];
 let mountedFiles = [];
 let _driveAssignments = [null, null, null, null]; // Indexed by drive number
+let _pollInFlight = false;  // Global guard: only one poll/fetch at a time
 let isUploading = false;
 let configDirty = false;
 let _dialogOpen = false;
@@ -194,8 +195,8 @@ function switchTab(tabName) {
     }
 }
 
-async function refreshDriveSelects() {
-    const files = await fetchFiles();
+async function refreshDriveSelects(cachedFiles) {
+    const files = cachedFiles || await fetchFiles();
     const safeFiles = Array.isArray(files) ? files : [];
 
     // Build fresh options
@@ -239,6 +240,9 @@ async function refreshDriveSelects() {
 }
 
 async function refreshFilesTab() {
+    if (_pollInFlight) return; // Don't pile on requests
+    _pollInFlight = true;
+
     const listBody = document.getElementById('files-list');
     listBody.innerHTML = '<tr><td colspan="2">LOADING FILES...</td></tr>';
 
@@ -348,6 +352,8 @@ async function refreshFilesTab() {
             });
         }
     }
+
+    _pollInFlight = false;
 }
 
 async function customConfirm(message) {
@@ -555,8 +561,7 @@ async function updateMonitorChannel() {
 }
 
 async function pollStatus() {
-    if (isUploading || _dialogOpen) {
-        console.log("Skipping pollStatus during upload");
+    if (isUploading || _dialogOpen || _pollInFlight) {
         return;
     }
     // Only poll if tab is visible
@@ -564,6 +569,7 @@ async function pollStatus() {
     const termIdx = document.getElementById('tab-terminal').classList.contains('active');
     const driveIdx = document.getElementById('tab-drives').classList.contains('active');
     if (!statusIdx && !termIdx && !driveIdx) return;
+    _pollInFlight = true;
 
     try {
         const response = await fetch('/api/status');
@@ -637,6 +643,8 @@ async function pollStatus() {
 
     } catch (e) {
         console.log("Status poll failed", e);
+    } finally {
+        _pollInFlight = false;
     }
 }
 
@@ -899,8 +907,7 @@ async function saveConfig() {
 }
 
 async function pollSdStatus() {
-    if (isUploading || _dialogOpen) {
-        console.log("Skipping pollSdStatus during upload");
+    if (isUploading || _dialogOpen || _pollInFlight) {
         return;
     }
     try {
@@ -1009,7 +1016,7 @@ async function submitCreateDisk() {
 
 async function fetchRemoteFiles() {
     try {
-        const response = await fetch('/api/remote/files?t=' + Date.now());
+        const response = await fetch('/api/remote/files');
         if (response.ok) {
             _remoteFiles = await response.json();
         } else {
@@ -1205,16 +1212,17 @@ async function submitClone() {
                     document.getElementById('clone-status-text').textContent = 'CLONE COMPLETE!';
                     setTimeout(async () => {
                         hideCloneModal();
-                        refreshFilesTab();
-                        // Re-fetch config so drive selects reflect the new local path
+                        // Stagger requests to avoid concurrent burst
                         const freshConfig = await fetchConfig();
                         const freshDrives = freshConfig.drives || [null, null, null, null];
-                        await refreshDriveSelects();
+                        const freshFiles = await fetchFiles();
+                        await refreshDriveSelects(freshFiles);
                         for (let i = 0; i < 4; i++) {
                             const sel = document.getElementById(`drive_${i}`);
                             if (sel) sel.value = freshDrives[i] || '';
                         }
-                    }, 1500);
+                        await refreshFilesTab();
+                    }, 2000);
                 } else if (status.state === 'error') {
                     clearInterval(pollInterval);
                     document.getElementById('clone-status-text').textContent = 'ERROR: ' + (status.error || 'Unknown');

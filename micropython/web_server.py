@@ -100,8 +100,17 @@ def _scan_dsk_dir(base_path, depth=0, max_depth=1):
     return results
 
 
+_dsk_files_cache = None
+_dsk_files_cache_ts = 0
+_DSK_CACHE_TTL_MS = 10000  # 10 second TTL
+
 def get_dsk_files():
-    """Find all .dsk files on internal flash and SD card storage."""
+    """Find all .dsk files on internal flash and SD card storage (cached 10s)."""
+    global _dsk_files_cache, _dsk_files_cache_ts
+    now = utime.ticks_ms()
+    if _dsk_files_cache is not None and utime.ticks_diff(now, _dsk_files_cache_ts) < _DSK_CACHE_TTL_MS:
+        return _dsk_files_cache
+    
     files = []
     # Scan internal flash root (1 level deep)
     files.extend(_scan_dsk_dir('/', max_depth=1))
@@ -115,17 +124,21 @@ def get_dsk_files():
             seen.add(f)
             unique.append(f)
     unique.sort()
+    _dsk_files_cache = unique
+    _dsk_files_cache_ts = utime.ticks_ms()
     return unique
 
 
 @app.route('/api/files')
 async def files_endpoint(request):
+    gc.collect()
     return get_dsk_files()
 
 
 @app.route('/api/sd/status')
 async def sd_status_endpoint(request):
     """Return SD card mount status and storage info."""
+    gc.collect()
     if _uploading:
         # During uploads, return minimal info to avoid SPI access
         return {'mounted': True, 'mount_point': '/sd', 'busy': True}
@@ -140,6 +153,7 @@ async def sd_status_endpoint(request):
 
 @app.route('/api/status')
 async def status_endpoint(request):
+    gc.collect()
     try:
         # Always include server time (lightweight)
         try:
@@ -176,6 +190,7 @@ async def status_endpoint(request):
 @app.route('/api/files/delete', methods=['POST'])
 async def delete_file_endpoint(request):
     """Delete a file if not currently mounted."""
+    global _dsk_files_cache
     try:
         if not hasattr(app, 'dw_server'):
             return {'error': 'DriveWire Server not attached'}, 500
@@ -198,6 +213,7 @@ async def delete_file_endpoint(request):
         # Attempt delete
         try:
             os.remove(path)
+            _dsk_files_cache = None  # Invalidate cache
             return {'status': 'ok'}
         except OSError as e:
             return {'error': f'Delete failed: {e}'}, 500
@@ -340,7 +356,7 @@ async def create_blank_dsk_endpoint(request):
 @app.route('/api/files/upload', methods=['POST'])
 async def upload_file_endpoint(request):
     """Handle file upload via streaming POST with X-Filename header."""
-    global _uploading
+    global _uploading, _dsk_files_cache
     try:
         filename = request.headers.get('X-Filename')
         content_length = request.headers.get('Content-Length')
@@ -472,6 +488,7 @@ async def upload_file_endpoint(request):
         return {'status': 'ok', 'path': target_path, 'size': bytes_written}
     except Exception as e:
         _uploading = False
+        _dsk_files_cache = None  # Invalidate cache
         print(f"General upload error: {e}")
         return {'error': f'Upload failed: {e}'}, 500
 
@@ -738,7 +755,7 @@ async def remote_clone_endpoint(request):
         _clone_progress = {'state': 'downloading', 'progress': 0, 'total': total_sectors, 'error': None}
 
         async def _do_clone():
-            global _cloning, _clone_progress
+            global _cloning, _clone_progress, _dsk_files_cache
             try:
                 import urequests
                 BULK_COUNT = 16  # 16 sectors = 4KB per request (SD-aligned)
@@ -783,6 +800,7 @@ async def remote_clone_endpoint(request):
                     _clone_progress['state'] = 'complete'
 
                 print(f"Clone complete: {disk_name} -> {local_path}")
+                _dsk_files_cache = None  # Invalidate cache
             except Exception as e:
                 print(f"Clone error: {e}")
                 _clone_progress['state'] = 'error'
