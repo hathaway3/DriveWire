@@ -504,48 +504,78 @@ async def monitor_chan_endpoint(request):
 _cloning = False
 _clone_progress = {'state': 'idle', 'progress': 0, 'total': 0, 'error': None}
 
-def _fetch_remote_files(server_url):
-    """Fetch list of .dsk files from a remote sector server."""
-    gc.collect()  # Free memory before the network request
+def stream_remote_files(server_url):
+    """Fetch list of .dsk files from a remote sector server iteratively."""
+    gc.collect()
     try:
         import urequests
         resp = urequests.get(server_url.rstrip('/') + '/files')
         if resp.status_code == 200:
-            try:
-                # Stream JSON from socket to avoid buffering entire response
-                files = json.load(resp.raw)
-            except Exception:
-                # Fallback if resp.raw missing or other error during load
-                files = resp.json()
+            in_string = False
+            escape = False
+            current_str = []
+            
+            while True:
+                chunk = resp.raw.read(64)
+                if not chunk:
+                    break
+                for b in chunk:
+                    # In MicroPython, reading from socket might return bytes or ints depending on context
+                    c = chr(b) if isinstance(b, int) else chr(b)
+                    if escape:
+                        if c == 'n': current_str.append('\n')
+                        elif c == 'r': current_str.append('\r')
+                        elif c == 't': current_str.append('\t')
+                        else: current_str.append(c)
+                        escape = False
+                    elif c == '\\':
+                        escape = True
+                    elif c == '"':
+                        if in_string:
+                            yield ''.join(current_str)
+                            current_str = []
+                            in_string = False
+                        else:
+                            in_string = True
+                    elif in_string:
+                        current_str.append(c)
             resp.close()
-            gc.collect()  # Collect immediately after parsing
-            return files
-        resp.close()
     except Exception as e:
         print(f"Remote files fetch error ({server_url}): {e}")
-    
-    gc.collect()
-    return []
+    finally:
+        gc.collect()
 
 @app.route('/api/remote/files')
 async def remote_files_endpoint(request):
-    """List .dsk files from all configured remote servers."""
-    remote_servers = config.get('remote_servers') or []
-    result = []
-    for srv in remote_servers:
-        url = srv.get('url', '')
-        name = srv.get('name', url)
-        if not url:
-            continue
-        files = _fetch_remote_files(url)
-        for f in files:
-            result.append({
-                'name': f,
-                'server': name,
-                'url': url,
-                'path': url.rstrip('/') + '/disk/' + f
-            })
-    return result
+    """List .dsk files from all configured remote servers using a memory-efficient stream."""
+    async def generate_response():
+        yield '[\n'
+        first = True
+        
+        remote_servers = config.get('remote_servers') or []
+        for srv in remote_servers:
+            url = srv.get('url', '')
+            name = srv.get('name', url)
+            if not url:
+                continue
+                
+            for filename in stream_remote_files(url):
+                if not first:
+                    yield ',\n'
+                first = False
+                
+                # Manual JSON fragment assembly to save memory
+                escaped_name = filename.replace('\\', '\\\\').replace('"', '\\"')
+                escaped_server = name.replace('\\', '\\\\').replace('"', '\\"')
+                escaped_url = url.replace('\\', '\\\\').replace('"', '\\"')
+                escaped_path = (url.rstrip('/') + '/disk/' + filename).replace('\\', '\\\\').replace('"', '\\"')
+                
+                yield f'{{"name": "{escaped_name}", "server": "{escaped_server}", "url": "{escaped_url}", "path": "{escaped_path}"}}'
+                await asyncio.sleep(0) # yield to asyncio loop
+                
+        yield '\n]'
+
+    return Response(generate_response(), headers={'Content-Type': 'application/json'})
 
 @app.route('/api/remote/test', methods=['POST'])
 async def remote_test_endpoint(request):
