@@ -162,6 +162,7 @@ async function revertConfig() {
 
 const VALID_TABS = ['config', 'status', 'terminal', 'drives', 'files'];
 let mountedFiles = [];
+let _driveAssignments = [null, null, null, null]; // Indexed by drive number
 let isUploading = false;
 let configDirty = false;
 let _dialogOpen = false;
@@ -250,6 +251,7 @@ async function refreshFilesTab() {
                 mountedFiles = data.drive_stats
                     .filter(s => s && s.full_path)
                     .map(s => s.full_path);
+                _driveAssignments = data.drive_stats.map(s => s && s.full_path ? s.full_path : null);
             }
         }
     } catch (e) { console.warn("Failed to update mount status", e); }
@@ -624,6 +626,8 @@ async function pollStatus() {
             mountedFiles = data.drive_stats
                 .filter(s => s && s.full_path)
                 .map(s => s.full_path);
+            // Keep a drive-indexed version for the clone modal
+            _driveAssignments = data.drive_stats.map(s => s && s.full_path ? s.full_path : null);
 
             if (driveIdx) renderDriveStats(data.drive_stats);
             // If we are currently on the files tab, we should refresh to update delete buttons
@@ -1114,7 +1118,22 @@ function showCloneModal(serverUrl, diskName, serverName, driveNum) {
     infoEl.textContent = `CLONE "${diskName}" FROM ${serverName || serverUrl} TO LOCAL SD CARD`;
 
     document.getElementById('clone-local-name').value = diskName;
-    document.getElementById('clone-drive-num').value = driveNum != null ? driveNum : -1;
+
+    // Dynamically build drive dropdown showing current assignments
+    const sel = document.getElementById('clone-drive-num');
+    sel.innerHTML = '<option value="-1">(CLONE ONLY - NO DRIVE ASSIGNMENT)</option>';
+    for (let i = 0; i < 4; i++) {
+        const opt = document.createElement('option');
+        opt.value = i;
+        const assigned = _driveAssignments[i];
+        const driveLabel = assigned
+            ? `DRIVE ${i}: ${assigned.split('/').pop()}`
+            : `DRIVE ${i}: (EMPTY)`;
+        opt.textContent = driveLabel;
+        sel.appendChild(opt);
+    }
+    sel.value = driveNum != null ? driveNum : -1;
+
     document.getElementById('clone-progress-container').style.display = 'none';
     document.getElementById('clone-progress-bar').style.width = '0%';
     document.getElementById('clone-status-text').textContent = '';
