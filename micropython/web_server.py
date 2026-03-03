@@ -506,16 +506,25 @@ _clone_progress = {'state': 'idle', 'progress': 0, 'total': 0, 'error': None}
 
 def _fetch_remote_files(server_url):
     """Fetch list of .dsk files from a remote sector server."""
+    gc.collect()  # Free memory before the network request
     try:
         import urequests
         resp = urequests.get(server_url.rstrip('/') + '/files')
         if resp.status_code == 200:
-            files = resp.json()
+            try:
+                # Stream JSON from socket to avoid buffering entire response
+                files = json.load(resp.raw)
+            except Exception:
+                # Fallback if resp.raw missing or other error during load
+                files = resp.json()
             resp.close()
+            gc.collect()  # Collect immediately after parsing
             return files
         resp.close()
     except Exception as e:
         print(f"Remote files fetch error ({server_url}): {e}")
+    
+    gc.collect()
     return []
 
 @app.route('/api/remote/files')

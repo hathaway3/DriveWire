@@ -218,23 +218,41 @@ class RemoteDrive:
             self.read_cache[lsn] = data  # Move to end (most recent)
             return data
 
-        # 2. Fetch from remote server
+        # 2. Fetch from remote server using bulk read-ahead
         self.stats['read_misses'] += 1
         try:
             import urequests
-            resp = urequests.get(f"{self.url}/sector/{lsn}")
+            # Fetch up to MAX_READ_CACHE_ENTRIES sectors sequentially
+            count = MAX_READ_CACHE_ENTRIES
+            resp = urequests.get(f"{self.url}/sectors/{lsn}?count={count}")
             if resp.status_code == 200:
                 data = resp.content
                 resp.close()
                 activity_led.blink()
-                if len(data) < SECTOR_SIZE:
-                    data = data + bytes(SECTOR_SIZE - len(data))
-
-                # Add to read cache
-                self.read_cache[lsn] = data
-                if len(self.read_cache) > MAX_READ_CACHE_ENTRIES:
-                    self.read_cache.pop(next(iter(self.read_cache)))
-                return data
+                
+                # Split the bulk payload into individual 256-byte sectors
+                sectors_received = len(data) // SECTOR_SIZE
+                if sectors_received == 0 and len(data) > 0:
+                    sectors_received = 1
+                    
+                target_data = None
+                
+                for i in range(sectors_received):
+                    chunk = data[i * SECTOR_SIZE : (i + 1) * SECTOR_SIZE]
+                    if len(chunk) < SECTOR_SIZE:
+                        chunk = chunk + bytes(SECTOR_SIZE - len(chunk))
+                        
+                    current_lsn = lsn + i
+                    self.read_cache[current_lsn] = chunk
+                    
+                    # Evict oldest if we exceed max size
+                    while len(self.read_cache) > MAX_READ_CACHE_ENTRIES:
+                        self.read_cache.pop(next(iter(self.read_cache)))
+                        
+                    if current_lsn == lsn:
+                        target_data = chunk
+                
+                return target_data if target_data else bytes(SECTOR_SIZE)
             resp.close()
             print(f"Remote Read Error LSN {lsn}: HTTP {resp.status_code}")
             self.last_error = E_READ

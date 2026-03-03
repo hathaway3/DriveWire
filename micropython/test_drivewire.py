@@ -314,15 +314,15 @@ class TestRemoteDrive(unittest.TestCase):
 
     def test_remote_read_sector(self):
         """Remote read should HTTP GET and return sector data."""
-        sector_data = bytes(range(256))
+        sector_data = bytes(range(256)) * 8  # Mock 8 sectors
         resp = MagicMock()
         resp.status_code = 200
         resp.content = sector_data
         mock_urequests.get.return_value = resp
 
         result = self.drive.read_sector(5)
-        self.assertEqual(result, sector_data)
-        mock_urequests.get.assert_called_once_with('http://192.168.1.100:8080/sector/5')
+        self.assertEqual(result, bytes(range(256))) # Should return the 1 sector requested
+        mock_urequests.get.assert_called_once_with('http://192.168.1.100:8080/sectors/5?count=8')
         self.assertEqual(self.drive.stats['read_misses'], 1)
 
     def test_remote_write_protected(self):
@@ -332,7 +332,7 @@ class TestRemoteDrive(unittest.TestCase):
 
     def test_remote_cache_hit(self):
         """Second read of same sector should come from cache."""
-        sector_data = bytes(range(256))
+        sector_data = bytes(range(256)) * 8  # Mock 8 sectors
         resp = MagicMock()
         resp.status_code = 200
         resp.content = sector_data
@@ -347,7 +347,7 @@ class TestRemoteDrive(unittest.TestCase):
 
         # Second read = cache hit (no HTTP call)
         result = self.drive.read_sector(10)
-        self.assertEqual(result, sector_data)
+        self.assertEqual(result, bytes(range(256)))
         self.assertEqual(self.drive.stats['read_hits'], 1)
         mock_urequests.get.assert_not_called()
 
