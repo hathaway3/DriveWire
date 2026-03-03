@@ -261,6 +261,13 @@ async function refreshFilesTab() {
     } catch (e) { console.warn("Failed to update mount status", e); }
 
     const files = await fetchFiles();
+    // Fetch optional file metadata (mtime, size) — non-blocking
+    let fileInfo = {};
+    try {
+        const infoRes = await fetch('/api/files/info');
+        if (infoRes.ok) fileInfo = await infoRes.json();
+    } catch (e) { /* metadata is optional */ }
+
     listBody.innerHTML = '';
 
     if (!files || files.length === 0) {
@@ -271,10 +278,15 @@ async function refreshFilesTab() {
             const tr = document.createElement('tr');
             const fname = f.split('/').pop();
             const isMounted = mountedFiles.includes(f);
+            const meta = fileInfo[f];
+            const mtimeStr = meta && meta.mtime ? meta.mtime : '';
+            const sizeKb = meta && meta.size ? (meta.size / 1024).toFixed(1) + ' KB' : '';
+            const subtitle = [sizeKb, mtimeStr].filter(Boolean).join(' \u2022 ');
 
             tr.innerHTML = `
-                <td class="filename-cell" title="${escHtml(fname)}">
+                <td class="filename-cell" title="${escHtml(f)}${mtimeStr ? '\nModified: ' + escHtml(mtimeStr) : ''}">
                     <span class="file-icon">${f.startsWith('/sd') ? '\uD83D\uDCBE' : '\uD83D\uDCC1'}</span> ${escHtml(fname)}
+                    ${subtitle ? '<div style="font-size:0.7em; color:var(--coco-dark-green); margin-left:30px;">' + escHtml(subtitle) + '</div>' : ''}
                 </td>
                 <td></td>
             `;
@@ -683,6 +695,7 @@ function renderDriveStats(stats) {
         card.className = 'card';
         card.innerHTML = `
             <h2>DRIVE ${idx}: ${icon} ${escHtml(s.filename)}${modeBadge}</h2>
+            ${s.mtime ? '<div class="serial-stat-row" style="color:var(--coco-dark-green); font-size:0.85em;">MODIFIED: ' + escHtml(s.mtime) + '</div>' : ''}
             <div class="serial-stat-row">READ HITS: ${s.read_hits || 0}</div>
             <div class="serial-stat-row">READ MISSES: ${s.read_misses || 0}</div>
             <div class="serial-stat-row">HIT RATE: ${hitRate}%</div>

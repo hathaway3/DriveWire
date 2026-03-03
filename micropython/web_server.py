@@ -129,10 +129,42 @@ def get_dsk_files():
     return unique
 
 
+def _get_file_mtime(path):
+    """Get a formatted modification timestamp for a file, or None."""
+    try:
+        st = os.stat(path)
+        # MicroPython os.stat returns mtime at index 8 (seconds since epoch)
+        mtime = st[8]
+        # Convert epoch seconds to a readable string
+        # MicroPython epoch is 2000-01-01, adjust for display
+        import time
+        t = time.localtime(mtime)
+        return f"{t[0]:04d}-{t[1]:02d}-{t[2]:02d} {t[3]:02d}:{t[4]:02d}"
+    except:
+        return None
+
+
 @app.route('/api/files')
 async def files_endpoint(request):
     gc.collect()
     return get_dsk_files()
+
+
+@app.route('/api/files/info')
+async def files_info_endpoint(request):
+    """Return metadata (size, modification time) for all .dsk files."""
+    gc.collect()
+    files = get_dsk_files()
+    result = {}
+    for f in files:
+        try:
+            st = os.stat(f)
+            size = st[6]  # file size in bytes
+            mtime_str = _get_file_mtime(f)
+            result[f] = {'size': size, 'mtime': mtime_str}
+        except:
+            result[f] = {'size': 0, 'mtime': None}
+    return result
 
 
 @app.route('/api/sd/status')
@@ -171,6 +203,9 @@ async def status_endpoint(request):
                     ds['full_path'] = d.filename
                     ds['dirty_count'] = len(d.dirty_sectors)
                     ds['is_remote'] = getattr(d, 'is_remote', False)
+                    # Add file modification time for local files
+                    if not ds['is_remote']:
+                        ds['mtime'] = _get_file_mtime(d.filename)
                     drive_stats.append(ds)
                 else:
                     drive_stats.append(None)
