@@ -8,6 +8,12 @@ for FAT/FAT32 filesystem access. Configurable SPI pins via config.json.
 import os
 import asyncio
 from config import shared_config
+import resilience
+
+try:
+    from typing import Optional, Dict, Any
+except ImportError:
+    pass
 
 # Module-level state
 _sd = None
@@ -16,12 +22,12 @@ _mount_point = '/sd'
 _lock = asyncio.Lock()
 
 
-def get_lock():
+def get_lock() -> asyncio.Lock:
     """Return the global SD card lock."""
     return _lock
 
 
-def init_sd():
+def init_sd() -> bool:
     """
     Initialize and mount the SD card using configured SPI pins.
     Returns True on success, False on failure.
@@ -30,7 +36,7 @@ def init_sd():
     global _sd, _mounted, _mount_point
 
     if _mounted:
-        print("SD card already mounted")
+        resilience.log("SD card already mounted")
         return True
 
     _mount_point = shared_config.get('sd_mount_point') or '/sd'
@@ -42,14 +48,14 @@ def init_sd():
     baudrate = shared_config.get('sd_spi_baudrate') or 1_000_000
 
     if spi_id is None or sck_pin is None or mosi_pin is None or miso_pin is None or cs_pin is None:
-        print("SD card: SPI pins not configured, skipping")
+        resilience.log("SD card: SPI pins not configured, skipping", level=0)
         return False
 
     try:
         from machine import SPI, Pin
         import sdcard
 
-        print(f"SD card: Init SPI{spi_id} SCK={sck_pin} MOSI={mosi_pin} MISO={miso_pin} CS={cs_pin} Speed={baudrate}")
+        resilience.log(f"SD card: Init SPI{spi_id} SCK={sck_pin} MOSI={mosi_pin} MISO={miso_pin} CS={cs_pin} Speed={baudrate}")
 
         spi = SPI(spi_id,
                    baudrate=baudrate,
@@ -60,42 +66,45 @@ def init_sd():
                    miso=Pin(miso_pin))
 
         cs = Pin(cs_pin, Pin.OUT, value=1)
-        _sd = sdcard.SDCard(spi, cs)
+        
+        try:
+            _sd = sdcard.SDCard(spi, cs)
+        except (OSError, RuntimeError) as e:
+            resilience.log(f"SD card: Hardware initialization failed: {e}", level=2)
+            return False
 
         # Create mount point if needed
-        # os.listdir('/') returns names WITHOUT leading slash (e.g. 'sd' not '/sd')
         mount_name = _mount_point.strip('/')
         if mount_name not in os.listdir('/'):
             try:
                 os.mkdir(_mount_point)
-                print(f"SD card: Created mount point {_mount_point}")
+                resilience.log(f"SD card: Created mount point {_mount_point}")
             except OSError as e:
-                print(f"SD card: Error creating mount point: {e}")
+                resilience.log(f"SD card: Error creating mount point: {e}", level=3)
         
-        os.mount(_sd, _mount_point)
-        _mounted = True
+        try:
+            os.mount(_sd, _mount_point)
+            _mounted = True
+        except OSError as e:
+            resilience.log(f"SD card: Mount failed: {e}", level=3)
+            _cleanup()
+            return False
 
         # Try to read directory to verify
         entries = os.listdir(_mount_point)
-        print(f"SD card mounted at {_mount_point} ({len(entries)} entries)")
+        resilience.log(f"SD card mounted at {_mount_point} ({len(entries)} entries)")
         return True
 
     except ImportError as e:
-        print(f"SD card: Missing driver ({e})")
-        print("  Install: copy sdcard.py to device or use mip.install('sdcard')")
-        return False
-    except OSError as e:
-        print(f"SD card: Mount failed ({e})")
-        print("  Check: card inserted? FAT/FAT32 formatted?")
-        _cleanup()
+        resilience.log(f"SD card: Missing driver ({e})", level=3)
         return False
     except Exception as e:
-        print(f"SD card: Unexpected error ({e})")
+        resilience.log(f"SD card: Unexpected error ({e})", level=3)
         _cleanup()
         return False
 
 
-def deinit_sd():
+def deinit_sd() -> None:
     """Unmount SD card and release SPI resources."""
     global _sd, _mounted
 
@@ -104,21 +113,21 @@ def deinit_sd():
 
     try:
         os.umount(_mount_point)
-        print(f"SD card unmounted from {_mount_point}")
+        resilience.log(f"SD card unmounted from {_mount_point}")
     except OSError as e:
-        print(f"SD card unmount error: {e}")
+        resilience.log(f"SD card unmount error: {e}", level=2)
 
     _cleanup()
 
 
-def _cleanup():
+def _cleanup() -> None:
     """Reset module state."""
     global _sd, _mounted
     _sd = None
     _mounted = False
 
 
-def is_mounted():
+def is_mounted() -> bool:
     """Check if SD card is currently mounted and accessible."""
     global _mounted
 
@@ -130,15 +139,14 @@ def is_mounted():
         os.listdir(_mount_point)
         return True
     except OSError:
-        print("SD card: Mount point inaccessible, marking as unmounted")
+        resilience.log("SD card: Mount point inaccessible, marking as unmounted", level=2)
         _mounted = False
         return False
 
 
-async def get_info():
+async def get_info() -> Dict[str, Any]:
     """
     Return SD card status information.
-    Returns dict with: mounted, mount_point, and optionally free/total bytes.
     """
     async with _lock:
         info = {
@@ -149,8 +157,6 @@ async def get_info():
         if info['mounted']:
             try:
                 stat = os.statvfs(_mount_point)
-                # statvfs returns: (f_bsize, f_frsize, f_blocks, f_bfree, f_bavail,
-                #                   f_files, f_ffree, f_favail, f_flag, f_namemax)
                 block_size = stat[0]
                 total_blocks = stat[2]
                 free_blocks = stat[3]
@@ -158,7 +164,7 @@ async def get_info():
                 info['free_bytes'] = block_size * free_blocks
                 info['total_mb'] = round(info['total_bytes'] / (1024 * 1024), 1)
                 info['free_mb'] = round(info['free_bytes'] / (1024 * 1024), 1)
-            except OSError:
-                pass  # statvfs may not be supported on all platforms
+            except (OSError, AttributeError):
+                pass
 
         return info

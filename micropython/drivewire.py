@@ -6,6 +6,12 @@ from machine import UART
 from config import shared_config
 import micropython
 import activity_led
+import resilience
+
+try:
+    from typing import Optional, List, Dict, Any, Union, Tuple
+except ImportError:
+    pass
 
 # OpCodes - using const() to save RAM on MicroPython
 # OpCodes - using const() to save RAM on MicroPython
@@ -92,19 +98,19 @@ class VirtualDrive:
         try:
             self.file = open(filename, "r+b")
         except OSError as e:
-            print(f"Failed to open {filename}: {e}")
+            resilience.log(f"Failed to open {filename}: {e}", level=3)
 
     def close(self):
         try:
             self.flush()
         except Exception as e:
-            print(f"Flush error during close of {self.filename}: {e}")
+            resilience.log(f"Flush error during close of {self.filename}: {e}", level=2)
         finally:
             if self.file:
                 try:
                     self.file.close()
                 except OSError as e:
-                    print(f"Error closing {self.filename}: {e}")
+                    resilience.log(f"Error closing {self.filename}: {e}", level=2)
                 self.file = None
 
     def flush(self):
@@ -117,13 +123,17 @@ class VirtualDrive:
                 self.file.write(data)
                 flushed_lsns.append(lsn)
             self.file.flush()
+            try:
+                os.sync()
+            except AttributeError:
+                pass
             self.dirty_sectors = {}
-            print(f"Flushed {self.filename}")
+            resilience.log(f"Flushed {self.filename}", level=0)
         except OSError as e:
             # Only clear sectors that were successfully written
             for lsn in flushed_lsns:
                 self.dirty_sectors.pop(lsn, None)
-            print(f"Flush Error ({len(self.dirty_sectors)} sectors remain dirty): {e}")
+            resilience.log(f"Flush Error ({len(self.dirty_sectors)} sectors remain dirty): {e}", level=3)
         finally:
             activity_led.off()
 
@@ -166,10 +176,10 @@ class VirtualDrive:
     def write_sector(self, lsn, data):
         """Write a sector to the write-back cache (deferred write to flash)."""
         if lsn < 0:
-            print(f"Write Error: Invalid LSN {lsn}")
+            resilience.log(f"Write Error: Invalid LSN {lsn}", level=2)
             return False
         if len(data) != SECTOR_SIZE:
-            print(f"Write Error: Data length {len(data)} != {SECTOR_SIZE}")
+            resilience.log(f"Write Error: Data length {len(data)} != {SECTOR_SIZE}", level=2)
             return False
         self.stats['write_count'] += 1
         self.dirty_sectors[lsn] = data
@@ -203,10 +213,10 @@ class RemoteDrive:
             resp = urequests.get(self.url + '/info')
             if resp.status_code == 200:
                 info = resp.json()
-                print(f"Remote drive connected: {info.get('name', url)}")
+                resilience.log(f"Remote drive connected: {info.get('name', url)}")
             resp.close()
         except Exception as e:
-            print(f"Remote drive warning ({url}): {e}")
+            resilience.log(f"Remote drive warning ({url}): {e}", level=2)
 
     def read_sector(self, lsn):
         """Read a sector from remote server, checking caches first."""
@@ -254,17 +264,17 @@ class RemoteDrive:
                 
                 return target_data if target_data else bytes(SECTOR_SIZE)
             resp.close()
-            print(f"Remote Read Error LSN {lsn}: HTTP {resp.status_code}")
+            resilience.log(f"Remote Read Error LSN {lsn}: HTTP {resp.status_code}", level=2)
             self.last_error = E_READ
             return None
         except Exception as e:
-            print(f"Remote Read Error LSN {lsn}: {e}")
+            resilience.log(f"Remote Read Error LSN {lsn}: {e}", level=2)
             self.last_error = E_NOTRDY
             return None
 
     def write_sector(self, lsn, data):
         """Remote drives are read-only. Returns error code E_WP."""
-        print(f"Write rejected: Remote drive is read-only (LSN {lsn})")
+        resilience.log(f"Write rejected: Remote drive is read-only (LSN {lsn})", level=2)
         self.last_error = E_WP
         return False
 
@@ -319,7 +329,7 @@ class DriveWireServer:
                     else:
                         self.drives[i] = VirtualDrive(path)
                 except Exception as e:
-                    print(f"Failed to mount drive {i}: {e}")
+                    resilience.log(f"Failed to mount drive {i}: {e}", level=3)
                     self.drives[i] = None
             else:
                 self.drives[i] = None
@@ -332,14 +342,14 @@ class DriveWireServer:
         try:
             # UART 0 on Pico W: TX=GP0, RX=GP1
             self.uart = UART(0, baudrate=baud) 
-            print(f"UART Initialized at {baud} baud")
+            resilience.log(f"UART Initialized at {baud} baud")
         except Exception as e:
-            print(f"Failed to init UART: {e}")
+            resilience.log(f"Failed to init UART: {e}", level=4)
 
-    def swap_drive(self, drive_num, new_drive):
+    def swap_drive(self, drive_num: int, new_drive: Union[VirtualDrive, RemoteDrive, None]) -> bool:
         """Hot-swap a single drive without disturbing others or UART."""
         if drive_num < 0 or drive_num >= NUM_DRIVES:
-            print(f"swap_drive: Invalid drive number {drive_num}")
+            resilience.log(f"swap_drive: Invalid drive number {drive_num}", level=2)
             return False
         old = self.drives[drive_num]
         # Transfer read cache from old drive for seamless transition
@@ -349,7 +359,7 @@ class DriveWireServer:
         if old:
             old.read_cache = {}  # Clear before close to avoid double-free
             old.close()
-        print(f"Drive {drive_num}: swapped to {new_drive.filename if new_drive else 'None'}")
+        resilience.log(f"Drive {drive_num}: swapped to {new_drive.filename if new_drive else 'None'}")
         return True
 
     def checksum(self, data):
@@ -375,7 +385,7 @@ class DriveWireServer:
                 self.terminal_buffer = self.terminal_buffer[-MAX_TERMINAL_BUFFER_SIZE:]
 
     async def run(self):
-        print("DriveWire server started.")
+        resilience.log("DriveWire server started.")
         self.running = True
         
         # Track loop count to trigger GC safely without penalizing latency
@@ -405,7 +415,7 @@ class DriveWireServer:
                         # Flush buffers
                         while self.uart.any():
                             self.uart.read()
-                        print("Reset received")
+                        resilience.log("Reset received")
                         
                     elif opcode == OP_DWINIT:
                          # Read capability byte
@@ -531,7 +541,7 @@ class DriveWireServer:
                             msg = self.print_buffer.decode('utf-8', 'ignore')
                             print(f"[PRINTER] {msg}")
                         except Exception:
-                            print(f"[PRINTER HEX] {self.print_buffer.hex()}")
+                            resilience.log(f"[PRINTER HEX] {self.print_buffer.hex()}")
                         self.print_buffer = bytearray()
                         
                     elif opcode == OP_GETSTAT:
@@ -598,7 +608,7 @@ class DriveWireServer:
                                     self.snoop_serial(chan, val)
                                     
                                 except Exception as e:
-                                    print(f"TCP Write Error Ch{chan}: {e}")
+                                    resilience.log(f"TCP Write Error Ch{chan}: {e}", level=2)
                                     # Clean up dead connection
                                     self.log_msg(f"TCP Ch{chan} write failed, closing")
                                     await self.close_tcp(chan)
@@ -627,7 +637,7 @@ class DriveWireServer:
                                  port = mapping['port']
                                  mode = mapping.get('mode', 'client') # client or server
                                  
-                                 print(f"Initialize VSerial Ch{chan} ({mode}) -> {host}:{port}")
+                                 resilience.log(f"Initialize VSerial Ch{chan} ({mode}) -> {host}:{port}")
                                  try:
                                      # Close existing if needed
                                      if chan in self.tcp_connections:
@@ -649,7 +659,7 @@ class DriveWireServer:
                                          # We will need a separate dict for "servers" so we can close the listening port.
                                          if not hasattr(self, 'tcp_servers'): self.tcp_servers = {}
                                          self.tcp_servers[chan] = server
-                                         print(f"Listening on {host}:{port} for Ch{chan}")
+                                         resilience.log(f"Listening on {host}:{port} for Ch{chan}")
                                      else:
                                          # Client mode
                                          reader, writer = await asyncio.open_connection(host, port)
@@ -690,40 +700,43 @@ class DriveWireServer:
                             ln = ln_b[0]
                             name_b = await self.read_bytes(ln)
                             if name_b:
-                                name = name_b.decode('ascii', 'ignore')
-                                print(f"NamedObj Mount/Create: {name}")
-                                # Try to mount it.
-                                # Find free drive slot
-                                free_drive = -1
-                                for i in range(NUM_DRIVES):
-                                    if self.drives[i] is None:
-                                        free_drive = i
-                                        break
-                                
-                                if free_drive >= 0:
-                                    # Try to mount
-                                    try:
-                                        # Assume file exists locally
-                                        vd = VirtualDrive(name)
-                                        if vd.file:
-                                            self.drives[free_drive] = vd
-                                            self.uart.write(bytes([free_drive]))
-                                            print(f"Mounted {name} to Drive {free_drive}")
-                                        else:
+                                try:
+                                    name = name_b.decode('ascii', 'ignore')
+                                    # Try to mount it.
+                                    # Find free drive slot
+                                    free_drive = -1
+                                    for i in range(NUM_DRIVES):
+                                        if self.drives[i] is None:
+                                            free_drive = i
+                                            break
+                                    
+                                    if free_drive >= 0:
+                                        # Try to mount
+                                        try:
+                                            # Assume file exists locally
+                                            vd = VirtualDrive(name)
+                                            if vd.file:
+                                                self.drives[free_drive] = vd
+                                                self.uart.write(bytes([free_drive]))
+                                                resilience.log(f"Mounted {name} to Drive {free_drive}")
+                                            else:
+                                                self.uart.write(bytes([0]))
+                                        except Exception:
                                             self.uart.write(bytes([0]))
-                                    except Exception:
-                                        self.uart.write(bytes([0]))
-                                else:
-                                    self.uart.write(bytes([0])) # No free drives
+                                    else:
+                                        self.uart.write(bytes([0])) # No free drives
+                                except Exception as e:
+                                    resilience.log(f"NamedObj error: {e}", level=3)
+                                    self.uart.write(bytes([0]))
 
                     elif opcode == OP_WIREBUG:
                         # OP_WIREBUG ($42) + CoCoType(1) + CPUType(1) + Reserved(21)??
                         # Param 3 says 3-23 reserved, so 21 bytes. Total 23 bytes payload.
                         wb_data = await self.read_bytes(23)
                         if wb_data:
-                            print("Entered WireBug Mode")
+                            resilience.log("Entered WireBug Mode")
                         else:
-                            print("WireBug handshake timeout")
+                            resilience.log("WireBug handshake timeout", level=2)
                         # We just stay silent now, as we are the server and we initiate commands.
                         # If we don't send commands, CoCo just waits. 
                         # To exit, we could send OP_WIREBUG_GO ($47) but usually we wait for user input.
@@ -756,9 +769,9 @@ class DriveWireServer:
                                             self.rfm_paths[path_addr] = {'handle': f, 'mode': mode}
                                             err_code = 0
                                             lsn0, lsn1, lsn2 = 3, 2, 1 # Dummy unique identifier per Swift
-                                            print(f"RFM OPEN: {path_str} (mode {mode}) -> Addr: {path_addr}")
+                                            resilience.log(f"RFM OPEN: {path_str} (mode {mode}) -> Addr: {path_addr}")
                                         except Exception as e:
-                                            print(f"RFM OPEN error: {e}")
+                                            resilience.log(f"RFM OPEN error: {e}", level=3)
                                             err_code = 216 # Path not found / access error
                                     
                                     self.uart.write(bytes([err_code, lsn0, lsn1, lsn2]))
@@ -796,7 +809,7 @@ class DriveWireServer:
                                             self.rfm_paths[path_addr]['handle'].seek(pos)
                                             err_code = 0
                                         except Exception as e:
-                                            print(f"RFM SEEK error: {e}")
+                                            resilience.log(f"RFM SEEK error: {e}", level=3)
                                             err_code = 211 # Read error/EOF
                                     
                                     self.uart.write(bytes([err_code]))
@@ -921,7 +934,7 @@ class DriveWireServer:
                                         try:
                                             self.rfm_paths[path_addr]['handle'].close()
                                             del self.rfm_paths[path_addr]
-                                            print(f"RFM CLOSE: Addr {path_addr}")
+                                            resilience.log(f"RFM CLOSE: Addr {path_addr}")
                                         except Exception:
                                             err_code = 214
                                     else:
@@ -984,10 +997,10 @@ class DriveWireServer:
                 # Let's count it here? Or just count when actual OP_SERREAD happens?
                 # User asked for "activity". 
         except Exception as e:
-            print(f"TCP Reader Error Ch{chan}: {e}")
+            resilience.log(f"TCP Reader Error Ch{chan}: {e}", level=2)
             self.log_msg(f"TCP Err Ch{chan}: {e}")
         finally:
-            print(f"Reader Task Ch{chan} Ended")
+            resilience.log(f"Reader Task Ch{chan} Ended")
             self.log_msg(f"TCP Ch{chan} Disconnected")
             # We don't necessarily close the whole connection here as it might be a temporary network blip or fin?
             # But usually EOF means closed.
@@ -1006,7 +1019,7 @@ class DriveWireServer:
                 pass
             del self.tcp_connections[chan]
             self.channels[chan] = bytearray() # Clear buffer
-            print(f"Closed VSerial Ch{chan}")
+            resilience.log(f"Closed VSerial Ch{chan}")
 
     async def read_bytes(self, count):
         """Read exact number of bytes from UART with timeout."""
@@ -1033,7 +1046,7 @@ class DriveWireServer:
                 try:
                     d.close()
                 except Exception as e:
-                    print(f"Error closing drive {i}: {e}")
+                    resilience.log(f"Error closing drive {i}: {e}", level=2)
 
     async def flush_loop(self):
         """Periodically flush dirty sectors to disk (flash wear protection)."""
@@ -1044,5 +1057,5 @@ class DriveWireServer:
                     try:
                         d.flush()
                     except Exception as e:
-                        print(f"Flush loop error drive {i}: {e}")
+                        resilience.log(f"Flush loop error drive {i}: {e}", level=2)
 

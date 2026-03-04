@@ -4,19 +4,28 @@ from web_server import app
 import time_sync
 import gc
 import machine
+import resilience
+import time
+
+# Safety delay for development (allows interrupting boot loops)
+time.sleep(2)
 
 async def main():
-    print("Initializing DriveWire Server...")
+    resilience.log("Initializing DriveWire Server...")
     
-    # Configure GC to run aggressively early to prevent pausing later under load
+    # Initialize Watchdog
+    wdt = resilience.init_wdt(timeout_ms=15000) # 15s timeout for heavy I/O
+    
+    # Configure GC to run aggressively early
     gc.threshold(50000)
-    
-    # Report memory status
-    gc.collect()
-    print(f"Free memory: {gc.mem_free()} bytes")
+    resilience.collect_garbage("server_start")
+    resilience.log(f"Free memory: {gc.mem_free()} bytes")
     
     # Sync time on startup (best effort)
-    time_sync.sync_time()
+    try:
+        time_sync.sync_time()
+    except Exception as e:
+        resilience.log(f"Initial time sync failed: {e}", level=2)
     
     # Start background task to keep system time synced every 12 hours
     asyncio.create_task(time_sync.keep_time_synced(interval_hours=12))
@@ -30,7 +39,16 @@ async def main():
     # Create the DriveWire task
     asyncio.create_task(dw_server.run())
     
-    print("Starting Web Server on port 80...")
+    resilience.log("Starting Web Server on port 80...")
+    
+    # Background task to feed the watchdog
+    async def watchdog_feeder():
+        while True:
+            wdt.feed()
+            await asyncio.sleep(5)
+    
+    asyncio.create_task(watchdog_feeder())
+    
     # Start the Web Server (this will keep running)
     await app.start_server(port=80, debug=True)
 
@@ -38,24 +56,9 @@ async def main():
 try:
     asyncio.run(main())
 except KeyboardInterrupt:
-    print("Server stopped by user.")
+    resilience.log("Server stopped by user.")
 except Exception as e:
-    # Log to file for headless debugging
-    try:
-        with open("error.log", "a") as f:
-            import time
-            f.write(f"[{time.localtime()}] Startup error: {e}\n")
-    except OSError:
-        pass
-        
-    try:
-        from syslog import logger
-        logger.log(f"Unexpected server crash: {e}", severity=2)
-    except Exception:
-        pass
-        
-    print(f"Unexpected error: {e}")
-    print("Rebooting in 5 seconds to recover...")
-    import time
-    time.sleep(5)
+    resilience.log(f"Unexpected server crash: {e}", level=4)
+    resilience.log("Rebooting in 10 seconds to recover...", level=4)
+    time.sleep(10)
     machine.reset()

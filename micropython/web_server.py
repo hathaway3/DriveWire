@@ -5,18 +5,25 @@ except ImportError:
     try:
         from microdot import Microdot, Response, Request, send_file
     except ImportError:
+        # We can't log yet, but we can print for serial console
         print("Microdot not installed.")
         raise
 
-from config import shared_config
 import json
 import os
 import gc
 import uasyncio as asyncio
+from config import shared_config
 import sd_card
 import time_sync
 import activity_led
 import utime
+import resilience
+
+try:
+    from typing import Optional, List, Dict, Any, Union
+except ImportError:
+    pass
 
 app = Microdot()
 # Microdot 1.3.4 uses Request class attributes for limits
@@ -69,34 +76,36 @@ async def config_endpoint(request):
             
             # Trigger reload on DriveWire Server if attached
             if hasattr(app, 'dw_server'):
-                print("Reloading DriveWire Config...")
+                resilience.log("Reloading DriveWire Config...")
                 app.dw_server.reload_config()
 
             return {'status': 'ok'}
         except Exception as e:
-            print(f"Failed to save config: {e}")
-            syslog.logger.log(f"Failed to save config: {e}", severity=3)
+            resilience.log(f"Failed to save config: {e}", level=3)
             return {"status": "error", "message": str(e)}, 500
         finally:
             gc.collect() # Clean up memory after parsing JSON payload
 
-def _scan_dsk_dir(base_path, depth=0, max_depth=1):
+def _scan_dsk_dir(base_path: str, depth: int = 0, max_depth: int = 1) -> List[str]:
     """Recursively scan a directory for .dsk files up to max_depth levels deep."""
     results = []
     try:
+        if base_path.startswith('/sd') and not sd_card.is_mounted():
+            return []
         for entry in os.listdir(base_path):
             full_path = base_path.rstrip('/') + '/' + entry
             if entry.lower().endswith('.dsk'):
                 results.append(full_path)
             elif depth < max_depth:
-                # Check if it's a directory by trying to list it
+                # Check if it's a directory
                 try:
-                    os.listdir(full_path)
-                    results.extend(_scan_dsk_dir(full_path, depth + 1, max_depth))
+                    s = os.stat(full_path)
+                    if s[0] & 0x4000: # Directory bit
+                        results.extend(_scan_dsk_dir(full_path, depth + 1, max_depth))
                 except OSError:
-                    pass  # Not a directory or inaccessible
+                    pass
     except OSError:
-        pass  # Directory doesn't exist or inaccessible
+        pass
     return results
 
 
@@ -289,7 +298,7 @@ async def download_file_endpoint(request):
         except OSError:
             return {'error': 'File not found'}, 404
             
-        print(f"Downloading file: {path}")
+        resilience.log(f"Downloading file: {path}")
         # Send file as attachment
         filename = path.split('/')[-1]
         headers = {
@@ -301,7 +310,7 @@ async def download_file_endpoint(request):
         return res
             
     except Exception as e:
-        print(f"Download error: {e}")
+        resilience.log(f"Download error: {e}", level=3)
         return {'error': f'Download error: {e}'}, 500
     finally:
         gc.collect()
@@ -349,7 +358,7 @@ async def create_blank_dsk_endpoint(request):
             return {'error': f'SD card check failed: {e}'}, 500
             
         # Generate the file with zero-fill chunks to prevent memory exhaustion
-        print(f"Creating blank disk image: {target_path} ({size_bytes} bytes)")
+        resilience.log(f"Creating blank disk image: {target_path} ({size_bytes} bytes)")
         
         try:
             chunk_size = 4096
@@ -372,7 +381,7 @@ async def create_blank_dsk_endpoint(request):
             finally:
                 activity_led.off()
                         
-            print(f"Successfully created: {target_path}")
+            resilience.log(f"Successfully created: {target_path}")
             return {'status': 'ok', 'filename': clean_name, 'size': size_bytes}, 201
             
         except Exception as e:
@@ -383,7 +392,7 @@ async def create_blank_dsk_endpoint(request):
             return {'error': f'File creation failed: {e}'}, 500
             
     except Exception as e:
-        print(f"Disk creation request error: {e}")
+        resilience.log(f"Disk creation request error: {e}", level=3)
         return {'error': f'Failed to process request: {e}'}, 500
     finally:
         gc.collect()
@@ -395,14 +404,14 @@ async def upload_file_endpoint(request):
     try:
         filename = request.headers.get('X-Filename')
         content_length = request.headers.get('Content-Length')
-        print(f"Upload starting: {filename} (Content-Length: {content_length})")
+        resilience.log(f"Upload starting: {filename} (Content-Length: {content_length})")
         
         if not filename:
-            print("Upload Error: Missing X-Filename header")
+            resilience.log("Upload Error: Missing X-Filename header", level=2)
             return {'error': 'Missing X-Filename header.'}, 400
             
         if not filename.lower().endswith('.dsk'):
-            print(f"Upload Error: Invalid file type: {filename}")
+            resilience.log(f"Upload Error: Invalid file type: {filename}", level=2)
             return {'error': 'Only .dsk files are supported.'}, 400
             
         # Clean filename 
@@ -417,11 +426,11 @@ async def upload_file_endpoint(request):
         try:
             sd_stat = os.statvfs('/sd')
             sd_free = sd_stat[0] * sd_stat[3]
-            print(f"SD free: {sd_free // 1024}KB, need: {total_size // 1024}KB")
+            resilience.log(f"SD free: {sd_free // 1024}KB, need: {total_size // 1024}KB")
             if sd_free < total_size:
                 return {'error': 'Insufficient SD card space'}, 400
         except Exception as e:
-            print(f"SD check failed: {e}")
+            resilience.log(f"SD check failed: {e}", level=3)
             return {'error': f'SD card not accessible: {e}'}, 500
 
         # Signal that an upload is in progress (prevents SD polling from interfering)
@@ -459,7 +468,7 @@ async def upload_file_endpoint(request):
                         data_ready.clear()
             except Exception as e:
                 write_error = e
-                print(f"SD Background Writer Error: {e}")
+                resilience.log(f"SD Background Writer Error: {e}", level=3)
 
         # Start the background writer task
         writer_task = asyncio.create_task(sd_writer())
@@ -473,7 +482,7 @@ async def upload_file_endpoint(request):
                 read_size = min(chunk_size, remaining)
                 chunk = await request.stream.read(read_size)
                 if not chunk:
-                    print(f"Stream ended early at {bytes_written}/{total_size}")
+                    resilience.log(f"Stream ended early at {bytes_written}/{total_size}", level=2)
                     break
                 
                 # Throttle network read if SD card is falling behind (Queue maxsize=3 alternative)
@@ -489,7 +498,7 @@ async def upload_file_endpoint(request):
                 
                 # Manual memory optimization
                 if bytes_written % (16 * chunk_size) == 0:
-                    print(f"Received: {bytes_written}/{total_size} bytes")
+                    resilience.log(f"Received: {bytes_written}/{total_size} bytes")
                     gc.collect()
                     
             # After receiving all chunks, send EOF marker
@@ -504,7 +513,7 @@ async def upload_file_endpoint(request):
                 raise Exception(f"Background write failed at EOF: {write_error}")
                 
         except Exception as e:
-            print(f"Upload pipeline error at {bytes_written}: {e}")
+            resilience.log(f"Upload pipeline error at {bytes_written}: {e}", level=3)
             _uploading = False
             
             # Cancel writer on error
@@ -516,15 +525,15 @@ async def upload_file_endpoint(request):
         finally:
             _uploading = False
                 
-        print(f"Upload complete: {target_path} ({bytes_written} bytes)")
+        resilience.log(f"Upload complete: {target_path} ({bytes_written} bytes)")
         if bytes_written != total_size:
-            print(f"Warning: size mismatch! Expected {total_size}, got {bytes_written}")
+            resilience.log(f"Warning: size mismatch! Expected {total_size}, got {bytes_written}", level=2)
         
         return {'status': 'ok', 'path': target_path, 'size': bytes_written}
     except Exception as e:
         _uploading = False
         _dsk_files_cache = None  # Invalidate cache
-        print(f"General upload error: {e}")
+        resilience.log(f"General upload error: {e}", level=3)
         return {'error': f'Upload failed: {e}'}, 500
 
 @app.route('/api/files/upload_status', methods=['GET'])
@@ -631,7 +640,7 @@ def _raw_http_get_stream(url):
         
         return sock
     except Exception as e:
-        print(f"Raw HTTP error ({url}): {e}")
+        resilience.log(f"Raw HTTP error ({url}): {e}", level=2)
         return None
 
 def stream_remote_files(server_url):
@@ -673,7 +682,7 @@ def stream_remote_files(server_url):
                 elif in_string:
                     current_str.append(c)
     except Exception as e:
-        print(f"Remote files stream error ({server_url}): {e}")
+        resilience.log(f"Remote files stream error ({server_url}): {e}", level=2)
     finally:
         try:
             sock.close()
@@ -834,10 +843,10 @@ async def remote_clone_endpoint(request):
                 else:
                     _clone_progress['state'] = 'complete'
 
-                print(f"Clone complete: {disk_name} -> {local_path}")
+                resilience.log(f"Clone complete: {disk_name} -> {local_path}")
                 _dsk_files_cache = None  # Invalidate cache
             except Exception as e:
-                print(f"Clone error: {e}")
+                resilience.log(f"Clone error: {e}", level=3)
                 _clone_progress['state'] = 'error'
                 _clone_progress['error'] = str(e)
                 activity_led.off()
@@ -865,6 +874,6 @@ async def remote_clone_status_endpoint(request):
     return _clone_progress
 
 def start():
-    print("Starting Web Server...")
+    resilience.log("Starting Web Server...")
     app.run(port=80, debug=True)
 
