@@ -34,6 +34,16 @@ class Syslog:
             self.syslog_port = 514
             
         self.facility = 1  # user-level messages
+        self._suppressed_until = 0  # ticks_ms when to retry after failure
+
+    def _is_network_ready(self) -> bool:
+        """Check if WiFi is connected before attempting UDP sends."""
+        try:
+            import network
+            wlan = network.WLAN(network.STA_IF)
+            return wlan.isconnected()
+        except Exception:
+            return False
 
     def format_time(self, time_tuple: Optional[Tuple]) -> str:
         """
@@ -54,6 +64,16 @@ class Syslog:
         if not self.syslog_server:
             # Silently drop if no server is configured
             return
+
+        # Skip if network is not ready (pre-WiFi boot)
+        if not self._is_network_ready():
+            return
+
+        # Skip if suppressed after recent failure (30s backoff)
+        import utime
+        now = utime.ticks_ms()
+        if utime.ticks_diff(now, self._suppressed_until) < 0:
+            return
             
         try:
             import time_sync
@@ -72,9 +92,11 @@ class Syslog:
             data = "<{}>{} {}: {}".format(pri, current_time, self.app_name, message)
             
             sock.sendto(data.encode('utf-8'), (self.syslog_server, self.syslog_port))
+            self._suppressed_until = 0  # Clear backoff on success
         except Exception as e:
-            # Use resilience log for local error reporting, but prevent recursion
-            resilience.log(f"Syslog UDP dispatch error: {e}", level=2, _from_syslog=True)
+            # Suppress for 30s to avoid spamming console
+            self._suppressed_until = utime.ticks_add(now, 30_000)
+            resilience.log(f"Syslog UDP dispatch error: {e} (suppressing 30s)", level=2, _from_syslog=True)
         finally:
             if sock:
                 try:
