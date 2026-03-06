@@ -16,15 +16,17 @@ MAX_LOG_SIZE = 4096  # 4KB circular buffer style
 def get_reset_cause() -> str:
     """Return a human-readable string for the last reset cause."""
     cause = machine.reset_cause()
-    if cause == machine.PWRON_RESET:
+    # Use getattr with unique sentinel defaults for cross-platform
+    # compatibility (Pico 2 W / RP2350 may not define all constants)
+    if cause == getattr(machine, 'PWRON_RESET', -1):
         return "Power-On"
-    elif cause == machine.HARD_RESET:
+    elif cause == getattr(machine, 'HARD_RESET', -2):
         return "Hard Reset"
-    elif cause == machine.WDT_RESET:
+    elif cause == getattr(machine, 'WDT_RESET', -3):
         return "Watchdog Reset"
-    elif cause == machine.DEEPSLEEP_RESET:
+    elif cause == getattr(machine, 'DEEPSLEEP_RESET', -4):
         return "Deep Sleep Wakeup"
-    elif cause == machine.SOFT_RESET:
+    elif cause == getattr(machine, 'SOFT_RESET', -5):
         return "Soft Reset"
     return f"Unknown ({cause})"
 
