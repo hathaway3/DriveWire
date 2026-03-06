@@ -601,6 +601,7 @@ def _raw_http_get_stream(url):
         sock = usocket.socket()
         sock.settimeout(5)
         sock.connect(addr)
+        resilience.feed_wdt()
         
         # Send minimal HTTP/1.0 request (Connection: close implied)
         sock.send(b'GET ')
@@ -635,6 +636,8 @@ def _raw_http_get_stream(url):
             if hdr_end == b'\r\n\r\n':
                 break
         
+        resilience.feed_wdt()
+        
         # Check for 200 status
         if b'200' not in bytes(status_line):
             sock.close()
@@ -664,6 +667,7 @@ def stream_remote_files(server_url):
             chunk = sock.recv(64)
             if not chunk:
                 break
+            resilience.feed_wdt()
             for b in chunk:
                 c = chr(b) if isinstance(b, int) else chr(b)
                 if escape:
@@ -715,6 +719,7 @@ async def remote_files_endpoint(request):
                 'url': url,
                 'path': url.rstrip('/') + '/disk/' + filename
             })
+        resilience.feed_wdt()
     
     _remote_files_cache = result
     _remote_files_cache_ts = utime.ticks_ms()
@@ -730,6 +735,7 @@ async def remote_test_endpoint(request):
             return {'error': 'Missing URL'}, 400
         import urequests
         resp = urequests.get(url + '/info')
+        resilience.feed_wdt()
         if resp.status_code == 200:
             info = resp.json()
             resp.close()

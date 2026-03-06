@@ -216,7 +216,9 @@ class RemoteDrive:
                 info = resp.json()
                 resilience.log(f"Remote drive connected: {info.get('name', url)}")
             resp.close()
+            resilience.feed_wdt()
         except Exception as e:
+            resilience.feed_wdt()
             resilience.log(f"Remote drive warning ({url}): {e}", level=2)
 
     def read_sector(self, lsn):

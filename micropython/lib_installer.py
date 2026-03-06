@@ -1,6 +1,7 @@
 import network
 import time
 import os
+import resilience
 
 def connect_wifi(ssid, password, max_retries=3):
     """Connect to WiFi with retry logic."""
@@ -72,6 +73,7 @@ def install_dependencies():
                     import mip
                     print(f"Using mip to install {pip_name}...")
                     mip.install(pip_name)
+                    resilience.feed_wdt()
                     # Verify installation
                     __import__(module_name)
                     print(f"Installation of {module_name} complete via mip.")
@@ -90,6 +92,7 @@ def install_dependencies():
                         url = f"{github_info['base']}/{file}"
                         try:
                             r = urequests.get(url)
+                            resilience.feed_wdt()
                             try:
                                 if r.status_code == 200:
                                     with open(file, "w") as f:
