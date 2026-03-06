@@ -10,7 +10,6 @@ import resilience
 resilience.log(f"DriveWire booting. Reset cause: {resilience.get_reset_cause()}")
 resilience.log("Powering on... Waiting for voltage stabilization.")
 time.sleep(2)
-resilience.init_wdt(timeout_ms=8000)
 
 try:
     # Scrub root filesystem for conflicts (duplicate sd folders)
