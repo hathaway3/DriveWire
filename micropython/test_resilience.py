@@ -70,5 +70,27 @@ class TestResilience(unittest.TestCase):
             resilience.collect_garbage("testing")
             mock_collect.assert_called()
 
+    def test_feed_wdt_with_active_watchdog(self):
+        """feed_wdt() should call wdt.feed() when watchdog is initialized."""
+        mock_wdt_instance = MagicMock()
+        mock_safe_wdt = MagicMock()
+        mock_safe_wdt.feed = MagicMock()
+        old_wdt = resilience.wdt
+        try:
+            resilience.wdt = mock_safe_wdt
+            resilience.feed_wdt()
+            mock_safe_wdt.feed.assert_called_once()
+        finally:
+            resilience.wdt = old_wdt
+
+    def test_feed_wdt_without_watchdog(self):
+        """feed_wdt() should not raise when wdt is None."""
+        old_wdt = resilience.wdt
+        try:
+            resilience.wdt = None
+            resilience.feed_wdt()  # Should not raise
+        finally:
+            resilience.wdt = old_wdt
+
 if __name__ == '__main__':
     unittest.main()

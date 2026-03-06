@@ -29,6 +29,7 @@ def sync_time(max_retries: int = 3) -> bool:
         except Exception as e:
             resilience.log(f"Failed to sync time (attempt {attempt + 1}): {e}", level=2)
             if attempt < max_retries - 1:
+                resilience.feed_wdt()
                 time.sleep(1)  # Wait before retry
     
     resilience.log("Time sync failed after all retries", level=3)

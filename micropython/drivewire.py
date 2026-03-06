@@ -122,6 +122,7 @@ class VirtualDrive:
                 self.file.seek(lsn * 256)
                 self.file.write(data)
                 flushed_lsns.append(lsn)
+                resilience.feed_wdt()
             self.file.flush()
             try:
                 os.sync()
@@ -239,6 +240,7 @@ class RemoteDrive:
                 data = resp.content
                 resp.close()
                 activity_led.blink()
+                resilience.feed_wdt()
                 
                 # Split the bulk payload into individual 256-byte sectors
                 sectors_received = len(data) // SECTOR_SIZE
@@ -1055,6 +1057,7 @@ class DriveWireServer:
             for i, d in enumerate(self.drives):
                 if d:
                     try:
+                        resilience.feed_wdt()
                         d.flush()
                     except Exception as e:
                         resilience.log(f"Flush loop error drive {i}: {e}", level=2)

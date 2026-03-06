@@ -116,6 +116,11 @@ def init_wdt(timeout_ms: int = 8000):
         wdt = SafeWatchdog(timeout_ms)
     return wdt
 
+def feed_wdt():
+    """Feed the global watchdog timer if initialized."""
+    if wdt:
+        wdt.feed()
+
 def collect_garbage(reason: str = "general"):
     """Explicitly trigger GC and log status."""
     try:

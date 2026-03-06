@@ -377,6 +377,7 @@ async def create_blank_dsk_endpoint(request):
                         written += to_write
                         
                         if written % (16 * chunk_size) == 0:
+                            resilience.feed_wdt()
                             await asyncio.sleep(0) # yield periodically for massive files
             finally:
                 activity_led.off()
@@ -499,6 +500,7 @@ async def upload_file_endpoint(request):
                 # Manual memory optimization
                 if bytes_written % (16 * chunk_size) == 0:
                     resilience.log(f"Received: {bytes_written}/{total_size} bytes")
+                    resilience.feed_wdt()
                     gc.collect()
                     
             # After receiving all chunks, send EOF marker
@@ -818,6 +820,7 @@ async def remote_clone_endpoint(request):
                             raise Exception(f"HTTP {resp.status_code} at LSN {lsn}")
                         lsn += count
                         _clone_progress['progress'] = lsn
+                        resilience.feed_wdt()
                         await asyncio.sleep(0)  # Yield to other tasks
                         if lsn % 128 == 0:
                             gc.collect()

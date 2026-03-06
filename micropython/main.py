@@ -14,7 +14,7 @@ async def main():
     resilience.log("Initializing DriveWire Server...")
     
     # Initialize Watchdog
-    wdt = resilience.init_wdt(timeout_ms=15000) # 15s timeout for heavy I/O
+    wdt = resilience.init_wdt(timeout_ms=8000) # 8s timeout (RP2040 HW max ~8388ms)
     
     # Configure GC to run aggressively early
     gc.threshold(50000)
@@ -45,7 +45,7 @@ async def main():
     async def watchdog_feeder():
         while True:
             wdt.feed()
-            await asyncio.sleep(5)
+            await asyncio.sleep(2)
     
     asyncio.create_task(watchdog_feeder())
     
