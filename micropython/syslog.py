@@ -73,8 +73,8 @@ class Syslog:
             
             sock.sendto(data.encode('utf-8'), (self.syslog_server, self.syslog_port))
         except Exception as e:
-            # Use resilience log for local error reporting
-            resilience.log(f"Syslog UDP dispatch error: {e}", level=2)
+            # Use resilience log for local error reporting, but prevent recursion
+            resilience.log(f"Syslog UDP dispatch error: {e}", level=2, _from_syslog=True)
         finally:
             if sock:
                 try:

@@ -28,7 +28,7 @@ def get_reset_cause() -> str:
         return "Soft Reset"
     return f"Unknown ({cause})"
 
-def log(message: str, level: int = 1) -> None:
+def log(message: str, level: int = 1, _from_syslog: bool = False) -> None:
     """
     Centralized logging function.
     Level: 0=Debug, 1=Info, 2=Warning, 3=Error, 4=Critical
@@ -57,6 +57,16 @@ def log(message: str, level: int = 1) -> None:
             os.sync()
     except OSError:
         pass
+
+    # Forward to Syslog Remote Server
+    if not _from_syslog:
+        try:
+            import syslog
+            # Map resilience levels to syslog severities
+            sev = [7, 6, 4, 3, 2][level] if 0 <= level <= 4 else 6
+            syslog.logger.log(message, severity=sev)
+        except Exception:
+            pass
 
 def blink_state(state: str) -> None:
     """

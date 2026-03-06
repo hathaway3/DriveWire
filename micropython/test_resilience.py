@@ -7,6 +7,7 @@ import os
 sys.modules['machine'] = MagicMock()
 sys.modules['microdot_asyncio'] = MagicMock()
 sys.modules['microdot'] = MagicMock()
+sys.modules['syslog'] = MagicMock()
 
 # Add current directory to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
