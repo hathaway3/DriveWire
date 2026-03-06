@@ -773,6 +773,7 @@ class DriveWireServer:
                                             self.rfm_paths[path_addr] = {'handle': f, 'mode': mode}
                                             err_code = 0
                                             lsn0, lsn1, lsn2 = 3, 2, 1 # Dummy unique identifier per Swift
+                                            activity_led.blink()
                                             resilience.log(f"RFM OPEN: {path_str} (mode {mode}) -> Addr: {path_addr}")
                                         except Exception as e:
                                             resilience.log(f"RFM OPEN error: {e}", level=3)
@@ -812,6 +813,7 @@ class DriveWireServer:
                                         try:
                                             self.rfm_paths[path_addr]['handle'].seek(pos)
                                             err_code = 0
+                                            activity_led.blink()
                                         except Exception as e:
                                             resilience.log(f"RFM SEEK error: {e}", level=3)
                                             err_code = 211 # Read error/EOF
@@ -835,6 +837,7 @@ class DriveWireServer:
                                                  data_chunk = b""
                                             if len(data_chunk) > 0:
                                                  err_code = 0
+                                                 activity_led.blink()
                                             else:
                                                  err_code = 211 # EOF
                                         except Exception as e:
@@ -875,6 +878,8 @@ class DriveWireServer:
                                                 err_code = 0
                                                 if char[0] == 0x0D:
                                                     break
+                                            if err_code == 0:
+                                                activity_led.blink()
                                         except Exception as e:
                                             print(f"RFM READLN error: {e}")
                                             err_code = 211
@@ -938,6 +943,7 @@ class DriveWireServer:
                                         try:
                                             self.rfm_paths[path_addr]['handle'].close()
                                             del self.rfm_paths[path_addr]
+                                            activity_led.blink()
                                             resilience.log(f"RFM CLOSE: Addr {path_addr}")
                                         except Exception:
                                             err_code = 214

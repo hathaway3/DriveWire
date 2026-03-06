@@ -324,6 +324,22 @@ The dashboard utilizes a lightweight JSON API. Polling occurs every 1 second (st
   - Run `gc.collect()` in REPL before starting
   - Check free memory with `import gc; gc.mem_free()`
 
+### Watchdog Timer (WDT) and Thonny File Transfers
+
+The RP2040 hardware watchdog timer **cannot be disabled once started**. If it is not fed within ~8 seconds, the Pico reboots. The server handles this automatically, but it matters when using Thonny:
+
+- **Normal operation**: A background `asyncio` task feeds the WDT every 2 seconds.
+- **After Ctrl-C**: When you press **Stop/Restart** (Ctrl-C) in Thonny, the async loop exits. The server's `KeyboardInterrupt` handler immediately starts a **hardware timer** that continues feeding the WDT every 2 seconds. You will see `WDT kept alive via hardware timer. Safe to upload files.` in the Thonny console.
+- **Uploading files**: Once you see that message, it is safe to upload files via Thonny's file manager. The hardware timer keeps the WDT alive in the background — no reboot will occur during your transfer.
+
+**Recommended Thonny workflow:**
+
+1. Click **Stop/Restart** (Ctrl-C) — wait for the `WDT kept alive via hardware timer` message
+2. Use Thonny's file manager to upload/download/delete files as needed
+3. Click **Run** or press Ctrl-D (soft reboot) to restart the server
+
+> **Caution**: If you hard-reset the device (unplug USB) while the WDT is active, that is normal — the device will reboot cleanly. The WDT is only a concern when the REPL is active and you need time to transfer files.
+
 ### Time Sync Fails
 - **Problem**: "Time sync failed after all retries"
 - **Solution**: Verify NTP server is reachable. Try changing `ntp_server` in config to `"time.google.com"` or `"time.nist.gov"`

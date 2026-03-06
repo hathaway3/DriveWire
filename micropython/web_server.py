@@ -92,7 +92,10 @@ def _scan_dsk_dir(base_path: str, depth: int = 0, max_depth: int = 1) -> List[st
     try:
         if base_path.startswith('/sd') and not sd_card.is_mounted():
             return []
-        for entry in os.listdir(base_path):
+        entries = os.listdir(base_path)
+        if base_path.startswith('/sd'):
+            activity_led.blink()
+        for entry in entries:
             full_path = base_path.rstrip('/') + '/' + entry
             if entry.lower().endswith('.dsk'):
                 results.append(full_path)
@@ -256,6 +259,7 @@ async def delete_file_endpoint(request):
                 
         # Attempt delete
         try:
+            activity_led.blink()
             os.remove(path)
             _dsk_files_cache = None  # Invalidate cache
             return {'status': 'ok'}
@@ -305,6 +309,7 @@ async def download_file_endpoint(request):
             'Content-Disposition': f'attachment; filename="{filename}"',
             'Cache-Control': 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0'
         }
+        activity_led.blink()
         res = send_file(path)
         res.headers.update(headers)
         return res

@@ -72,3 +72,12 @@ def toggle() -> None:
             _led.value(not _led.value())
         except Exception:
             pass
+
+
+class activity:
+    """Context manager: LED stays on for the duration of the block."""
+    def __enter__(self):
+        on()
+        return self
+    def __exit__(self, *args):
+        off()

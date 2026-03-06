@@ -9,6 +9,7 @@ import os
 import asyncio
 from config import shared_config
 import resilience
+import activity_led
 
 try:
     from typing import Optional, Dict, Any
@@ -137,6 +138,7 @@ def is_mounted() -> bool:
     # Verify mount is still valid (card may have been removed)
     try:
         os.listdir(_mount_point)
+        activity_led.blink()
         return True
     except OSError:
         resilience.log("SD card: Mount point inaccessible, marking as unmounted", level=2)
@@ -164,6 +166,7 @@ async def get_info() -> Dict[str, Any]:
                 info['free_bytes'] = block_size * free_blocks
                 info['total_mb'] = round(info['total_bytes'] / (1024 * 1024), 1)
                 info['free_mb'] = round(info['free_bytes'] / (1024 * 1024), 1)
+                activity_led.blink()
             except (OSError, AttributeError):
                 pass
 
