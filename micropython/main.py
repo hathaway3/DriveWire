@@ -9,6 +9,7 @@ import time
 
 # Safety delay for development (allows interrupting boot loops)
 time.sleep(2)
+resilience.feed_wdt()
 
 async def main():
     resilience.log("Initializing DriveWire Server...")
@@ -26,12 +27,14 @@ async def main():
         time_sync.sync_time()
     except Exception as e:
         resilience.log(f"Initial time sync failed: {e}", level=2)
+    resilience.feed_wdt()
     
     # Start background task to keep system time synced every 12 hours
     asyncio.create_task(time_sync.keep_time_synced(interval_hours=12))
     
     # Instantiate the DriveWire Server
     dw_server = DriveWireServer()
+    resilience.feed_wdt()
     
     # Attach to web app for dynamic reloading
     app.dw_server = dw_server
