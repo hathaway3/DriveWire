@@ -171,7 +171,7 @@ class VirtualDrive:
                 self.read_cache.pop(next(iter(self.read_cache)))
             return data
         except Exception as e:
-            print(f"Read Error LSN {lsn}: {e}")
+            resilience.log(f"Read Error LSN {lsn} ({self.filename}): {e}", level=3)
             return None
 
     def write_sector(self, lsn, data):
@@ -1023,6 +1023,10 @@ class DriveWireServer:
                     
                     elif opcode == OP_TERM:
                          pass # No response needed
+
+                    # Feed WDT after each completed transaction to prevent
+                    # resets during sustained I/O bursts (e.g., OS-9 boot)
+                    resilience.feed_wdt()
                         
                 else:
                     # If UART buffer is empty, it's safe to do background tasks (flush, GC)
@@ -1034,7 +1038,8 @@ class DriveWireServer:
                     await asyncio.sleep(0.01)  # Yield to other tasks (reduced CPU usage when idle)
                     
             except Exception as e:
-                print(f"DW Error: {e}")
+                resilience.log(f"DW protocol error: {e}", level=3)
+                resilience.feed_wdt()
                 await asyncio.sleep(1)
 
     async def tcp_accept_handler(self, chan, reader, writer):
@@ -1052,30 +1057,24 @@ class DriveWireServer:
         self.tcp_connections[chan] = (reader, writer, task)
 
     async def tcp_reader_task(self, chan, reader):
-        print(f"Started Reader Task for Ch{chan}")
+        resilience.log(f"Started Reader Task for Ch{chan}")
         try:
             while True:
                 data = await reader.read(128)
                 if not data: 
                     break # Connection closed
                 self.channels[chan].extend(data)
-                # Stats (incoming from TCP -> to be Read by CoCo)
-                # Wait, 'rx' above was read by CoCo. Let's call this 'buffered'.
-                # Actually let's just count it as part of 'read' potential?
-                # Simpler: TCP In vs TCP Out.
-                # Let's count it here? Or just count when actual OP_SERREAD happens?
-                # User asked for "activity". 
+                # Prevent memory exhaustion from flooded TCP connection
+                if len(self.channels[chan]) > MAX_CHANNEL_BUFFER_SIZE:
+                    overflow = len(self.channels[chan]) - MAX_CHANNEL_BUFFER_SIZE
+                    self.channels[chan] = self.channels[chan][-MAX_CHANNEL_BUFFER_SIZE:]
+                    resilience.log(f"Ch{chan} buffer overflow: dropped {overflow} bytes", level=2)
         except Exception as e:
             resilience.log(f"TCP Reader Error Ch{chan}: {e}", level=2)
             self.log_msg(f"TCP Err Ch{chan}: {e}")
         finally:
             resilience.log(f"Reader Task Ch{chan} Ended")
             self.log_msg(f"TCP Ch{chan} Disconnected")
-            # We don't necessarily close the whole connection here as it might be a temporary network blip or fin?
-            # But usually EOF means closed.
-            # self.close_tcp(chan) # calling this might recurse if we are not careful or block?
-            # Just let it die. SERTERM/SERINIT will cleanup.
-            pass
 
     async def close_tcp(self, chan):
         if chan in self.tcp_connections:
@@ -1084,8 +1083,8 @@ class DriveWireServer:
                 task.cancel()
                 writer.close()
                 await writer.wait_closed()
-            except Exception:
-                pass
+            except Exception as e:
+                resilience.log(f"close_tcp Ch{chan} cleanup: {e}", level=0)
             del self.tcp_connections[chan]
             self.channels[chan] = bytearray() # Clear buffer
             resilience.log(f"Closed VSerial Ch{chan}")
@@ -1105,7 +1104,12 @@ class DriveWireServer:
             else:
                 await asyncio.sleep(0.001)
                 attempts += 1
-                
+                # Feed WDT periodically during long waits
+                if attempts % 500 == 0:
+                    resilience.feed_wdt()
+
+        if len(data) != count:
+            resilience.log(f"read_bytes timeout: got {len(data)}/{count}", level=2)
         return data if len(data) == count else None
 
     def stop(self):

@@ -17,7 +17,7 @@ def scrub_root():
             try:
                 os.umount('/sd')
                 print("Unmounted /sd for repair scan.")
-            except:
+            except OSError:
                 pass
 
         # 2. Scan root for 'sd' names
@@ -45,7 +45,7 @@ def scrub_root():
                 try:
                     os.rmdir('sd')
                     print("Repair: Removed empty flash directory 'sd'.")
-                except:
+                except OSError:
                     print("Repair Error: Could not remove 'sd' either. Aborting scrub.")
                     break
         

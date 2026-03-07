@@ -58,3 +58,4 @@ async def keep_time_synced(interval_hours: int = 12) -> None:
         await asyncio.sleep(interval_seconds)
         resilience.log(f"Periodic time sync ({interval_hours}h interval)...")
         sync_time()
+        resilience.feed_wdt()

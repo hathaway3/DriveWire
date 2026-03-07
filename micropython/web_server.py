@@ -152,7 +152,7 @@ def _get_file_mtime(path):
         import time
         t = time.localtime(mtime)
         return f"{t[0]:04d}-{t[1]:02d}-{t[2]:02d} {t[3]:02d}:{t[4]:02d}"
-    except:
+    except (OSError, OverflowError):
         return None
 
 
@@ -174,7 +174,7 @@ async def files_info_endpoint(request):
             size = st[6]  # file size in bytes
             mtime_str = _get_file_mtime(f)
             result[f] = {'size': size, 'mtime': mtime_str}
-        except:
+        except OSError:
             result[f] = {'size': 0, 'mtime': None}
     return result
 
@@ -393,7 +393,7 @@ async def create_blank_dsk_endpoint(request):
         except Exception as e:
             try:
                 os.remove(target_path) # cleanup partial broken file
-            except:
+            except OSError:
                 pass
             return {'error': f'File creation failed: {e}'}, 500
             
@@ -526,7 +526,7 @@ async def upload_file_endpoint(request):
             # Cancel writer on error
             try:
                 writer_task.cancel()
-            except:
+            except Exception:
                 pass
             return {'error': f'Upload pipeline failed: {e}'}, 500
         finally:
@@ -697,7 +697,7 @@ def stream_remote_files(server_url):
     finally:
         try:
             sock.close()
-        except:
+        except Exception:
             pass
         gc.collect()
 
@@ -801,8 +801,8 @@ async def remote_clone_endpoint(request):
                 sd_free = sd_stat[0] * sd_stat[3]
                 if sd_free < total_bytes:
                     return {'error': f'Insufficient SD space: need {total_bytes}, have {sd_free}'}, 400
-            except:
-                pass  # May not be on SD
+            except (OSError, AttributeError):
+                pass  # May not be on SD card path
 
         except Exception as e:
             return {'error': f'Remote server query failed: {e}'}, 502
@@ -867,7 +867,7 @@ async def remote_clone_endpoint(request):
                 # Cleanup partial file
                 try:
                     os.remove(local_path)
-                except:
+                except OSError:
                     pass
             finally:
                 _cloning = False
