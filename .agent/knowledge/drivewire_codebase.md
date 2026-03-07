@@ -1,6 +1,6 @@
 # DriveWire MicroPython Server — Codebase Knowledge
 
-> Last updated: 2026-03-07 by security/reliability review session.
+> Last updated: 2026-03-07 — Consolidated from 15+ agent sessions.
 
 ## Project Overview
 
@@ -116,7 +116,7 @@ The web server runs on port 80 with **no auth**. This is by design for a LAN-onl
 ### Hardware Constraints (RP2040)
 
 - **Cannot be disabled** once started — `machine.WDT` is permanent until reboot.
-- **Max timeout**: ~8388ms (set to 8000ms).
+- **Max timeout**: ~8388ms (set to 8000ms). Originally was 15s but fixed to 8s.
 - Once started, must be fed continuously or the device resets.
 
 ### Feeding Strategy
@@ -148,6 +148,38 @@ The web server runs on port 80 with **no auth**. This is by design for a LAN-onl
 
 ---
 
+## Known Bugs & Gotchas (from past sessions)
+
+### Duplicate `/sd` Ghost Directory (RP2040)
+`os.listdir('/')` can return `['sd', ..., 'sd']` — a physical folder on flash named `sd` conflicts with the SD card mount point. This causes VFS hangs, upload failures, and delete failures. **Fix**: `fs_repair.scrub_root()` runs at boot to rename ghost directories.
+
+### SPI Bus Contention During Uploads
+Background polling of SD status (`/api/sd/status`) while a file upload is in progress causes SPI bus contention. The hardware-level SPI driver can deadlock, hanging uploads around 320KB. **Fix**: Frontend sets `_uploading = True` flag; status endpoint returns minimal info without SPI access during uploads.
+
+### SD Card SPI Clock Speed Limits
+Tested 1MHz, 2MHz, and 10MHz SPI clock speeds. **Only 1MHz is reliable.** 10MHz and 2MHz both caused initialization failures with a `sdcard.py` driver. MicroPython firmware's built-in SD driver is more stable than the `micropython-lib` version. The experimental `sdcard.py` was removed.
+
+### Frontend Polling Exhausts Pico W RAM  
+Concurrent HTTP requests from browser polling (`pollStatus` + `pollSdStatus` + `pollFiles`) can exhaust RAM on the Pico W (264KB total). **Fixes applied**: reduced polling frequency, added in-flight request guards (skip if previous request pending), added `gc.collect()` calls after each request handler, added `_dsk_files_cache` with 30s TTL.
+
+### Streaming Uploads Required
+Standard Microdot body parsing buffers the entire request in RAM, causing OOM for files >100KB. **Fix**: `request.stream` is used to read upload data in chunks, writing directly to SD.
+
+### Syslog UDP Spam Before WiFi
+During early boot, `syslog.py` was spamming `Errno 113 EHOSTUNREACH` before WiFi connected. **Fix**: Added `wlan.isconnected()` check before attempting UDP send, plus 30s exponential backoff after failures.
+
+---
+
+## Web UI Architecture
+
+- **Framework**: Microdot (lightweight async web framework, ~6KB)
+- **Theme**: "Radio Shack" retro terminal aesthetic — green-on-dark (`#0f0` on `#222`), `Michroma` headers, `VT323` monospace body
+- **Static files**: Served from `/www/static/` (script.js, style.css)
+- **Pages**: Main terminal view (`index.html`), Setup page, Debug page
+- **API polling**: Frontend polls `/api/status` for drive stats and log buffer, `/api/sd/status` for storage info
+
+---
+
 ## Configuration
 
 Stored in [config.json](file:///Users/jimmiehathaway/DriveWire/micropython/config.json). Key fields:
@@ -163,6 +195,19 @@ Stored in [config.json](file:///Users/jimmiehathaway/DriveWire/micropython/confi
 
 ---
 
+## Related Hardware
+
+### COCOMMC.PLD
+PLD logic file for the CoCo MMC hardware interface. Handles address decoding, SPI bus control, and data transfer synchronization between the CoCo bus and the DriveWire adapter. Past sessions optimized the state machine and fixed counter reset logic.
+
+### Serial Port Wiring (MAX3232)
+CoCo connects via UART through a MAX3232 level shifter with DB9 connector. Wiring documented in `micropython/docs/wiring.md`. Pins: VCC, GND, RXD, TXD.
+
+### NitrOS-9 Level 2 Integration
+Documentation for running NitrOS-9 Level 2 over DriveWire was created and lives in the project docs. NitrOS-9 uses the DriveWire protocol for both disk I/O and virtual serial terminals.
+
+---
+
 ## Known Limitations & Future Work
 
 1. **RFM write operations** (CREATE, MAKDIR, DELETE, WRITE, WRITLN) are **stubbed** — return error codes without implementation.
@@ -171,6 +216,7 @@ Stored in [config.json](file:///Users/jimmiehathaway/DriveWire/micropython/confi
 4. **No HTTPS** — remote server communication is HTTP only.
 5. **Single client per TCP channel** — new connections override existing ones.
 6. **No web authentication** — all API endpoints are unauthenticated.
+7. **SD SPI speed** — stuck at 1MHz; higher speeds failed in testing.
 
 ---
 
@@ -181,3 +227,5 @@ Stored in [config.json](file:///Users/jimmiehathaway/DriveWire/micropython/confi
 - **SD card lock** (`sd_card.get_lock()`) should be acquired for concurrent SD access, though currently only used in `get_info()`.
 - **File cache invalidation**: Set `_dsk_files_cache = None` after any SD file modification to force rescan.
 - **Config reload**: Call `app.dw_server.reload_config()` after config changes to hot-reload drives and serial map.
+- **LED audit**: All SD card operations should trigger `activity_led.blink()` — 10 operations were missing and fixed in a past session.
+- **Unit tests**: Exist in `tests/` directory, mock `machine` and `network` modules for host-side testing.
