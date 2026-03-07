@@ -64,5 +64,13 @@ except ImportError:
 1. **Non-Blocking Code:** Use `uasyncio` for concurrent tasks (e.g., blinking an LED while waiting for a network response) to prevent the "hard execution stops" you want to avoid.
 2. **Safe `main.py`:** Always keep `boot.py` minimal. If `main.py` crashes in a loop, you can sometimes "brick" the REPL access. Suggest a 2-second `time.sleep()` at the start of `main.py` during development to give you time to interrupt the execution.
 3. **File System Health:** Use `os.sync()` after writing logs to ensure data is physically written to the flash.
+4. **Safe REPL Recovery:** If you crash the Pico in a way that hangs the serial port, use the following pattern in `main.py` to allow a "Ctrl+C" window:
+```python
+import utime
+# Recovery window
+print("Waiting 2s for REPL...")
+utime.sleep(2)
+# Start main loop
+```
 
 ---
