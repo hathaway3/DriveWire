@@ -86,7 +86,18 @@ All opcodes handled in `DriveWireServer.run()` main loop via `if/elif` chain:
 
 ### Swift Reference Comparison
 
-The Swift `DriveWireHost.swift` is the macOS reference implementation. Key finding: **Swift serial handlers are stubs** — they consume correct byte counts but don't implement TCP bridging or channel queues. The MicroPython code is functionally ahead.
+The Swift `DriveWireHost.swift` (~1768 lines) is the macOS reference implementation. A detailed cross-reference was performed against both the MicroPython code and the DriveWire Specification.
+
+**What Swift implements fully**: Disk I/O (READ, READEX, WRITE, REWRITE), TIME, PRINT, GETSTAT/SETSTAT, RESET, DWINIT, NAMEOBJ_MOUNT, RFM (all sub-ops including CREATE, MAKDIR, DELETE — which MicroPython stubs).
+
+**What Swift stubs**: Virtual serial handlers (SERREAD, SERWRITE, SERREADM, SERWRITEM, FASTWRITE) — Swift consumes the correct byte counts per the spec but doesn't implement actual TCP bridging or channel queues. The MicroPython implementation is **functionally ahead** on serial.
+
+**Key discrepancies resolved during cross-reference**:
+1. **FASTWRITE** — MicroPython was silently discarding data instead of routing to TCP connections (fixed)
+2. **SERREADM/SERWRITEM** — MicroPython had opcode constants defined but no handlers (added)
+3. **SERGETSTAT** — Missing handler caused protocol sync loss on CoCo side (added)
+4. **SERREAD bulk mode** — Single-byte mode worked but bulk response (byte1=17–31) was missing (added)
+5. **Terminal channel range** — README documented 0–14 but code supports 0–31 via `NUM_CHANNELS=32` (doc fixed)
 
 ---
 
