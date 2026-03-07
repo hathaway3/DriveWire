@@ -6,10 +6,10 @@
 
 A MicroPython DriveWire 4.0 protocol server running on **Raspberry Pi Pico W / Pico 2 W** (RP2040/RP2350). It bridges a **TRS-80 Color Computer (CoCo)** via UART serial to modern storage (SD card, HTTP remote servers) and networking (TCP virtual serial channels). Includes a web UI for management.
 
-**Repository**: [/Users/jimmiehathaway/DriveWire](file:///Users/jimmiehathaway/DriveWire)
-**MicroPython source**: [/Users/jimmiehathaway/DriveWire/micropython/](file:///Users/jimmiehathaway/DriveWire/micropython/)
-**Swift reference**: [DriveWireHost.swift](file:///Users/jimmiehathaway/DriveWire/swift/DriveWire/Model/DriveWireHost.swift) (~1768 lines, macOS reference implementation)
-**Specification**: [DriveWire Specification.md](file:///Users/jimmiehathaway/DriveWire/DriveWire%20Specification.md)
+**Repository**: [DriveWire](../../)
+**MicroPython source**: [micropython/](../../micropython/)
+**Swift reference**: [DriveWireHost.swift](../../swift/DriveWire/Model/DriveWireHost.swift) (~1768 lines, macOS reference implementation)
+**Specification**: [DriveWire Specification.md](../../DriveWire%20Specification.md)
 
 ---
 
@@ -17,18 +17,18 @@ A MicroPython DriveWire 4.0 protocol server running on **Raspberry Pi Pico W / P
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| [boot.py](file:///Users/jimmiehathaway/DriveWire/micropython/boot.py) | 73 | WiFi connect, SD card mount, lib install. Feeds WDT between steps. |
-| [main.py](file:///Users/jimmiehathaway/DriveWire/micropython/main.py) | 77 | Entry point. Starts DW server + web server as async tasks. WDT init here. |
-| [drivewire.py](file:///Users/jimmiehathaway/DriveWire/micropython/drivewire.py) | ~1150 | **Core protocol engine.** Opcode dispatch, VirtualDrive, RemoteDrive, RFM, serial channels. |
-| [web_server.py](file:///Users/jimmiehathaway/DriveWire/micropython/web_server.py) | ~910 | Microdot web API. File management, config, remote cloning, status. |
-| [config.py](file:///Users/jimmiehathaway/DriveWire/micropython/config.py) | 122 | JSON config with validation. Stored in `config.json`. |
-| [resilience.py](file:///Users/jimmiehathaway/DriveWire/micropython/resilience.py) | 135 | Logging (file + syslog), SafeWatchdog wrapper, GC helper, LED blink codes. |
-| [syslog.py](file:///Users/jimmiehathaway/DriveWire/micropython/syslog.py) | 109 | UDP syslog client with network-ready check and 30s backoff on failure. |
-| [sd_card.py](file:///Users/jimmiehathaway/DriveWire/micropython/sd_card.py) | 174 | SPI SD card init/mount/unmount. Has async Lock for concurrent access. |
-| [time_sync.py](file:///Users/jimmiehathaway/DriveWire/micropython/time_sync.py) | 62 | NTP sync with retry. Periodic 12h re-sync task. |
-| [activity_led.py](file:///Users/jimmiehathaway/DriveWire/micropython/activity_led.py) | 84 | LED control via CYW43 WiFi chip pin. Context manager `activity()`. |
-| [lib_installer.py](file:///Users/jimmiehathaway/DriveWire/micropython/lib_installer.py) | 132 | Auto-install microdot + sdcard via mip or GitHub fallback. |
-| [fs_repair.py](file:///Users/jimmiehathaway/DriveWire/micropython/fs_repair.py) | 62 | Fixes duplicate `/sd` ghost directories on flash. |
+| [boot.py](../../micropython/boot.py) | 73 | WiFi connect, SD card mount, lib install. Feeds WDT between steps. |
+| [main.py](../../micropython/main.py) | 77 | Entry point. Starts DW server + web server as async tasks. WDT init here. |
+| [drivewire.py](../../micropython/drivewire.py) | ~1150 | **Core protocol engine.** Opcode dispatch, VirtualDrive, RemoteDrive, RFM, serial channels. |
+| [web_server.py](../../micropython/web_server.py) | ~910 | Microdot web API. File management, config, remote cloning, status. |
+| [config.py](../../micropython/config.py) | 122 | JSON config with validation. Stored in `config.json`. |
+| [resilience.py](../../micropython/resilience.py) | 135 | Logging (file + syslog), SafeWatchdog wrapper, GC helper, LED blink codes. |
+| [syslog.py](../../micropython/syslog.py) | 109 | UDP syslog client with network-ready check and 30s backoff on failure. |
+| [sd_card.py](../../micropython/sd_card.py) | 174 | SPI SD card init/mount/unmount. Has async Lock for concurrent access. |
+| [time_sync.py](../../micropython/time_sync.py) | 62 | NTP sync with retry. Periodic 12h re-sync task. |
+| [activity_led.py](../../micropython/activity_led.py) | 84 | LED control via CYW43 WiFi chip pin. Context manager `activity()`. |
+| [lib_installer.py](../../micropython/lib_installer.py) | 132 | Auto-install microdot + sdcard via mip or GitHub fallback. |
+| [fs_repair.py](../../micropython/fs_repair.py) | 62 | Fixes duplicate `/sd` ghost directories on flash. |
 
 ---
 
@@ -193,7 +193,7 @@ During early boot, `syslog.py` was spamming `Errno 113 EHOSTUNREACH` before WiFi
 
 ## Configuration
 
-Stored in [config.json](file:///Users/jimmiehathaway/DriveWire/micropython/config.json). Key fields:
+Stored in [config.json](../../micropython/config.json). Key fields:
 
 | Key | Type | Description |
 |-----|------|-------------|
