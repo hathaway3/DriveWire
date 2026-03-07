@@ -11,7 +11,7 @@ The DriveWire server features a modern, responsive web dashboard with a retro Ta
 
 ## Key Features
 
-- **Flash Wear Protection**: Sector-level write-back cache buffers all disk writes in RAM and syncs to flash only once per minute of inactivity, significantly extending flash lifespan
+- **Flash Wear Protection**: Sector-level write-back cache buffers all disk writes in RAM and flushes to flash every 60 seconds via a background task, significantly extending flash lifespan
 - **SD Card Support**: External SD card storage via SPI with automatic FAT/FAT32 mounting — disk images from internal flash and SD appear seamlessly in the same UI
 - **Remote Disk Images**: Mount read-only disk images from a remote HTTP sector server over WiFi, with auto-discovery and Clone & Hot-Swap to local storage
 - **Activity LED**: Onboard LED blinks during disk read/write operations and stays lit during flush — a visual indicator of DriveWire activity
@@ -75,6 +75,7 @@ The DriveWire server features a modern, responsive web dashboard with a retro Ta
 | `lib_installer.py` | Automated dependency installer |
 | `time_sync.py` | NTP time synchronization |
 | `syslog.py` | Syslog client for remote logging |
+| `resilience.py` | Centralized logging, watchdog timer, and GC management |
 | `boot.py` | Boot sequence (WiFi, SD card, libraries) |
 | `fs_repair.py` | Scrubs root filesystem for conflicts on boot |
 | `www/` | Static assets for the web dashboard |
@@ -268,7 +269,7 @@ The dashboard utilizes a lightweight JSON API. Polling occurs every 1 second (st
 | :--- | :--- |
 | **DASHBOARD** | Large live clock, opcode/drive stats, SD storage info, and system logs. |
 | **CONFIG** | WiFi, NTP, SD pin configuration, virtual serial station mapping, and remote server configuration. |
-| **TERMINAL** | Real-time "snoop" monitor for any virtual serial channel (0-14). |
+| **TERMINAL** | Real-time "snoop" monitor for any virtual serial channel (0-31). |
 | **FILES** | Remote file manager for SD card and remote servers. Upload images via drag-and-drop (up to 100MB), clone remote images to local storage, and delete old images. |
 | **DRIVES** | Detailed I/O statistics, read hit/miss ratios, dirty sector counts, and clone-to-local buttons for remote drives. |
 
@@ -402,6 +403,12 @@ Supported rates: 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600
 | `/api/remote/test` | POST | Test connectivity to a remote sector server |
 | `/api/remote/clone` | POST | Clone a remote disk image to local storage (with optional hot-swap) |
 | `/api/remote/clone/status` | GET | Poll clone operation progress |
+| `/api/files/delete` | POST | Delete a `.dsk` file (must not be mounted) |
+| `/api/files/download` | GET | Download a `.dsk` file |
+| `/api/files/upload` | POST | Upload a `.dsk` file via streaming POST |
+| `/api/files/upload_status` | GET | Poll active upload progress (bytes written) |
+| `/api/files/create` | POST | Create a new blank zero-filled `.dsk` image |
+| `/api/files/info` | GET | File metadata (size, modification time) for all `.dsk` files |
 
 ## Error Handling
 

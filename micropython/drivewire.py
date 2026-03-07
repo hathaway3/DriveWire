@@ -568,6 +568,8 @@ class DriveWireServer:
                     elif opcode == OP_SERREAD:
                         # OP_SERREAD ($43) - Polling
                         # Response: Byte 1 (Status/Data Avail), Byte 2 (Data or Count)
+                        # Byte1 1-15: single byte for channel (byte1-1), byte2=data
+                        # Byte1 17-31: bulk count for channel (byte1-1-16), byte2=count
                         found_channel = -1
                         for i in range(NUM_CHANNELS):
                             if len(self.channels[i]) > 0:
@@ -575,19 +577,24 @@ class DriveWireServer:
                                 break
                                 
                         if found_channel >= 0 and len(self.channels[found_channel]) > 0:
-                            # We have data!
                             ch_idx = found_channel
-                            response_byte_1 = ch_idx + 1
-                            data_byte = self.channels[ch_idx].pop(0)
-                            response_byte_2 = data_byte
-                            self.uart.write(bytes([response_byte_1, response_byte_2]))
+                            buf_len = len(self.channels[ch_idx])
+                            
+                            if buf_len == 1:
+                                # Single byte mode: byte1 = channel + 1, byte2 = data
+                                response_byte_1 = ch_idx + 1
+                                data_byte = self.channels[ch_idx].pop(0)
+                                self.uart.write(bytes([response_byte_1, data_byte]))
+                                self.snoop_serial(ch_idx, data_byte)
+                            else:
+                                # Bulk mode: byte1 = channel + 1 + 16, byte2 = count
+                                count = min(buf_len, 255)
+                                response_byte_1 = ch_idx + 1 + 16
+                                self.uart.write(bytes([response_byte_1, count]))
                             
                             # Stats
                             if ch_idx not in self.stats['serial']: self.stats['serial'][ch_idx] = {'tx':0, 'rx':0}
-                            self.stats['serial'][ch_idx]['rx'] += 1 # Rx from CoCo perspective (read)
-                            
-                            # Snoop
-                            self.snoop_serial(ch_idx, data_byte)
+                            self.stats['serial'][ch_idx]['rx'] += 1
                         else:
                             self.uart.write(bytes([0, 0]))
 
@@ -619,13 +626,65 @@ class DriveWireServer:
                             else:
                                 pass # No connection, discard
 
+                    elif opcode == OP_SERREADM:
+                        # OP_SERREADM ($63) - Bulk read
+                        # CoCo sends: Channel(1) + Count(1)
+                        # Server responds: Count bytes from channel queue
+                        req = await self.read_bytes(2)
+                        if req:
+                            chan = req[0]
+                            count = req[1]
+                            if chan < NUM_CHANNELS and len(self.channels[chan]) >= count:
+                                data = bytes(self.channels[chan][:count])
+                                self.channels[chan] = self.channels[chan][count:]
+                                self.uart.write(data)
+                                self.snoop_serial(chan, data)
+                                if chan not in self.stats['serial']: self.stats['serial'][chan] = {'tx':0, 'rx':0}
+                                self.stats['serial'][chan]['rx'] += count
+                            # If not enough data, spec says server doesn't respond (CoCo times out)
+
+                    elif opcode == OP_SERWRITEM:
+                        # OP_SERWRITEM ($64) - Bulk write
+                        # CoCo sends: Channel(1) + Count(1) + Data(Count)
+                        hdr = await self.read_bytes(2)
+                        if hdr:
+                            chan = hdr[0]
+                            count = hdr[1]
+                            data = await self.read_bytes(count)
+                            if data and chan in self.tcp_connections:
+                                try:
+                                    _, writer, _ = self.tcp_connections[chan]
+                                    writer.write(data)
+                                    await writer.drain()
+                                    if chan not in self.stats['serial']: self.stats['serial'][chan] = {'tx':0, 'rx':0}
+                                    self.stats['serial'][chan]['tx'] += count
+                                    self.snoop_serial(chan, data)
+                                except Exception as e:
+                                    resilience.log(f"SERWRITEM TCP Error Ch{chan}: {e}", level=2)
+                                    await self.close_tcp(chan)
+
+                    elif opcode == OP_SERGETSTAT:
+                        # OP_SERGETSTAT ($44) + Channel(1) + Code(1)
+                        # Uni-directional, for logging only (per spec)
+                        await self.read_bytes(2)
+
                     elif (opcode & 0xF0) == 0x80:
                         # FASTWRITE ($8x) + Data(1)
                         # Channel is opcode & 0x0F
                         chan = opcode & 0x0F
                         val = await self.read_bytes(1)
                         if val:
-                            self.log_msg(f"FASTWRITE Ch{chan}: data discarded (unimplemented)")
+                            if chan in self.tcp_connections:
+                                try:
+                                    _, writer, _ = self.tcp_connections[chan]
+                                    writer.write(val)
+                                    await writer.drain()
+                                    if chan not in self.stats['serial']: self.stats['serial'][chan] = {'tx':0, 'rx':0}
+                                    self.stats['serial'][chan]['tx'] += 1
+                                    self.snoop_serial(chan, val[0])
+                                except Exception as e:
+                                    resilience.log(f"FASTWRITE TCP Error Ch{chan}: {e}", level=2)
+                                    await self.close_tcp(chan)
 
                     elif opcode == OP_SERINIT:
                          # 1 byte channel
