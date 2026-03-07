@@ -51,7 +51,10 @@ async def static(request, path):
 @app.route('/api/config', methods=['GET', 'POST'])
 async def config_endpoint(request):
     if request.method == 'GET':
-        return config.config
+        safe_config = dict(config.config)
+        if safe_config.get('wifi_password'):
+            safe_config['wifi_password'] = '********'
+        return safe_config
     
     elif request.method == 'POST':
         try:
@@ -139,6 +142,23 @@ def get_dsk_files():
     _dsk_files_cache = unique
     _dsk_files_cache_ts = utime.ticks_ms()
     return unique
+
+
+def _sanitize_path(path):
+    """Validate and normalize file paths. Returns sanitized path or None."""
+    if not path or not isinstance(path, str):
+        return None
+    # Reject path traversal attempts
+    if '..' in path:
+        return None
+    # Must be under /sd/ or be a .dsk file directly in root
+    if path.startswith('/sd/'):
+        return path
+    # Allow .dsk files from root level only (no subdirectory traversal)
+    stripped = path.lstrip('/')
+    if stripped.endswith('.dsk') and '/' not in stripped:
+        return '/' + stripped
+    return None
 
 
 def _get_file_mtime(path):
@@ -248,10 +268,12 @@ async def delete_file_endpoint(request):
             
         path = body['path']
         
-        # Security: only allow deleting from /sd or non-system files
-        if not path.startswith('/sd/') and not path.endswith('.dsk'):
-            return {'error': 'Access denied: Cannot delete system files'}, 403
-            
+        # Security: sanitize path to prevent traversal attacks
+        safe_path = _sanitize_path(path)
+        if not safe_path:
+            return {'error': 'Access denied: invalid file path'}, 403
+        path = safe_path
+        
         # Check if mounted
         for i, drive in enumerate(app.dw_server.drives):
             if drive and drive.filename == path:
@@ -287,9 +309,11 @@ async def download_file_endpoint(request):
         if not path:
             return {'error': 'Missing file path query parameter'}, 400
             
-        # Security: only allow downloading from /sd or non-system files
-        if not path.startswith('/sd/') and not path.endswith('.dsk'):
-            return {'error': 'Access denied: Cannot download system files'}, 403
+        # Security: sanitize path to prevent traversal attacks
+        safe_path = _sanitize_path(path)
+        if not safe_path:
+            return {'error': 'Access denied: invalid file path'}, 403
+        path = safe_path
             
         # Check if mounted
         for i, drive in enumerate(app.dw_server.drives):
@@ -339,6 +363,10 @@ async def create_blank_dsk_endpoint(request):
             
         if size_bytes <= 0:
             return {'error': 'Size must be greater than zero'}, 400
+
+        MAX_DSK_SIZE = 50 * 1024 * 1024  # 50MB - larger than any standard CoCo format
+        if size_bytes > MAX_DSK_SIZE:
+            return {'error': f'Size exceeds maximum ({MAX_DSK_SIZE // (1024*1024)}MB)'}, 400
             
         # Security: ensure it goes to /sd and ends with .dsk
         clean_name = filename.split('/')[-1].split('\\')[-1]
@@ -559,7 +587,10 @@ async def monitor_chan_endpoint(request):
             if not body:
                 return {'error': 'Invalid JSON body'}, 400
             chan = body.get('chan', -1)
-            app.dw_server.monitor_channel = int(chan)
+            chan = int(chan)
+            if chan < -1 or chan >= 32:
+                return {'error': 'Channel must be -1 (off) to 31'}, 400
+            app.dw_server.monitor_channel = chan
             app.dw_server.terminal_buffer = bytearray() # Clear on change
             return {'status': 'ok'}
         except (ValueError, TypeError) as e:

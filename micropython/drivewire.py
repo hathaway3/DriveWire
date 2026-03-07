@@ -71,6 +71,7 @@ MAX_TERMINAL_BUFFER_SIZE = micropython.const(512)
 SECTOR_SIZE = micropython.const(256)
 NUM_DRIVES = micropython.const(4)
 NUM_CHANNELS = micropython.const(32)
+RFM_BASE_DIR = '/sd'  # Sandbox for RFM file operations
 
 # OS-9 / DriveWire error codes sent to CoCo
 E_NONE = micropython.const(0)      # No error
@@ -375,6 +376,20 @@ class DriveWireServer:
         self.log_buffer.append(msg)
         if len(self.log_buffer) > MAX_LOG_ENTRIES:
             self.log_buffer.pop(0)
+
+    def _sanitize_rfm_path(self, path_str):
+        """Resolve an RFM path to a safe absolute path under RFM_BASE_DIR."""
+        if not path_str:
+            return None
+        if '..' in path_str:
+            return None
+        # Prepend base dir if path is relative
+        if not path_str.startswith('/'):
+            path_str = RFM_BASE_DIR + '/' + path_str
+        # Ensure it stays under base dir
+        if not path_str.startswith(RFM_BASE_DIR + '/') and path_str != RFM_BASE_DIR:
+            return None
+        return path_str
 
     def snoop_serial(self, chan, data):
         """Capture serial data for the monitored channel."""
@@ -774,18 +789,22 @@ class DriveWireServer:
                                             break
                                     
                                     if free_drive >= 0:
-                                        # Try to mount
-                                        try:
-                                            # Assume file exists locally
-                                            vd = VirtualDrive(name)
-                                            if vd.file:
-                                                self.drives[free_drive] = vd
-                                                self.uart.write(bytes([free_drive]))
-                                                resilience.log(f"Mounted {name} to Drive {free_drive}")
-                                            else:
-                                                self.uart.write(bytes([0]))
-                                        except Exception:
+                                        # Validate: restrict to .dsk files without path traversal
+                                        if '..' in name or not name.endswith('.dsk'):
                                             self.uart.write(bytes([0]))
+                                            resilience.log(f"NamedObj denied: {name}", level=2)
+                                        else:
+                                            # Try to mount
+                                            try:
+                                                vd = VirtualDrive(name)
+                                                if vd.file:
+                                                    self.drives[free_drive] = vd
+                                                    self.uart.write(bytes([free_drive]))
+                                                    resilience.log(f"Mounted {name} to Drive {free_drive}")
+                                                else:
+                                                    self.uart.write(bytes([0]))
+                                            except Exception:
+                                                self.uart.write(bytes([0]))
                                     else:
                                         self.uart.write(bytes([0])) # No free drives
                                 except Exception as e:
@@ -824,19 +843,22 @@ class DriveWireServer:
                                     
                                     if path_bytes:
                                         path_str = path_bytes.decode('ascii', 'ignore')
-                                        try:
-                                            # We run locally, but should restrict it to a specific directory in a real server.
-                                            # For now, rely on standard MP open()
-                                            file_mode = 'rb' if not (mode & 0x02) else 'r+b' # Simplified mode handling
-                                            f = open(path_str, file_mode)
-                                            self.rfm_paths[path_addr] = {'handle': f, 'mode': mode}
-                                            err_code = 0
-                                            lsn0, lsn1, lsn2 = 3, 2, 1 # Dummy unique identifier per Swift
-                                            activity_led.blink()
-                                            resilience.log(f"RFM OPEN: {path_str} (mode {mode}) -> Addr: {path_addr}")
-                                        except Exception as e:
-                                            resilience.log(f"RFM OPEN error: {e}", level=3)
-                                            err_code = 216 # Path not found / access error
+                                        safe_path = self._sanitize_rfm_path(path_str)
+                                        if safe_path is None:
+                                            resilience.log(f"RFM OPEN denied: {path_str}", level=2)
+                                            err_code = 216
+                                        else:
+                                            try:
+                                                file_mode = 'rb' if not (mode & 0x02) else 'r+b'
+                                                f = open(safe_path, file_mode)
+                                                self.rfm_paths[path_addr] = {'handle': f, 'mode': mode}
+                                                err_code = 0
+                                                lsn0, lsn1, lsn2 = 3, 2, 1
+                                                activity_led.blink()
+                                                resilience.log(f"RFM OPEN: {safe_path} (mode {mode}) -> Addr: {path_addr}")
+                                            except Exception as e:
+                                                resilience.log(f"RFM OPEN error: {e}", level=3)
+                                                err_code = 216
                                     
                                     self.uart.write(bytes([err_code, lsn0, lsn1, lsn2]))
 
@@ -851,12 +873,16 @@ class DriveWireServer:
                                     err_code = 0 # Assume success for now, or validate directory exists
                                     if path_bytes:
                                         path_str = path_bytes.decode('ascii', 'ignore')
-                                        try:
-                                            # Validate by checking stat
-                                            os.stat(path_str)
-                                            err_code = 0
-                                        except OSError:
-                                            err_code = 216 # Path not found
+                                        safe_path = self._sanitize_rfm_path(path_str)
+                                        if safe_path is None:
+                                            resilience.log(f"RFM CHGDIR denied: {path_str}", level=2)
+                                            err_code = 216
+                                        else:
+                                            try:
+                                                os.stat(safe_path)
+                                                err_code = 0
+                                            except OSError:
+                                                err_code = 216
                                             
                                     self.uart.write(bytes([err_code, 3, 2, 1]))
 
