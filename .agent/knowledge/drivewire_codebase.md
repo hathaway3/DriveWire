@@ -181,6 +181,49 @@ During early boot, `syslog.py` was spamming `Errno 113 EHOSTUNREACH` before WiFi
 
 ---
 
+## Protocol Flow Reference
+
+### DWINIT Handshake
+1. CoCo sends `OP_DWINIT` ($5A)
+2. Server responds with 1 byte: `0x5A`
+3. CoCo sends 1 byte: `0x5A`
+4. Connection established.
+
+### READEX (Fast Read)
+1. CoCo sends `OP_READEX` + unit + LSN
+2. Server responds with 256-byte sector data.
+3. CoCo sends 1-byte checksum.
+4. Server responds with `0x00` (ACK) or `0xFF` (NAK).
+
+### SERREAD (Virtual Serial)
+1. CoCo sends `OP_SERREAD` + channel.
+2. Server responds with:
+   - `0x00` (No data)
+   - `0x01-0x0F` (Data count, followed by bytes)
+   - `0x11-0x1F` (Bulk data count, triggers `OP_SERREADM`)
+
+---
+
+## ⚡ Performance Checklist for Agents
+
+1. **Avoid `view_file` on `drivewire.py`**: It is 1100+ lines. Use `view_file_outline` or `grep_search` first.
+2. **Minimize `os.listdir`**: Use the `_dsk_files_cache` in the Web API or query `shared_config`.
+3. **Batch Writes**: When updating multiple files on the SD card, call `os.sync()` only once at the end.
+4. **WDT Awareness**: If adding a loop that takes >1s, YOU MUST call `machine.WDT().feed()` inside that loop.
+
+---
+
+## 🔍 Log Analysis Reference
+
+| Prefix | Component | Meaning |
+|--------|-----------|---------|
+| `DW:` | `drivewire.py` | Protocol transactions, opcodes, errors. |
+| `WEB:` | `web_server.py` | API requests, status, config changes. |
+| `SYS:` | `resilience.py` | Boot, WDT, Memory, WiFi status. |
+| `SD:` | `sd_card.py` | SPI init, mount, bus lock issues. |
+
+---
+
 ## Web UI Architecture
 
 - **Framework**: Microdot (lightweight async web framework, ~6KB)
