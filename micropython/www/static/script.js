@@ -303,9 +303,6 @@ async function refreshFilesTab() {
                 dlBtn.title = 'Cannot download mounted image';
                 tr.cells[1].appendChild(dlBtn);
             } else {
-                tr.cells[1].style.display = 'flex';
-                tr.cells[1].style.gap = '8px';
-
                 const dlBtn = document.createElement('button');
                 dlBtn.className = 'btn btn-action btn-primary';
                 dlBtn.textContent = 'DOWNLOAD';
