@@ -147,6 +147,10 @@
             text-align: right;
             padding-left: 5px;
             padding-right: 5px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            align-items: center;
         }
 
         .action-col span {
@@ -165,23 +169,6 @@
             border-bottom: 2px solid var(--coco-green);
         }
 
-        .btn-action {
-            font-size: 1.2em;
-            padding: 5px 10px;
-            width: auto;
-            flex-shrink: 0;
-        }
-
-        /* Mobile Adjustments */
-        @media (max-width: 600px) {
-            .btn-action {
-                font-size: 14px;
-                padding: 4px 6px;
-            }
-            .action-col {
-                width: 220px; /* Definitive space for shrunken absolute-sized buttons */
-            }
-        }
 
         .btn-sm {
             padding: 5px 10px;

@@ -286,31 +286,22 @@ async function refreshFilesTab() {
 
             tr.innerHTML = `
                 <td class="filename-cell" title="${escHtml(f)}${mtimeStr ? '\nModified: ' + escHtml(mtimeStr) : ''}">
-                    <span class="file-icon">${f.startsWith('/sd') ? '\uD83D\uDCBE' : '\uD83D\uDCC1'}</span> ${escHtml(fname)}
+                    <div style="display: flex; align-items: baseline; gap: 8px;">
+                        <span class="file-icon">${f.startsWith('/sd') ? '\uD83D\uDCBE' : '\uD83D\uDCC1'}</span>
+                        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escHtml(fname)}</span>
+                        ${isMounted ? '<span style="color:var(--coco-alert); font-weight:bold; font-size:0.8em; white-space:nowrap; flex-shrink:0;">[IN USE]</span>' : ''}
+                    </div>
                     ${subtitle ? '<div style="font-size:0.7em; color:var(--coco-dark-green); margin-left:30px;">' + escHtml(subtitle) + '</div>' : ''}
                 </td>
-                <td></td>
+                <td class="action-col" style="display: flex; justify-content: flex-end; gap: 8px;"></td>
             `;
 
             if (isMounted) {
-                tr.cells[1].style.display = 'flex';
-                tr.cells[1].style.gap = '8px';
-
                 const dlBtn = document.createElement('button');
                 dlBtn.className = 'btn btn-action btn-disabled';
                 dlBtn.textContent = 'DOWNLOAD';
                 dlBtn.title = 'Cannot download mounted image';
                 tr.cells[1].appendChild(dlBtn);
-
-                const inUseSpan = document.createElement('span');
-                inUseSpan.style.color = 'var(--coco-alert)';
-                inUseSpan.style.fontWeight = 'bold';
-                inUseSpan.style.padding = '8px';
-                inUseSpan.style.whiteSpace = 'nowrap';
-                inUseSpan.style.flexShrink = '0';
-                inUseSpan.title = 'Disk image mounted and in use';
-                inUseSpan.textContent = '[IN USE]';
-                tr.cells[1].appendChild(inUseSpan);
             } else {
                 tr.cells[1].style.display = 'flex';
                 tr.cells[1].style.gap = '8px';
