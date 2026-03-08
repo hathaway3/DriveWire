@@ -340,9 +340,9 @@ Efficient sector access is critical for OS-9 performance on high-latency storage
 
 | Pattern | Implementation | Benefit |
 |---------|----------------|---------|
-| **Write-Back** | `dirty_sectors` dict in `VirtualDrive` | Reduces flash wear; deferred writes |
+| **Write-Back** | `dirty_sectors` dict (max 16 sectors) | Auto-flushes at 4KB to prevent OOM |
 | **LRU Read Cache** | `read_cache` dict (8 entries) | Lowers latency for repeated access |
 | **Bulk Read-Ahead** | `RemoteDrive` fetches 8 sectors at once | Optimizes sequential read performance |
 | **Zero-Copy** | `memoryview` for cache entries | Reduces RAM usage and overhead |
 
-**Key anti-patterns**: Unbounded caches, synchronous `os.sync()` on every write, single-sector remote fetches.
+**Key resilience patterns**: 16-sector auto-flush limit, predictive `gc.collect()` in Drive constructors, `resilience.log_mem_info()` for debugging.

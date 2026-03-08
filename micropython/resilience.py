@@ -141,3 +141,13 @@ def collect_garbage(reason: str = "general"):
         log(f"GC ({reason}): {before} -> {after} free", level=0)
     except Exception:
         pass
+
+def log_mem_info(label: str = "Status"):
+    """Log current heap usage."""
+    try:
+        free = gc.mem_free()
+        alloc = gc.mem_alloc()
+        total = free + alloc
+        log(f"Memory ({label}): {free/1024:.1f}KB free, {alloc/1024:.1f}KB alloc (Total: {total/1024:.1f}KB)", level=0)
+    except Exception:
+        pass

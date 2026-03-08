@@ -65,6 +65,7 @@ OP_RFM_CLOSE = micropython.const(0x0D)
 
 # Constants for memory management
 MAX_READ_CACHE_ENTRIES = micropython.const(8)
+MAX_DIRTY_CACHE_ENTRIES = micropython.const(16) # 4KB auto-flush threshold
 MAX_CHANNEL_BUFFER_SIZE = micropython.const(256)
 MAX_LOG_ENTRIES = micropython.const(20)
 MAX_TERMINAL_BUFFER_SIZE = micropython.const(512)
@@ -96,6 +97,9 @@ class VirtualDrive:
             'write_count': 0,
             'latency_us': 0
         }
+        # Predictive GC before memory allocation
+        import gc
+        gc.collect()
         try:
             self.file = open(filename, "r+b")
         except OSError as e:
@@ -190,6 +194,12 @@ class VirtualDrive:
         self.read_cache[lsn] = data
         if len(self.read_cache) > MAX_READ_CACHE_ENTRIES:
             self.read_cache.pop(next(iter(self.read_cache)))
+        
+        # Auto-flush if dirty cache is full to prevent OOM
+        if len(self.dirty_sectors) >= MAX_DIRTY_CACHE_ENTRIES:
+            resilience.log(f"Auto-flush: {self.filename} reached {MAX_DIRTY_CACHE_ENTRIES} dirties")
+            self.flush()
+            
         return True
 
 class RemoteDrive:
@@ -209,6 +219,9 @@ class RemoteDrive:
             'latency_us': 0
         }
         self.last_error = E_NONE  # Last error code for opcode handler
+        # Predictive GC before memory stress
+        import gc
+        gc.collect()
         # Verify server is reachable
         try:
             import urequests
