@@ -307,6 +307,7 @@ async function refreshFilesTab() {
                 inUseSpan.style.fontWeight = 'bold';
                 inUseSpan.style.padding = '8px';
                 inUseSpan.style.whiteSpace = 'nowrap';
+                inUseSpan.style.flexShrink = '0';
                 inUseSpan.title = 'Disk image mounted and in use';
                 inUseSpan.textContent = '[IN USE]';
                 tr.cells[1].appendChild(inUseSpan);
