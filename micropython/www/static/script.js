@@ -363,7 +363,7 @@ async function refreshFilesTab() {
                 cloneBtn.textContent = 'CLONE';
                 cloneBtn.title = 'Clone to local SD card';
                 cloneBtn.onclick = () => showCloneModal(rf.url, rf.name, rf.server);
-                tr.cells[2].appendChild(cloneBtn);
+                tr.cells[3].appendChild(cloneBtn);
 
                 remoteListBody.appendChild(tr);
             });
