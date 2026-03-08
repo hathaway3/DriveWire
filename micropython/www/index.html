@@ -127,6 +127,7 @@
             border-collapse: collapse;
             margin-top: 10px;
             table-layout: fixed;
+            min-width: 600px; /* Prevent column squashing on mobile */
         }
 
         .table-responsive {
@@ -157,7 +158,7 @@
         .lane-wrapper {
             display: flex;
             justify-content: flex-end;
-            gap: 5px;
+            gap: 4px; /* Reduced for extra safety */
             align-items: center;
             width: 100%;
         }
