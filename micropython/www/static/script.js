@@ -356,8 +356,11 @@ async function refreshFilesTab() {
                         <span class="file-icon">\uD83C\uDF10</span> ${escHtml(rf.name)}
                     </td>
                     <td><span class="remote-badge remote-badge-name">${escHtml(rf.server)}</span></td>
-                    <td class="status-col"></td>
-                    <td class="action-col" style="display: flex; justify-content: flex-end; gap: 8px;"></td>
+                    <td class="action-col">
+                        <div class="lane-status"></div>
+                        <div class="lane-primary"></div>
+                        <div class="lane-secondary"></div>
+                    </td>
                 `;
                 tr.cells[2].style.display = 'flex';
                 tr.cells[2].style.gap = '8px';
