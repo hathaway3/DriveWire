@@ -10,6 +10,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
     <style>
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
         :root {
             --coco-green: #33ff33;
             /* Typical Green Phosphor */
@@ -152,7 +156,6 @@
             font-size: 1.2em;
             padding: 5px 10px;
             width: auto;
-            min-width: 100px;
         }
 
         .btn-sm {
@@ -529,6 +532,7 @@
 
         .actions {
             display: flex;
+            flex-wrap: wrap;
             gap: 15px;
         }
 
