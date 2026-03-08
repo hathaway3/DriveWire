@@ -141,23 +141,22 @@
             border-bottom: 1px dotted var(--coco-dark-green);
         }
 
-        .status-col {
-            width: 100px;
-            white-space: nowrap;
-            text-align: center;
-        }
-
         .action-col {
-            width: 280px; /* Reduced since [IN USE] is in its own column now */
+            width: 270px; /* Fits 3 lanes: Status (80), DL (100), Del (80) + gaps */
             white-space: nowrap;
             text-align: right;
             padding-left: 5px;
             padding-right: 5px;
             display: flex;
             justify-content: flex-end;
-            gap: 8px;
+            gap: 5px;
             align-items: center;
         }
+
+        /* Lane containers for perfect vertical alignment */
+        .lane-status { width: 80px; text-align: center; flex-shrink: 0; }
+        .lane-primary { width: 100px; flex-shrink: 0; }
+        .lane-secondary { width: 80px; flex-shrink: 0; }
 
         .action-col span {
             flex-shrink: 0;

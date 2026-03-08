@@ -292,27 +292,31 @@ async function refreshFilesTab() {
                     </div>
                     ${subtitle ? '<div style="font-size:0.7em; color:var(--coco-dark-green); margin-left:30px;">' + escHtml(subtitle) + '</div>' : ''}
                 </td>
-                <td class="status-col" style="text-align: center; vertical-align: middle;"></td>
-                <td class="action-col" style="display: flex; justify-content: flex-end; gap: 8px;"></td>
+                <td class="action-col">
+                    <div class="lane-status"></div>
+                    <div class="lane-primary"></div>
+                    <div class="lane-secondary"></div>
+                </td>
             `;
 
-            const statusCell = tr.cells[1];
-            const actionCell = tr.cells[2];
+            const statusLane = tr.querySelector('.lane-status');
+            const primaryLane = tr.querySelector('.lane-primary');
+            const secondaryLane = tr.querySelector('.lane-secondary');
 
             if (isMounted) {
                 const statusSpan = document.createElement('span');
+                statusSpan.className = 'in-use-indicator';
                 statusSpan.style.color = 'var(--coco-alert)';
                 statusSpan.style.fontWeight = 'bold';
                 statusSpan.style.fontSize = '0.9em';
-                statusSpan.style.whiteSpace = 'nowrap';
                 statusSpan.textContent = '[IN USE]';
-                statusCell.appendChild(statusSpan);
+                statusLane.appendChild(statusSpan);
 
                 const dlBtn = document.createElement('button');
                 dlBtn.className = 'btn btn-action btn-disabled';
                 dlBtn.textContent = 'DOWNLOAD';
                 dlBtn.title = 'Cannot download mounted image';
-                actionCell.appendChild(dlBtn);
+                primaryLane.appendChild(dlBtn);
             } else {
                 const dlBtn = document.createElement('button');
                 dlBtn.className = 'btn btn-action btn-primary';
@@ -320,15 +324,15 @@ async function refreshFilesTab() {
                 dlBtn.onclick = () => {
                     window.location.href = `/api/files/download?path=${encodeURIComponent(f)}`;
                 };
-                actionCell.appendChild(dlBtn);
+                primaryLane.appendChild(dlBtn);
 
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'btn btn-action btn-danger';
                 deleteBtn.textContent = 'DELETE';
                 deleteBtn.onclick = () => deleteFile(f);
-                actionCell.appendChild(deleteBtn);
+                secondaryLane.appendChild(deleteBtn);
             }
- 
+
             listBody.appendChild(tr);
 
 
