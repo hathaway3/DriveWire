@@ -12,6 +12,7 @@ time.sleep(2)
 
 async def main():
     resilience.log("Initializing DriveWire Server...")
+    resilience.blink_state('running')
     
     # Configure GC to run aggressively early
     gc.threshold(50000)
@@ -69,6 +70,7 @@ except KeyboardInterrupt:
         _keepalive.init(period=2000, mode=machine.Timer.PERIODIC, callback=_feed_wdt_timer)
         resilience.log("WDT kept alive via hardware timer. Safe to upload files.")
 except Exception as e:
+    resilience.blink_state('error')
     resilience.log(f"Unexpected server crash: {e}", level=4)
     resilience.log("Rebooting in 10 seconds to recover...", level=4)
     time.sleep(10)

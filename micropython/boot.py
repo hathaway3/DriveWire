@@ -7,7 +7,9 @@ import machine
 import resilience
 
 # Give USB power delivery time to stabilize on headless boot
-resilience.log(f"DriveWire booting. Reset cause: {resilience.get_reset_cause()}")
+resilience.blink_state('boot')
+chip = "RP2350 (Pico 2)" if resilience.is_rp2350() else "RP2040 (Pico 1)"
+resilience.log(f"DriveWire booting on {chip}. Reset cause: {resilience.get_reset_cause()}")
 resilience.log("Powering on... Waiting for voltage stabilization.")
 time.sleep(2)
 
@@ -32,6 +34,7 @@ try:
         backoff = 2
         while retry_count < max_retries:
             try:
+                resilience.blink_state('wifi_wait')
                 resilience.log(f"Connecting to WiFi '{wifi_ssid}' (Attempt {retry_count + 1})...")
                 lib_installer.connect_wifi(wifi_ssid, wifi_password)
                 resilience.log("WiFi Connected successfully.")
@@ -65,6 +68,7 @@ try:
     resilience.feed_wdt()
 
 except Exception as fatal_e:
+    resilience.blink_state('error')
     resilience.log(f"Fatal boot crash: {fatal_e}", level=4)
     resilience.log("Rebooting in 10 seconds...", level=4)
     time.sleep(10)

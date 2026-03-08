@@ -234,48 +234,67 @@ class RemoteDrive:
 
         # 2. Fetch from remote server using bulk read-ahead
         self.stats['read_misses'] += 1
-        try:
-            import urequests
-            # Fetch up to MAX_READ_CACHE_ENTRIES sectors sequentially
-            count = MAX_READ_CACHE_ENTRIES
-            resp = urequests.get(f"{self.url}/sectors/{lsn}?count={count}")
-            if resp.status_code == 200:
-                data = resp.content
+        retry_count = 0
+        max_retries = 3
+        backoff = 1  # Start with 1 second
+        
+        while retry_count < max_retries:
+            try:
+                import urequests
+                # Fetch up to MAX_READ_CACHE_ENTRIES sectors sequentially
+                count = MAX_READ_CACHE_ENTRIES
+                resp = urequests.get(f"{self.url}/sectors/{lsn}?count={count}", timeout=5)
+                
+                if resp.status_code == 200:
+                    data = resp.content
+                    resp.close()
+                    activity_led.blink()
+                    resilience.feed_wdt()
+                    
+                    # Split the bulk payload into individual 256-byte sectors
+                    sectors_received = len(data) // SECTOR_SIZE
+                    if sectors_received == 0 and len(data) > 0:
+                        sectors_received = 1
+                        
+                    target_data = None
+                    
+                    for i in range(sectors_received):
+                        chunk = data[i * SECTOR_SIZE : (i + 1) * SECTOR_SIZE]
+                        if len(chunk) < SECTOR_SIZE:
+                            chunk = chunk + bytes(SECTOR_SIZE - len(chunk))
+                            
+                        current_lsn = lsn + i
+                        self.read_cache[current_lsn] = chunk
+                        
+                        # Evict oldest if we exceed max size
+                        while len(self.read_cache) > MAX_READ_CACHE_ENTRIES:
+                            self.read_cache.pop(next(iter(self.read_cache)))
+                            
+                        if current_lsn == lsn:
+                            target_data = chunk
+                    
+                    return target_data if target_data else bytes(SECTOR_SIZE)
+                
                 resp.close()
-                activity_led.blink()
-                resilience.feed_wdt()
+                resilience.log(f"Remote Read Error LSN {lsn}: HTTP {resp.status_code}", level=2)
+                break # HTTP error (e.g. 404) shouldn't retry typically
                 
-                # Split the bulk payload into individual 256-byte sectors
-                sectors_received = len(data) // SECTOR_SIZE
-                if sectors_received == 0 and len(data) > 0:
-                    sectors_received = 1
-                    
-                target_data = None
-                
-                for i in range(sectors_received):
-                    chunk = data[i * SECTOR_SIZE : (i + 1) * SECTOR_SIZE]
-                    if len(chunk) < SECTOR_SIZE:
-                        chunk = chunk + bytes(SECTOR_SIZE - len(chunk))
-                        
-                    current_lsn = lsn + i
-                    self.read_cache[current_lsn] = chunk
-                    
-                    # Evict oldest if we exceed max size
-                    while len(self.read_cache) > MAX_READ_CACHE_ENTRIES:
-                        self.read_cache.pop(next(iter(self.read_cache)))
-                        
-                    if current_lsn == lsn:
-                        target_data = chunk
-                
-                return target_data if target_data else bytes(SECTOR_SIZE)
-            resp.close()
-            resilience.log(f"Remote Read Error LSN {lsn}: HTTP {resp.status_code}", level=2)
-            self.last_error = E_READ
-            return None
-        except Exception as e:
-            resilience.log(f"Remote Read Error LSN {lsn}: {e}", level=2)
-            self.last_error = E_NOTRDY
-            return None
+            except (OSError, RuntimeError) as e:
+                retry_count += 1
+                if retry_count < max_retries:
+                    sleep_time = backoff * (2 ** (retry_count - 1))
+                    resilience.log(f"Remote Read LSN {lsn} failed ({e}). Retrying in {sleep_time}s...", level=2)
+                    resilience.feed_wdt()
+                    utime.sleep(sleep_time)
+                    resilience.feed_wdt()
+                else:
+                    resilience.log(f"Remote Read LSN {lsn} failed after {max_retries} attempts: {e}", level=3)
+            except Exception as e:
+                resilience.log(f"Remote Read Unexpected Error LSN {lsn}: {e}", level=3)
+                break
+
+        self.last_error = E_NOTRDY
+        return None
 
     def write_sector(self, lsn, data):
         """Remote drives are read-only. Returns error code E_WP."""

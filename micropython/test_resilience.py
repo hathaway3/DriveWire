@@ -8,6 +8,11 @@ sys.modules['machine'] = MagicMock()
 sys.modules['microdot_asyncio'] = MagicMock()
 sys.modules['microdot'] = MagicMock()
 sys.modules['syslog'] = MagicMock()
+sys.modules['activity_led'] = MagicMock()
+
+# Mock os.sync which is missing on standard Python
+if not hasattr(os, 'sync'):
+    os.sync = lambda: None
 
 # Add current directory to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -36,16 +41,21 @@ class TestResilience(unittest.TestCase):
             self.assertIn("[ERROR] Error message", content)
 
     def test_log_rotation(self):
-        # Fill log file to near limit
+        # Fill log file to beyond limit (4KB)
         with open('system.log', 'w') as f:
-            f.write("A" * 15000)
+            f.write("A" * 5000)
             
         resilience.log("Trigger rotation", level=1)
         
+        # In our implementation, if stats[6] > MAX_LOG_SIZE, it renames to .old
+        # and starts a new LOG_FILE.
         with open('system.log', 'r') as f:
             content = f.read()
+            # New file should be small (just the "Trigger rotation" line)
             self.assertLess(len(content), 1000)
             self.assertIn("Trigger rotation", content)
+        
+        self.assertTrue(os.path.exists('system.log.old'))
 
     def test_get_reset_cause(self):
         import machine

@@ -58,6 +58,11 @@ sys.modules['ntptime'] = MagicMock()
 # Mock urequests for RemoteDrive tests
 mock_urequests = MagicMock()
 sys.modules['urequests'] = mock_urequests
+sys.modules['activity_led'] = MagicMock()
+
+# Mock os.sync
+if not hasattr(os, 'sync'):
+    os.sync = lambda: None
 
 # Mock config
 import json
@@ -322,7 +327,7 @@ class TestRemoteDrive(unittest.TestCase):
 
         result = self.drive.read_sector(5)
         self.assertEqual(result, bytes(range(256))) # Should return the 1 sector requested
-        mock_urequests.get.assert_called_once_with('http://192.168.1.100:8080/sectors/5?count=8')
+        mock_urequests.get.assert_called_once_with('http://192.168.1.100:8080/sectors/5?count=8', timeout=5)
         self.assertEqual(self.drive.stats['read_misses'], 1)
 
     def test_remote_write_protected(self):

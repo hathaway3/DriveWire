@@ -70,28 +70,37 @@ def log(message: str, level: int = 1, _from_syslog: bool = False) -> None:
         except Exception:
             pass
 
+def is_rp2350() -> bool:
+    """Detect if running on RP2350 (Pico 2) based on default CPU frequency."""
+    try:
+        # RP2350 default is 150MHz, RP2040 is 125MHz
+        return machine.freq() > 130_000_000
+    except Exception:
+        return False
+
 def blink_state(state: str) -> None:
     """
     Signal system state using the onboard LED.
     States: 'boot', 'wifi_wait', 'error', 'running'
     """
     try:
-        from activity_led import on, off
+        import activity_led
         if state == 'boot':
             # 3 quick flashes
             for _ in range(3):
-                on(); time.sleep(0.1); off(); time.sleep(0.1)
+                activity_led.on(); time.sleep(0.1); activity_led.off(); time.sleep(0.1)
         elif state == 'wifi_wait':
             # Slow blink
-            on(); time.sleep(0.5); off(); time.sleep(0.5)
+            activity_led.on(); time.sleep(0.5); activity_led.off(); time.sleep(0.5)
         elif state == 'error':
             # Rapid blink
             for _ in range(10):
-                on(); time.sleep(0.05); off(); time.sleep(0.05)
+                activity_led.on(); time.sleep(0.05); activity_led.off(); time.sleep(0.05)
         elif state == 'running':
             # One long blink
-            on(); time.sleep(1.0); off()
+            activity_led.on(); time.sleep(1.0); activity_led.off()
     except Exception:
+        # Silently fail if LED hardware is not available
         pass
 
 class SafeWatchdog:
