@@ -18,7 +18,7 @@ async def main():
     # Configure GC to run aggressively early
     gc.threshold(50000)
     resilience.collect_garbage("server_start")
-    resilience.log(f"Free memory: {gc.mem_free()} bytes")
+    resilience.log_mem_info("Boot Baseline")
     
     # Sync time on startup (best effort)
     try:

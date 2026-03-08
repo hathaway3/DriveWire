@@ -141,6 +141,7 @@ def get_dsk_files():
     unique.sort()
     _dsk_files_cache = unique
     _dsk_files_cache_ts = utime.ticks_ms()
+    resilience.log_mem_info("DSK Cache Updated")
     return unique
 
 
@@ -185,7 +186,7 @@ async def files_endpoint(request):
 @app.route('/api/files/info')
 async def files_info_endpoint(request):
     """Return metadata (size, modification time) for all .dsk files."""
-    gc.collect()
+    resilience.log_mem_info("Files Info Start")
     files = get_dsk_files()
     result = {}
     for f in files:
@@ -196,6 +197,7 @@ async def files_info_endpoint(request):
             result[f] = {'size': size, 'mtime': mtime_str}
         except OSError:
             result[f] = {'size': 0, 'mtime': None}
+    gc.collect() # Clean up after massive dict creation
     return result
 
 
@@ -217,7 +219,7 @@ async def sd_status_endpoint(request):
 
 @app.route('/api/status')
 async def status_endpoint(request):
-    gc.collect()
+    resilience.log_mem_info("Status Poll")
     try:
         # Always include server time (lightweight)
         try:
@@ -759,6 +761,7 @@ async def remote_files_endpoint(request):
     
     _remote_files_cache = result
     _remote_files_cache_ts = utime.ticks_ms()
+    gc.collect() # Clean up after remote file list compilation
     return result
 
 @app.route('/api/remote/test', methods=['POST'])

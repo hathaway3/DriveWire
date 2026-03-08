@@ -255,6 +255,7 @@ class RemoteDrive:
             try:
                 import urequests
                 # Fetch up to MAX_READ_CACHE_ENTRIES sectors sequentially
+                # Note: 8 sectors * 256 bytes = 2KB, well within 4KB "no-stream" limit
                 count = MAX_READ_CACHE_ENTRIES
                 resp = urequests.get(f"{self.url}/sectors/{lsn}?count={count}", timeout=5)
                 
