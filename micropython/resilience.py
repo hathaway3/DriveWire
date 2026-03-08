@@ -50,14 +50,14 @@ def log(message: str, level: int = 1, _from_syslog: bool = False) -> None:
         if stats[6] > MAX_LOG_SIZE:
             # Simple "clear if full" strategy for flash safety
             os.rename(LOG_FILE, LOG_FILE + ".old")
-    except OSError:
+    except (OSError, KeyboardInterrupt):
         pass
     
     try:
         with open(LOG_FILE, "a") as f:
             f.write(log_line)
             os.sync()
-    except OSError:
+    except (OSError, KeyboardInterrupt):
         pass
 
     # Forward to Syslog Remote Server
@@ -67,7 +67,7 @@ def log(message: str, level: int = 1, _from_syslog: bool = False) -> None:
             # Map resilience levels to syslog severities
             sev = [7, 6, 4, 3, 2][level] if 0 <= level <= 4 else 6
             syslog.logger.log(message, severity=sev)
-        except Exception:
+        except (Exception, KeyboardInterrupt):
             pass
 
 def is_rp2350() -> bool:
