@@ -154,6 +154,8 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            max-width: 0;
+            width: 100%;
         }
 
         th {
@@ -870,7 +872,7 @@
                 <table id="files-table">
                     <thead>
                         <tr>
-                            <th>FILENAME</th>
+                            <th style="width: 100%;">FILENAME</th>
                             <th class="action-col">ACTION</th>
                         </tr>
                     </thead>
@@ -887,7 +889,7 @@
                 <table id="remote-files-table">
                     <thead>
                         <tr>
-                            <th>FILENAME</th>
+                            <th style="width: 100%;">FILENAME</th>
                             <th>SERVER</th>
                             <th class="action-col">ACTION</th>
                         </tr>
