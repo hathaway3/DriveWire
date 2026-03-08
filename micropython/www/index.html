@@ -154,16 +154,16 @@
 
         .lane-wrapper {
             display: flex;
-            justify-content: flex-end;
+            justify-content: flex-start; /* Anchor buttons to the left */
             gap: 4px; /* Reduced for extra safety */
             align-items: center;
             width: 100%;
         }
 
-        /* Lane containers for perfect vertical alignment */
-        .lane-status { flex: 0 1 70px; text-align: center; } /* Reduced from 80px */
-        .lane-primary { flex: 1 1 90px; }  /* Reduced from 100px */
-        .lane-secondary { flex: 0 1 70px; } /* Reduced from 80px */
+        /* Lane containers for perfect vertical alignment and visual reordering */
+        .lane-primary { flex: 1 1 90px; order: 1; }  /* DOWNLOAD/CLONE logic on the left */
+        .lane-secondary { flex: 0 1 70px; order: 2; } /* DELETE logic in the middle */
+        .lane-status { flex: 0 1 70px; text-align: right; order: 3; } /* [IN USE] indicator on the right */
 
         .btn-action {
             width: 100% !important; /* Force button to fill its lane */
