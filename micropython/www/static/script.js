@@ -294,7 +294,6 @@ async function refreshFilesTab() {
 
             if (isMounted) {
                 tr.cells[1].style.display = 'flex';
-                tr.cells[1].style.flexWrap = 'wrap';
                 tr.cells[1].style.gap = '8px';
 
                 const dlBtn = document.createElement('button');
@@ -313,7 +312,6 @@ async function refreshFilesTab() {
                 tr.cells[1].appendChild(inUseSpan);
             } else {
                 tr.cells[1].style.display = 'flex';
-                tr.cells[1].style.flexWrap = 'wrap';
                 tr.cells[1].style.gap = '8px';
 
                 const dlBtn = document.createElement('button');
@@ -354,7 +352,6 @@ async function refreshFilesTab() {
                     <td></td>
                 `;
                 tr.cells[2].style.display = 'flex';
-                tr.cells[2].style.flexWrap = 'wrap';
                 tr.cells[2].style.gap = '8px';
 
                 const cloneBtn = document.createElement('button');
