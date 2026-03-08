@@ -328,13 +328,8 @@ async function refreshFilesTab() {
                 deleteBtn.onclick = () => deleteFile(f);
                 actionCell.appendChild(deleteBtn);
             }
-                const dlBtn = document.createElement('button');
-                dlBtn.className = 'btn btn-action btn-primary';
-                dlBtn.textContent = 'DOWNLOAD';
-                dlBtn.onclick = () => {
-                    window.location.href = `/api/files/download?path=${encodeURIComponent(f)}`;
-                };
-                tr.cells[1].appendChild(dlBtn);
+ 
+            listBody.appendChild(tr);
 
 
             listBody.appendChild(tr);
@@ -357,7 +352,8 @@ async function refreshFilesTab() {
                         <span class="file-icon">\uD83C\uDF10</span> ${escHtml(rf.name)}
                     </td>
                     <td><span class="remote-badge remote-badge-name">${escHtml(rf.server)}</span></td>
-                    <td></td>
+                    <td class="status-col"></td>
+                    <td class="action-col" style="display: flex; justify-content: flex-end; gap: 8px;"></td>
                 `;
                 tr.cells[2].style.display = 'flex';
                 tr.cells[2].style.gap = '8px';
