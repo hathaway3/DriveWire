@@ -142,21 +142,31 @@
         }
 
         .action-col {
-            width: 270px; /* Fits 3 lanes: Status (80), DL (100), Del (80) + gaps */
+            width: 270px;
             white-space: nowrap;
             text-align: right;
             padding-left: 5px;
             padding-right: 5px;
+        }
+
+        .lane-wrapper {
             display: flex;
             justify-content: flex-end;
             gap: 5px;
             align-items: center;
+            width: 100%;
         }
 
         /* Lane containers for perfect vertical alignment */
         .lane-status { width: 80px; text-align: center; flex-shrink: 0; }
         .lane-primary { width: 100px; flex-shrink: 0; }
         .lane-secondary { width: 80px; flex-shrink: 0; }
+
+        .btn-action {
+            width: 100% !important; /* Force button to fill its lane */
+            font-size: 14px !important;
+            padding: 4px 8px !important;
+        }
 
         .action-col span {
             flex-shrink: 0;

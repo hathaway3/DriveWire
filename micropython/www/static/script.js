@@ -293,9 +293,11 @@ async function refreshFilesTab() {
                     ${subtitle ? '<div style="font-size:0.7em; color:var(--coco-dark-green); margin-left:30px;">' + escHtml(subtitle) + '</div>' : ''}
                 </td>
                 <td class="action-col">
-                    <div class="lane-status"></div>
-                    <div class="lane-primary"></div>
-                    <div class="lane-secondary"></div>
+                    <div class="lane-wrapper">
+                        <div class="lane-status"></div>
+                        <div class="lane-primary"></div>
+                        <div class="lane-secondary"></div>
+                    </div>
                 </td>
             `;
 
@@ -357,13 +359,13 @@ async function refreshFilesTab() {
                     </td>
                     <td><span class="remote-badge remote-badge-name">${escHtml(rf.server)}</span></td>
                     <td class="action-col">
-                        <div class="lane-status"></div>
-                        <div class="lane-primary"></div>
-                        <div class="lane-secondary"></div>
+                        <div class="lane-wrapper">
+                            <div class="lane-status"></div>
+                            <div class="lane-primary"></div>
+                            <div class="lane-secondary"></div>
+                        </div>
                     </td>
                 `;
-                tr.cells[2].style.display = 'flex';
-                tr.cells[2].style.gap = '8px';
 
                 const cloneBtn = document.createElement('button');
                 cloneBtn.className = 'btn btn-action btn-primary';
