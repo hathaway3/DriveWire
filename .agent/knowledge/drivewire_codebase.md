@@ -331,3 +331,18 @@ This is an unauthenticated, LAN-only device. See [security-exceptions.md](../rul
 | **Input Validation** | Config whitelist, drive array length, `.dsk` extension check | `web_server.py`, `config.py` |
 | **Exception Handling** | No bare `except:`; all errors logged via `resilience.log()` | All files |
 | **Crash Recovery** | Top-level handler: log → blink → sleep 10s → `machine.reset()` | `main.py` |
+
+---
+
+## Sector Caching & Read-Ahead
+
+Efficient sector access is critical for OS-9 performance on high-latency storage. See [sector-caching.md](../rules/sector-caching.md) for the full rule set.
+
+| Pattern | Implementation | Benefit |
+|---------|----------------|---------|
+| **Write-Back** | `dirty_sectors` dict in `VirtualDrive` | Reduces flash wear; deferred writes |
+| **LRU Read Cache** | `read_cache` dict (8 entries) | Lowers latency for repeated access |
+| **Bulk Read-Ahead** | `RemoteDrive` fetches 8 sectors at once | Optimizes sequential read performance |
+| **Zero-Copy** | `memoryview` for cache entries | Reduces RAM usage and overhead |
+
+**Key anti-patterns**: Unbounded caches, synchronous `os.sync()` on every write, single-sector remote fetches.
