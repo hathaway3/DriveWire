@@ -643,24 +643,8 @@
             }
         }
 
-        /* Action overrides - defined last to beat global .btn width: 100% */
-        .btn-action {
-            width: auto !important;
-            flex-shrink: 0;
-            display: inline-block;
-        }
+        /* Mobile Adjustments - Removed toxic action-col override that caused overlap */
 
-        /* Mobile Adjustments */
-        @media (max-width: 600px) {
-            .btn-action {
-                font-size: 14px !important;
-                padding: 4px 6px !important;
-            }
-            .action-col {
-                width: 220px !important; /* Increased back to 220px to be safe */
-                gap: 5px;
-            }
-        }
     </style>
 </head>
 
