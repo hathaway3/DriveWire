@@ -17,11 +17,11 @@ DriveWire is a flexible server and protocol suite for the TRS-80 Color Computer 
 
 | Host Platform | Implementation | Host OS Requirement | Recommended For |
 |---------------|----------------|---------------------|-----------------|
-| **Pico W / 2 W** | [MicroPython](../micropython/README.md) | Firmware | Standalone / Low Power |
-| **Linux** | [C](../c/README.md) | Kernel 2.6+ | Headless / Servers |
-| **macOS** | [Swift](../swift/README.md) | macOS 11+ | Desktop Users |
-| **Windows** | [Delphi](../delphi/README.md) | Windows 7+ | Windows Desktop |
-| **Classic Mac** | [Objective-C](../objc/README.md) | OS X 10.9+ | Older Macs |
+| **Pico W / 2 W** | [MicroPython](https://github.com/hathaway3/DriveWire/tree/master/micropython) | Firmware | Standalone / Low Power |
+| **Linux** | [C](https://github.com/hathaway3/DriveWire/tree/master/c) | Kernel 2.6+ | Headless / Servers |
+| **macOS** | [Swift](https://github.com/hathaway3/DriveWire/tree/master/swift) | macOS 11+ | Desktop Users |
+| **Windows** | [Delphi](https://github.com/hathaway3/DriveWire/tree/master/delphi) | Windows 7+ | Windows Desktop |
+| **Classic Mac** | [Objective-C](https://github.com/hathaway3/DriveWire/tree/master/objc) | OS X 10.9+ | Older Macs |
 
 ---
 
@@ -37,7 +37,7 @@ DriveWire is a flexible server and protocol suite for the TRS-80 Color Computer 
 
 ## 📐 Technical Specifications
 
-- **[DriveWire Protocol 4.0](../DriveWire%20Specification.md)**: The core protocol details.
+- **[DriveWire Protocol 4.0](https://github.com/hathaway3/DriveWire/blob/master/DriveWire%20Specification.md)**: The core protocol details.
 - **[Becker Ports](technical/becker-port-specification.md)**: Low-level hardware interface.
 - **[Config.xml Reference](technical/config-xml.md)**: XML configuration file schema.
 - **[Writing Software](technical/writing-network-software.md)**: Developer's guide for network tools.

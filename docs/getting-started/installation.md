@@ -16,10 +16,10 @@ Installing the DriveWire server typically involves unpacking an archive for your
 
 > [!IMPORTANT]
 > Choose the implementation that matches your host operating system:
-> - **Linux / macOS**: See the **[C implementation](../../c/README.md)**.
-> - **macOS (Modern)**: See the **[Swift implementation](../../swift/README.md)**.
-> - **Windows**: See the **[Delphi implementation](../../delphi/README.md)**.
-> - **RPi Pico W**: See the **[MicroPython implementation](../../micropython/README.md)**.
+> - **Linux / macOS**: See the **[C implementation](https://github.com/hathaway3/DriveWire/tree/master/c)**.
+> - **macOS (Modern)**: See the **[Swift implementation](https://github.com/hathaway3/DriveWire/tree/master/swift)**.
+> - **Windows**: See the **[Delphi implementation](https://github.com/hathaway3/DriveWire/tree/master/delphi)**.
+> - **RPi Pico W**: See the **[MicroPython implementation](https://github.com/hathaway3/DriveWire/tree/master/micropython)**.
 
 ## ☕ Java Server Requirements
 
