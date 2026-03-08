@@ -95,3 +95,6 @@ When you boot the `NOS9_6809_L2_coco3_dw.dsk` image:
     *   Verify you have `n1_scdwv.dd` or higher loaded so `/N` can assign a channel.
 *   **Slow Disk Access**:
     *   If you have a Becker interface or CoCo3FPGA, ensure you are using the `_becker` bootfile/disk image. The standard `_dw` image uses bit-banging which is significantly slower.
+
+---
+[Return to Documentation Index](../index.md)

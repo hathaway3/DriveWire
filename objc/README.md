@@ -91,6 +91,9 @@ end tell
 ```
 
 ## DriveWire Specification
-This server follows the specifications [found here]( https://sourceforge.net/p/drivewireserver/wiki/DriveWire_Specification/).
+This server follows the specifications [found here](../DriveWire%20Specification.md).
+
+---
+[Return to Documentation Index](../docs/index.md)
 
 

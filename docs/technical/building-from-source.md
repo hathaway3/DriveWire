@@ -13,3 +13,6 @@ The jar file is platform independent, so once it is built you can copy it to Win
 
 - Java version 1.5 or later
 - Apache Ant configured for your platform
+
+---
+[Return to Documentation Index](../index.md)

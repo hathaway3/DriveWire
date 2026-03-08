@@ -1,15 +1,21 @@
 # Getting Help
 
-## Support
+While DriveWire has been extensively tested, you may encounter issues or have questions about specific configurations.
 
-# Getting Help
+## 💬 Community Support
 
-## Support
+- **CoCo Mailing List**: The primary hub for the Color Computer community. [Join here](https://pairlist5.pair.net/mailman/listinfo/coco).
+- **Discord**: Many DriveWire users and developers are active on the **Tandy Color Computer** Discord server.
+- **IRC**: Historically, `#coco_chat` was active on Freenode. For modern IRC, check **Libera.Chat**.
 
-Modern DriveWire implementations are available in several languages (Java, MicroPython, etc.). While we've done quite a bit of testing, there are certainly going to be issues that come up only as the software is tried by more people. 
+## 🐛 Bug Reports
 
-You can often find other users of DW online in our IRC channel, `#coco_chat` on freenode. To join the room with your web browser, [click here](http://webchat.freenode.net/?channels=coco_chat).
+If you've found a bug or have a feature request, please open an issue on the official GitHub repository:
+- **[GitHub Issues](https://github.com/boisy/DriveWire/issues)**
 
-## Testing
+## 🧪 Testing
 
-If you are interested in testing new features, see [Beta Testing](beta-testing.md).
+Interested in trying out the latest features before they are widely released? See our **[Beta Testing](beta-testing.md)** guide.
+
+---
+[Return to Documentation Index](../index.md)

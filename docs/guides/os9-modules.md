@@ -45,4 +45,7 @@ If you'd like to put the OS9 TERM device on a virtual channel (so it can be acce
 
 MIDI uses a virtual serial channel and requires the same driver module, scdwn.dr. If your MIDI program allows you to specify /N as the MIDI device, you don't need anything special to use MIDI. Some MIDI players only allow the device to be called /MIDI. To support these programs, you can load the device descriptor midi_scdwn.dd in place of the 14th channel descriptor n14_scdwn.dd. Do not try to load n14_scdwn.dd and midi_scdwn.dd at the same time. 
 
-Although you should load the nX devices sequentially, meaning n13_scdwn.dd should be used if n14_scdwn.dd is used, this is not a requirement for using midi_scdwn.dd. You can use midi_scdwn without any /N devices, or with any number of them. 
+Although you should load the nX devices sequentially, meaning n13_scdwn.dd should be used if n14_scdwn.dd is used, this is not a requirement for using midi_scdwn.dd. You can use midi_scdwn without any /N devices, or with any number of them.
+
+---
+[Return to Documentation Index](../index.md)

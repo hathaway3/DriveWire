@@ -1,29 +1,33 @@
 # Installation
 
-# Installation
+This guide covers the general installation of the DriveWire server software.
 
-This guide covers the installation of the DriveWire server software.
+## 📋 Prerequisites
 
-## Prerequisites
-
-- **Hardware**: You will need a suitable cable to connect your CoCo to your PC. See [DriveWire Cables](cables.md).
+- **Hardware**: You will need a suitable serial cable to connect your CoCo to your host computer. See **[DriveWire Cables](cables.md)**.
 - **Client Software**:
-    - For CoCo: [Client (CoCo) Side Software](../clients/coco.md)
-    - For Non-CoCo: [Client (Non-CoCo) Side Software](../clients/non-coco.md)
-    - Alternative: [Add DriveWire drivers to existing system](../guides/add-drivewire-drivers.md)
+    - **[Color Computer (CoCo)](../clients/coco.md)**: Hardware-side drivers.
+    - **[Non-CoCo Systems](../clients/non-coco.md)**: Support for compatible systems.
+    - **[Custom Drivers](../guides/add-drivewire-drivers.md)**: For advanced setups.
 
-## Installation
+## 🔨 General Installation
 
-## Installation
+Installing the DriveWire server typically involves unpacking an archive for your specific platform. Most implementations are self-contained and do not require a formal installer.
 
-Installing the DriveWire server often just means unpacking an archive wherever you'd like. Most implementations do not require a formal installation program.
+> [!IMPORTANT]
+> Choose the implementation that matches your host operating system:
+> - **Linux / macOS**: See the **[C implementation](../../c/README.md)**.
+> - **macOS (Modern)**: See the **[Swift implementation](../../swift/README.md)**.
+> - **Windows**: See the **[Delphi implementation](../../delphi/README.md)**.
+> - **RPi Pico W**: See the **[MicroPython implementation](../../micropython/README.md)**.
 
-## Requirements
+## ☕ Java Server Requirements
 
-## Requirements
+The legacy Java-based DriveWire server requires a **Java J2SE 7** or newer JRE. You can download this from [java.com](http://www.java.com/getjava/).
 
-The Java-based DriveWire server requires a Java J2SE 7 or newer JRE to be installed and working on your system. If you don't have one, you can visit [java.com](http://www.java.com/getjava/) and follow the prompts. Other implementations, such as the MicroPython version, have different requirements.
+## ➡️ Next Steps
 
-## Next Steps
+Once your server is installed and running, proceed to **[Configuration](configuration.md)** or learn about **[Using DriveWire](using-drivewire.md)**.
 
-Once installed, proceed to [Using DriveWire](using-drivewire.md).
+---
+[Return to Documentation Index](../index.md)

@@ -1,56 +1,64 @@
 # DriveWire Documentation
 
-Welcome to the DriveWire documentation. DriveWire is a flexible server and protocol suite for the TRS-80 Color Computer and compatible systems, providing virtual disks, networking, and other services.
-
-[TOC]
-
-## Getting Started
-
-If you are new to DriveWire, start here.
-
-- [Installation](getting-started/installation.md) - How to install DriveWire on your system.
-- [Configuration](getting-started/configuration.md) - Setting up DriveWire for your hardware.
-- [Using DriveWire](getting-started/using-drivewire.md) - A comprehensive guide to using DriveWire's features.
-- [DriveWire GUI](getting-started/drivewire-gui.md) - Using the Java-based graphical interface.
-- [DriveWire Cables](getting-started/cables.md) - Information on physical connection cables.
-
-## User Guides
-
-Detailed guides for specific tasks and features.
-
-- [NitrOS-9 Level 2 Integration](guides/nitros9-level2-integration.md) - Using DriveWire with NitrOS-9.
-- [OS-9 Modules](guides/os9-modules.md) - Information about OS-9 implementation details.
-- [The 'dw' Commands](guides/dw-commands.md) - Using the DriveWire command-line tools.
-- [Solving Low Memory Issues](guides/solving-low-memory-issues.md) - Tips for running on systems with limited RAM.
-- [Adding DriveWire Drivers](guides/add-drivewire-drivers.md) - How to add drivers to your system.
-
-## Supported Clients
-
-Documentation for specific computer systems.
-
-- [Color Computer](clients/coco.md) - Using DriveWire with the TRS-80 CoCo.
-- [Non-CoCo Systems](clients/non-coco.md) - Information for other compatible systems.
-
-## Technical Specifications
-
-Deep dives into the protocols and internals.
-
-- [DriveWire Specification](technical/drivewire-specification.md) - The core protocol details.
-- [Becker Port Specification](technical/becker-port-specification.md) - Hardware interface details.
-- [Config.xml Reference](technical/config-xml.md) - Details on the `config.xml` file.
-- [Building from Source](technical/building-from-source.md) - How to compile DriveWire yourself.
-- [Writing Network Software](technical/writing-network-software.md) - A guide for developers.
-
-## Community & Support
-
-- [Getting Help](community/getting-help.md) - Where to find help and community support.
-- [Beta Testing](community/beta-testing.md) - Information on testing developmental versions.
+DriveWire is a flexible server and protocol suite for the TRS-80 Color Computer and compatible systems, providing virtual disks, high-speed networking, and various host services.
 
 ---
 
-## Bugs
+## 🧭 Navigation
 
-Feel free to post bug reports in the tickets tracker on the project repository. Please note that this project is in maintenance mode.
+- **[Installation](getting-started/installation.md)**: How to install DriveWire on your host system.
+- **[Configuration](getting-started/configuration.md)**: Setting up DriveWire for your specific hardware.
+- **[Using DriveWire](getting-started/using-drivewire.md)**: A comprehensive guide to standard features.
+- **[Cables & Wiring](getting-started/cables.md)**: Physical connection requirements and diagrams.
+
+---
+
+## 💻 Platform Compatibility
+
+| Host Platform | Implementation | Host OS Requirement | Recommended For |
+|---------------|----------------|---------------------|-----------------|
+| **Pico W / 2 W** | [MicroPython](../micropython/README.md) | Firmware | Standalone / Low Power |
+| **Linux** | [C](../c/README.md) | Kernel 2.6+ | Headless / Servers |
+| **macOS** | [Swift](../swift/README.md) | macOS 11+ | Desktop Users |
+| **Windows** | [Delphi](../delphi/README.md) | Windows 7+ | Windows Desktop |
+| **Classic Mac** | [Objective-C](../objc/README.md) | OS X 10.9+ | Older Macs |
+
+---
+
+## 🛠️ User Guides
+
+- **[NitrOS-9 Integration](guides/nitros9-level2-integration.md)**: Using DriveWire with NitrOS-9 Level 2.
+- **[OS-9 Modules](guides/os9-modules.md)**: Technical details for OS-9 users.
+- **[The 'dw' Commands](guides/dw-commands.md)**: CLI power-tool reference.
+- **[Low Memory Tips](guides/solving-low-memory-issues.md)**: Running on systems with limited RAM.
+- **[Custom Drivers](guides/add-drivewire-drivers.md)**: Adding new hardware drivers.
+
+---
+
+## 📐 Technical Specifications
+
+- **[DriveWire Protocol 4.0](../DriveWire%20Specification.md)**: The core protocol details.
+- **[Becker Ports](technical/becker-port-specification.md)**: Low-level hardware interface.
+- **[Config.xml Reference](technical/config-xml.md)**: XML configuration file schema.
+- **[Writing Software](technical/writing-network-software.md)**: Developer's guide for network tools.
+
+---
+
+## 🌍 Community & Support
+
+- **[Getting Help](community/getting-help.md)**: Discord, Mailing Lists, and Forums.
+- **[Bug Reports](https://github.com/boisy/DriveWire/issues)**: Submit issues on GitHub.
+- **[License](#license)**: GPL v3.0 Software.
+
+---
+
+## 📜 History
+
+DriveWire began in 2003 as a solution for the Tandy Color Computer, filling the gap as floppy drives became scarce. It was originally developed by Boisy Pitre and later expanded by Aaron Wolfe and Jim Hathaway to include networking services, winning the 2010 RetroChallenge.
+
+Today, DriveWire continues to power Color Computer setups worldwide, with new implementations like the **RPi Pico MicroPython** version keeping the project alive on modern hardware.
+
+---
 
 ## License
 

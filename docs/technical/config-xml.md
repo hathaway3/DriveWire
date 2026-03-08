@@ -1,85 +1,38 @@
-# Config.xml
+# DriveWire Configuration File (config.xml)
 
-## General
+This document outlines the purpose and content of the `config.xml` file used by the Java and Delphi implementations of DriveWire.
 
-## Instance
+## 📂 General
+Global parameters that apply to the entire DriveWire application, such as the application name and global logging default.
 
-### Drives
+## 🔧 Instance
+Defines specific blocks for a single server instance. DriveWire can run multiple instances (servers) simultaneously, each with its own port and disk set.
 
-### NamedObjects
+## 💾 Drives
+Defines the virtual storage devices. Each entry specifies a drive's name, type (local, network), and mount point.
 
-### Settings
+## 🏷️ NamedObjects
+Allows definition of named entities that can be mounted into drives by name (e.g., for CoCoBoot).
 
-#### Debugging
+## ⚙️ Settings
 
-#### Device
+### Debugging
+Controls the level of diagnostic information generated. Useful for troubleshooting connectivity issues.
 
-##### DetectDATurbo
-
-##### DeviceFailRetryTime
-
-##### SerialDevice
-
-##### SerialRate
-
-##### SerialParity
-
-##### SerialStopbits
-
-##### SerialFlowControl_RTSCTS_IN
-
-##### SerialFlowControl_RTSCTS_OUT
-
-##### SerialFlowControl_XONXOFF_IN
-
-##### SerialFlowControl_XONXOFF_OUT
-
-##### SerialDTR
-
-##### SerialRTS
-
-##### TCPAddress
-
-##### TCPPort
-
-#### MIDI
-
-#### Networking
-
-#### Protocol
-
-#### Printing
-
-#### Networking
-
-#### Debugging
-
-## Server
+### Device
+Hardware-specific settings for the host side, including **SerialRate**, **SerialParity**, and **TCPPort** for network-tethered setups.
 
 ### MIDI
+Configuration for MIDI input and output, including port assignments and synthesis profiles.
 
-#### midisynthprofile
+### Networking
+Governs network behavior, IP addresses, and firewall/remote connection permissions.
 
-##### mapping
+### Protocol
+Specifies the DriveWire protocol version to be used and any encryption or authentication settings.
 
-### Logging
+### Printing
+Configuration for virtual printers, including default output formats and spooling behavior.
 
-#### Format
-
-#### Level
-
-Filters log entries to those ranked this level or above. 
-
-Options (in descending verbosity) are: ALL, DEBUG, INFO, WARN, ERROR, or FATAL 
-
-Default is WARN, which will only log items which are considered at least a potential problem. 
-
-#### ToConsole
-
-#### ToFile
-
-#### File
-
-#### DebugMemoryUse
-
-#### DebugUI
+---
+[Return to Documentation Index](../index.md)

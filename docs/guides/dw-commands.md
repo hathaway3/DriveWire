@@ -186,3 +186,6 @@ dw midi synth profile [name]  # Load sound tranlastion profile
 dw midi synth instr lock      # Toggle instrument lock (ignore program changes)
 dw midi synth instr [#x] [#y] # Set channel X to instrument Y
 ```
+
+---
+[Return to Documentation Index](../index.md)
