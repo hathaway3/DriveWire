@@ -3,7 +3,7 @@
 DriveWire configuration varies depending on which implementation you are using.
 
 ## 🖥️ Graphical Interface (GUI)
-For the Java-based or Windows/Mac GUI versions:
+For the modern Windows/Mac GUI versions:
 1. Launch the server application.
 2. Navigate to the **Config** menu.
 3. Choose the **Simple Config Wizard** for step-by-step setup.

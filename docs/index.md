@@ -30,7 +30,6 @@ DriveWire is a flexible server and protocol suite for the TRS-80 Color Computer 
 - **[NitrOS-9 Integration](guides/nitros9-level2-integration.md)**: Using DriveWire with NitrOS-9 Level 2.
 - **[OS-9 Modules](guides/os9-modules.md)**: Technical details for OS-9 users.
 - **[The 'dw' Commands](guides/dw-commands.md)**: CLI power-tool reference.
-- **[Low Memory Tips](guides/solving-low-memory-issues.md)**: Running on systems with limited RAM.
 - **[Custom Drivers](guides/add-drivewire-drivers.md)**: Adding new hardware drivers.
 
 ---

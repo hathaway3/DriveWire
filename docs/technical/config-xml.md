@@ -1,6 +1,6 @@
 # DriveWire Configuration File (config.xml)
 
-This document outlines the purpose and content of the `config.xml` file used by the Java and Delphi implementations of DriveWire.
+This document outlines the purpose and content of the `config.xml` file used by various implementations of DriveWire (such as Delphi).
 
 ## 📂 General
 Global parameters that apply to the entire DriveWire application, such as the application name and global logging default.

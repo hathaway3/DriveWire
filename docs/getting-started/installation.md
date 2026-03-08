@@ -21,10 +21,6 @@ Installing the DriveWire server typically involves unpacking an archive for your
 > - **Windows**: See the **[Delphi implementation](https://github.com/hathaway3/DriveWire/tree/master/delphi)**.
 > - **RPi Pico W**: See the **[MicroPython implementation](https://github.com/hathaway3/DriveWire/tree/master/micropython)**.
 
-## ☕ Java Server Requirements
-
-The legacy Java-based DriveWire server requires a **Java J2SE 7** or newer JRE. You can download this from [java.com](http://www.java.com/getjava/).
-
 ## ➡️ Next Steps
 
 Once your server is installed and running, proceed to **[Configuration](configuration.md)** or learn about **[Using DriveWire](using-drivewire.md)**.
