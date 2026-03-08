@@ -99,10 +99,10 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
         self.server.stop()
         if os.path.exists("test_drive.dsk"):
             try: os.remove("test_drive.dsk")
-            except: pass
+            except Exception: pass
         if os.path.exists("test_mount.dsk"):
             try: os.remove("test_mount.dsk")
-            except: pass
+            except Exception: pass
 
     def inject_input(self, data):
         self.uart.input_buffer.extend(data)
@@ -384,7 +384,7 @@ class TestSwapDrive(unittest.IsolatedAsyncioTestCase):
         for fn in ["test_drive.dsk", "test_swap.dsk"]:
             if os.path.exists(fn):
                 try: os.remove(fn)
-                except: pass
+                except Exception: pass
 
     async def test_swap_drive_replaces_only_target(self):
         """swap_drive should replace only the target drive slot."""

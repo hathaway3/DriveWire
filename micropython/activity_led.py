@@ -7,6 +7,12 @@ and is accessed via Pin("LED").
 """
 
 import machine
+
+try:
+    from typing import Optional, Any
+except ImportError:
+    pass
+
 try:
     from machine import Pin
 except ImportError:

@@ -3,6 +3,11 @@ import time
 import os
 import resilience
 
+try:
+    from typing import Optional, List, Dict, Any, Tuple
+except ImportError:
+    pass
+
 def connect_wifi(ssid, password, max_retries=3):
     """Connect to WiFi with retry logic."""
     wlan = network.WLAN(network.STA_IF)
@@ -10,10 +15,10 @@ def connect_wifi(ssid, password, max_retries=3):
     
     for attempt in range(max_retries):
         if wlan.isconnected():
-            print('Already connected:', wlan.ifconfig())
+            resilience.log(f'Already connected: {wlan.ifconfig()}')
             return True
             
-        print(f'Connecting to network (attempt {attempt + 1}/{max_retries})...')
+        resilience.log(f'Connecting to network (attempt {attempt + 1}/{max_retries})...')
         wlan.connect(ssid, password)
         
         timeout = 10
@@ -22,12 +27,12 @@ def connect_wifi(ssid, password, max_retries=3):
             timeout -= 1
         
         if wlan.isconnected():
-            print('Network config:', wlan.ifconfig())
+            resilience.log(f'Network config: {wlan.ifconfig()}')
             return True
         else:
-            print(f'Connection attempt {attempt + 1} failed')
+            resilience.log(f'Connection attempt {attempt + 1} failed', level=2)
     
-    print('WiFi connection failed after all retries')
+    resilience.log('WiFi connection failed after all retries', level=3)
     return False
 
 def install_dependencies():
@@ -51,44 +56,44 @@ def install_dependencies():
     for module_name, pip_name, github_info in dependencies:
         try:
             __import__(module_name)
-            print(f"{module_name} library already installed.")
+            resilience.log(f"{module_name} library already installed.")
         except ImportError:
-            print(f"{module_name} library not found. Attempting to install...")
+            resilience.log(f"{module_name} library not found. Attempting to install...")
             
             # Load config for WiFi credentials if not already connected
             try:
                 from config import Config
                 cfg = Config()
             except ImportError:
-                print("Config not found, cannot connect to WiFi.")
+                resilience.log("Config not found, cannot connect to WiFi.", level=3)
                 return
 
             if not connect_wifi(cfg.get("wifi_ssid"), cfg.get("wifi_password")):
-                print(f"Cannot install {module_name}: No WiFi connection.")
+                resilience.log(f"Cannot install {module_name}: No WiFi connection.", level=3)
                 continue
                 
             try:
                 # Try mip (standard on newer MicroPython)
                 try:
                     import mip
-                    print(f"Using mip to install {pip_name}...")
+                    resilience.log(f"Using mip to install {pip_name}...")
                     mip.install(pip_name)
                     resilience.feed_wdt()
                     # Verify installation
                     __import__(module_name)
-                    print(f"Installation of {module_name} complete via mip.")
+                    resilience.log(f"Installation of {module_name} complete via mip.")
                     continue
                 except (AttributeError, ImportError, Exception) as e:
-                    print(f"mip install failed for {pip_name}: {e}. Trying github fallback...")
+                    resilience.log(f"mip install failed for {pip_name}: {e}. Trying github fallback...", level=2)
 
                 # Fallback to manual download using urequests
                 try:
                     import urequests
                     
-                    print(f"Attempting manual install for {github_info['name']}...")
+                    resilience.log(f"Attempting manual install for {github_info['name']}...")
                     success = True
                     for file in github_info['files']:
-                        print(f"Downloading {file}...")
+                        resilience.log(f"Downloading {file}...")
                         url = f"{github_info['base']}/{file}"
                         try:
                             r = urequests.get(url)
@@ -97,14 +102,14 @@ def install_dependencies():
                                 if r.status_code == 200:
                                     with open(file, "w") as f:
                                         f.write(r.text)
-                                    print(f"Saved {file}")
+                                    resilience.log(f"Saved {file}")
                                 else:
-                                    print(f"Failed to download {file} (Status {r.status_code})")
+                                    resilience.log(f"Failed to download {file} (Status {r.status_code})", level=2)
                                     success = False
                             finally:
                                 r.close()
                         except Exception as e:
-                            print(f"Download error: {e}")
+                            resilience.log(f"Download error: {e}", level=3)
                             success = False
                         
                         if not success:
@@ -114,18 +119,18 @@ def install_dependencies():
                         # Verify installation
                         try:
                             __import__(module_name)
-                            print(f"Installation of {module_name} verified.")
+                            resilience.log(f"Installation of {module_name} verified.")
                         except ImportError:
-                            print(f"Warning: {module_name} installed but import failed.")
+                            resilience.log(f"Warning: {module_name} installed but import failed.", level=2)
                     else:
-                        print(f"Failed to install {github_info['name']} from GitHub.")
+                        resilience.log(f"Failed to install {github_info['name']} from GitHub.", level=3)
 
                 except Exception as e:
-                    print(f"Manual download failed: {e}")
-                    print(f"Please manually copy the files for {module_name} to the device.")
+                    resilience.log(f"Manual download failed: {e}", level=3)
+                    resilience.log(f"Please manually copy the files for {module_name} to the device.", level=3)
 
             except Exception as e:
-                print(f"Failed to install {module_name}: {e}")
+                resilience.log(f"Failed to install {module_name}: {e}", level=3)
 
 if __name__ == "__main__":
     install_dependencies()

@@ -453,12 +453,12 @@ class DriveWireServer:
                 # UART.any() is non-blocking.
                 
                 if self.uart.any():
-                    opcode_byte = self.uart.read(1)
-                    if not opcode_byte:
-                        await asyncio.sleep(0.001)
+                    # Read OpCode
+                    op_data = await self.read_bytes(1)
+                    if not op_data:
                         continue
                     
-                    opcode = opcode_byte[0]
+                    opcode = op_data[0]
                     self.stats['last_opcode'] = opcode
                     
                     # Process OpCodes
