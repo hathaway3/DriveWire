@@ -9,6 +9,7 @@ import time
 
 # Safety delay for development (allows interrupting boot loops)
 time.sleep(2)
+resilience.log(f"Reset cause: {resilience.get_reset_cause()}")
 
 async def main():
     resilience.log("Initializing DriveWire Server...")

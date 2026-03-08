@@ -123,6 +123,8 @@
             border-collapse: collapse;
             margin-top: 10px;
             table-layout: fixed;
+            display: block; /* Allows overflow on mobile */
+            overflow-x: auto;
         }
 
         th,
@@ -553,8 +555,12 @@
             }
 
             .btn-action {
-                font-size: 1em;
-                padding: 5px;
+                font-size: 1.1em;
+                padding: 12px 15px; /* Minimum 44px touch target height */
+            }
+
+            .btn-sm {
+                padding: 10px 15px;
             }
 
             .responsive-grid {

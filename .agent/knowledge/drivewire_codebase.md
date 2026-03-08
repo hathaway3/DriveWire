@@ -232,6 +232,12 @@ During early boot, `syslog.py` was spamming `Errno 113 EHOSTUNREACH` before WiFi
 - **Pages**: Main terminal view (`index.html`), Setup page, Debug page
 - **API polling**: Frontend polls `/api/status` for drive stats and log buffer, `/api/sd/status` for storage info
 
+### Responsive Design Patterns
+The UI uses a mobile-first philosophy with a **600px breakpoint**:
+- **Desktop**: 700px max-width centered container, 2-column grids for configuration.
+- **Mobile**: Full-width container, single-column stacked layout, larger touch targets for buttons.
+- **CRT Effect**: A sticky scanline overlay and flicker animation are applied globally but designed not to interfere with readability on high-DPI mobile screens.
+
 ---
 
 ## Configuration
@@ -274,6 +280,18 @@ Documentation for running NitrOS-9 Level 2 over DriveWire was created and lives 
 
 ---
 
+## Testing Infrastructure
+
+### Host-Side Simulation
+Unit tests exist in the `micropython/` directory (e.g., `test_drivewire.py`) that mock the `machine` and `network` modules. This allows verifying protocol logic on a standard Python host without a physical Pico.
+
+### Remote Drive Testing
+The `micropython/tools/sector_server.py` utility acts as a local HTTP sector server. It can be used to test `RemoteDrive` logic:
+- Serves `.dsk` files from a local directory via HTTP.
+- Supports the same sector-level API used by remote DriveWire servers.
+
+---
+
 ## Development Tips
 
 - **2-second boot delay** in `main.py` allows interrupting boot loops via Thonny/REPL.
@@ -283,3 +301,33 @@ Documentation for running NitrOS-9 Level 2 over DriveWire was created and lives 
 - **Config reload**: Call `app.dw_server.reload_config()` after config changes to hot-reload drives and serial map.
 - **LED audit**: All SD card operations should trigger `activity_led.blink()` — 10 operations were missing and fixed in a past session.
 - **Unit tests**: Exist in `tests/` directory, mock `machine` and `network` modules for host-side testing.
+
+---
+
+## Streaming Data Patterns
+
+On the Pico W's ~192KB RAM, all network data transfers >4KB **must** use streaming. See [streaming-data.md](../rules/streaming-data.md) for the full rule set.
+
+Three proven patterns exist in `web_server.py`:
+
+| Pattern | Function | Technique |
+|---------|----------|-----------|
+| **Async Upload** | `upload_file_endpoint` | `request.stream.read()` → bounded buffer (depth 3) → background SD writer |
+| **Raw Socket** | `_raw_http_get_stream` + `stream_remote_files` | Raw socket with byte-by-byte header scan + state-machine JSON parser |
+| **Chunked Clone** | `remote_clone_endpoint` | Bulk 4KB sector fetches → immediate SD write → periodic GC + WDT feed |
+
+**Key anti-patterns**: `urequests.get().content` (buffers entire response), `request.json` on large bodies, unbounded lists/bytearrays.
+
+---
+
+## Security & Exception Handling
+
+This is an unauthenticated, LAN-only device. See [security-exceptions.md](../rules/security-exceptions.md) for the full rule set.
+
+| Category | Key Pattern | Reference |
+|----------|-------------|-----------|
+| **Path Traversal** | `_sanitize_path()` / `_sanitize_rfm_path()` reject `..` segments | `web_server.py`, `drivewire.py` |
+| **XSS Prevention** | `escHtml()` wraps all dynamic HTML; `textContent` for logs | `script.js` |
+| **Input Validation** | Config whitelist, drive array length, `.dsk` extension check | `web_server.py`, `config.py` |
+| **Exception Handling** | No bare `except:`; all errors logged via `resilience.log()` | All files |
+| **Crash Recovery** | Top-level handler: log → blink → sleep 10s → `machine.reset()` | `main.py` |

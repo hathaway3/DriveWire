@@ -7,6 +7,14 @@ Before starting any work on the DriveWire MicroPython server, **read the knowled
 This document is the single source of truth for codebase patterns and decisions. **Update it** when making significant architectural changes.
 
 - **[.agent/rules/documentation-sync.md](documentation-sync.md)** — Rules for ensuring documentation stays in sync with code changes.
+- **[.agent/rules/web-ui-standards.md](web-ui-standards.md)** — Best practices for responsive mobile/desktop UI development.
+- **[.agent/workflows/deploy-docs.md](../workflows/deploy-docs.md)** — Workflow for updating and verifying documentation links.
+
+### Documentation & GitHub Pages
+
+1. **Relative Links**: All internal documentation links **MUST** use relative paths. This ensures they work both in the Git repo and on the GitHub Pages site (`hathaway3.github.io/DriveWire/`).
+2. **Link Verification**: Run `python verify_links.py` before committing any documentation changes.
+3. **MkDocs Sync**: Ensure new documentation files are added to `mkdocs.yml` navigation.
 
 
 ### DriveWire Protocol Specification
