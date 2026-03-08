@@ -289,20 +289,45 @@ async function refreshFilesTab() {
                     <div style="display: flex; align-items: baseline; gap: 8px;">
                         <span class="file-icon">${f.startsWith('/sd') ? '\uD83D\uDCBE' : '\uD83D\uDCC1'}</span>
                         <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escHtml(fname)}</span>
-                        ${isMounted ? '<span style="color:var(--coco-alert); font-weight:bold; font-size:0.8em; white-space:nowrap; flex-shrink:0;">[IN USE]</span>' : ''}
                     </div>
                     ${subtitle ? '<div style="font-size:0.7em; color:var(--coco-dark-green); margin-left:30px;">' + escHtml(subtitle) + '</div>' : ''}
                 </td>
+                <td class="status-col" style="text-align: center; vertical-align: middle;"></td>
                 <td class="action-col" style="display: flex; justify-content: flex-end; gap: 8px;"></td>
             `;
 
+            const statusCell = tr.cells[1];
+            const actionCell = tr.cells[2];
+
             if (isMounted) {
+                const statusSpan = document.createElement('span');
+                statusSpan.style.color = 'var(--coco-alert)';
+                statusSpan.style.fontWeight = 'bold';
+                statusSpan.style.fontSize = '0.9em';
+                statusSpan.style.whiteSpace = 'nowrap';
+                statusSpan.textContent = '[IN USE]';
+                statusCell.appendChild(statusSpan);
+
                 const dlBtn = document.createElement('button');
                 dlBtn.className = 'btn btn-action btn-disabled';
                 dlBtn.textContent = 'DOWNLOAD';
                 dlBtn.title = 'Cannot download mounted image';
-                tr.cells[1].appendChild(dlBtn);
+                actionCell.appendChild(dlBtn);
             } else {
+                const dlBtn = document.createElement('button');
+                dlBtn.className = 'btn btn-action btn-primary';
+                dlBtn.textContent = 'DOWNLOAD';
+                dlBtn.onclick = () => {
+                    window.location.href = `/api/files/download?path=${encodeURIComponent(f)}`;
+                };
+                actionCell.appendChild(dlBtn);
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'btn btn-action btn-danger';
+                deleteBtn.textContent = 'DELETE';
+                deleteBtn.onclick = () => deleteFile(f);
+                actionCell.appendChild(deleteBtn);
+            }
                 const dlBtn = document.createElement('button');
                 dlBtn.className = 'btn btn-action btn-primary';
                 dlBtn.textContent = 'DOWNLOAD';
@@ -311,12 +336,6 @@ async function refreshFilesTab() {
                 };
                 tr.cells[1].appendChild(dlBtn);
 
-                const deleteBtn = document.createElement('button');
-                deleteBtn.className = 'btn btn-action btn-danger';
-                deleteBtn.textContent = 'DELETE';
-                deleteBtn.onclick = () => deleteFile(f);
-                tr.cells[1].appendChild(deleteBtn);
-            }
 
             listBody.appendChild(tr);
         });
