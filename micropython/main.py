@@ -6,6 +6,7 @@ import gc
 import machine
 import resilience
 import time
+from config import shared_config
 
 # Safety delay for development (allows interrupting boot loops)
 time.sleep(2)
@@ -40,18 +41,21 @@ async def main():
     
     resilience.log("Starting Web Server on port 80...")
     
-    # Initialize Watchdog ONLY now that the feeder is about to start.
+    # Initialize Watchdog ONLY if enabled in config and ONLY now that the feeder is about to start.
     # The RP2040 WDT cannot be disabled once started, so we delay init
     # until the async feeder task is immediately ready to keep it alive.
-    wdt = resilience.init_wdt(timeout_ms=8000)  # 8s (RP2040 HW max ~8388ms)
-    
-    # Background task to feed the watchdog
-    async def watchdog_feeder():
-        while True:
-            wdt.feed()
-            await asyncio.sleep(2)
-    
-    asyncio.create_task(watchdog_feeder())
+    if shared_config.get('wdt_enabled', False):
+        wdt = resilience.init_wdt(timeout_ms=8000)  # 8s (RP2040 HW max ~8388ms)
+        
+        # Background task to feed the watchdog
+        async def watchdog_feeder():
+            while True:
+                wdt.feed()
+                await asyncio.sleep(2)
+        
+        asyncio.create_task(watchdog_feeder())
+    else:
+        resilience.log("Watchdog Timer is DISABLED (via config)")
     
     # Start the Web Server (this will keep running)
     await app.start_server(port=80, debug=True)

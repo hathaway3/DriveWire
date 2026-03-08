@@ -24,7 +24,8 @@
             background: var(--coco-black);
             color: var(--coco-green);
             padding: 20px;
-            max-width: 700px;
+            width: 95%;
+            max-width: 1000px;
             margin: 0 auto;
             font-size: 20px;
             letter-spacing: 1px;
@@ -122,7 +123,6 @@
             width: 100%;
             border-collapse: collapse;
             margin-top: 10px;
-            table-layout: fixed;
             display: block; /* Allows overflow on mobile */
             overflow-x: auto;
         }
@@ -149,6 +149,7 @@
             font-size: 1.2em;
             padding: 5px 10px;
             width: auto;
+            min-width: 100px;
         }
 
         .btn-sm {
@@ -379,6 +380,7 @@
         /* Tab Styles */
         .tabs {
             display: flex;
+            flex-wrap: wrap;
             border-bottom: 2px solid var(--coco-green);
             margin-bottom: 20px;
         }
@@ -711,8 +713,14 @@
                         <input type="text" id="sd_mount_point" value="/sd" placeholder="/sd">
                     </div>
                 </div>
+                <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--coco-dark-green);">
+                    <label style="display: flex; align-items: center; gap: 15px; cursor: pointer;">
+                        <input type="checkbox" id="wdt_enabled" style="width: 24px; height: 24px; cursor: pointer;">
+                        <span>ENABLE WATCHDOG TIMER (WDT)</span>
+                    </label>
+                </div>
                 <p style="font-size:0.8em; color:var(--coco-dark-green); margin-top:10px;">REBOOT REQUIRED AFTER PIN
-                    CHANGES
+                    OR WDT CHANGES
                 </p>
             </div>
 

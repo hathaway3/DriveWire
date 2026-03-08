@@ -29,6 +29,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "sd_mount_point": "/sd",
     "syslog_server": "",
     "syslog_port": 514,
+    "wdt_enabled": False,
     "remote_servers": []  # [{"name": "Dev", "url": "http://192.168.1.100:8080"}, ...]
 }
 
