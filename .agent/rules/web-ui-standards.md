@@ -40,3 +40,7 @@ To ensure the DriveWire management interface remains usable across both desktop 
    - Example: `.lane-status { flex: 0 1 80px; text-align: center; }`
 3. **Extreme Mobile Sizing**: When space becomes critically constrained (e.g., `< 500px`), rely on aggressive media queries to shrink font sizes (e.g., `11px` or `10px`), remove padding, and crush gaps rather than allowing elements to overlap or hide.
 4. **Zero Overlap Guarantee**: Never allow absolute or fixed widths on interactive columns (`.action-col`) that might cause flex children to spill out vertically or horizontally into neighboring content (like filenames) on mobile viewports.
+5. **Shrink-to-Fit Columns**: Use the `width: 1%; white-space: nowrap;` trick on columns like Actions to force them to wrap exactly to their interactive contents, giving all remaining horizontal space back to fluid columns (like Filenames).
+6. **Table Layout Constraint**: **NEVER** use `table-layout: fixed` in combination with shrink-to-fit columns (`width: 1%`), as this causes catastrophic leftward overflow of flex contents on large screens. Always use `table-layout: auto`.
+7. **Visual Reordering**: To swap the visual order of interactive elements (e.g., anchoring a `DOWNLOAD` button to the left and an `[IN USE]` status to the right), rely solely on CSS Flexbox `order` and `justify-content` rather than manipulating the rigid DOM or HTML structure.
+
