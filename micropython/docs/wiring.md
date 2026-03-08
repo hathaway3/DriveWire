@@ -102,3 +102,7 @@ The MicroPython DriveWire server defaults to using **UART 0**.
 | **TXD** | **RX** | **GP1** | **2** | Pico receives from MAX3232 TXD |
 
 *Note: You may need to cross over RX/TX depending on how your MAX3232 board labels its pins. If communication fails, try swapping the RXD and TXD connections on the adapter side.*
+
+---
+[Back to README](../README.md)
+

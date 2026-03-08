@@ -6,6 +6,9 @@ Before starting any work on the DriveWire MicroPython server, **read the knowled
 
 This document is the single source of truth for codebase patterns and decisions. **Update it** when making significant architectural changes.
 
+- **[.agent/rules/documentation-sync.md](documentation-sync.md)** — Rules for ensuring documentation stays in sync with code changes.
+
+
 ### DriveWire Protocol Specification
 
 When working on **protocol-related code** (opcodes, serial channels, RFM, disk I/O in `drivewire.py`), also reference the full specification:
