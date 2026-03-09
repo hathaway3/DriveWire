@@ -17,6 +17,12 @@ On the Pico W, disk and network latency are high but RAM is scarce. Efficient se
    - **Limit**: `MAX_READ_CACHE_ENTRIES` (default 8) to stay within RAM bounds.
    - **Pattern**: Check `dirty_sectors` first, then `read_cache`, then disk/network.
 
+### 🥇 Priority of Truth (Layering)
+To ensure absolute data integrity, the server must query layers in this strict order:
+1. **Dirty Layer** (`dirty_sectors`): Highest priority. If data exists here, it has been modified by the guest but not yet flushed to media.
+2. **Read Layer** (`read_cache`): Medium priority. Provides 0-latency hits for recent/sequential reads.
+3. **Physical Media**: Lowest priority. Only accessed if the LSN is missing from both RAM layers.
+
 ## 🚀 Read-Ahead Strategy
 
 1. **Bulk Remote Fetch**: 
@@ -24,6 +30,11 @@ On the Pico W, disk and network latency are high but RAM is scarce. Efficient se
    - Populating the cache with sequential sectors dramatically improves OS-9 multi-sector read performance.
 2. **Adaptive Read-Ahead (Planned)**: 
    - Future implementations should consider the CoCo's access pattern (e.g., sequential vs. random).
+
+### 🔄 Read-Ahead vs. Dirty Interaction
+- **Non-Blocking Logic**: A read-ahead operation never flushes dirty sectors, and dirty sectors never block a read-ahead fetch.
+- **Cache Eviction**: If a dirty sector is evicted from the `read_cache` (due to a large read-ahead batch filling the LRU slots), it **remains safely in the `dirty_sectors` list** and continues to be the "source of truth" for that LSN.
+- **Consistency**: When a write occurs, the entry is updated in **both** `dirty_sectors` and `read_cache` to ensure the next sequential read reflects the modification.
 
 ## 🚰 Memory Efficiency
 
