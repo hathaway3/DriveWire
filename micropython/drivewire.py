@@ -65,6 +65,7 @@ OP_RFM_CLOSE = micropython.const(0x0D)
 
 # Constants for memory management
 MAX_READ_CACHE_ENTRIES = micropython.const(8)
+MAX_DIR_CACHE_ENTRIES = micropython.const(32)
 MAX_DIRTY_CACHE_ENTRIES = micropython.const(16) # 4KB auto-flush threshold
 MAX_CHANNEL_BUFFER_SIZE = micropython.const(256)
 MAX_LOG_ENTRIES = micropython.const(20)
@@ -83,17 +84,61 @@ E_READ = micropython.const(244)    # E$Read - Read error
 E_NOTRDY = micropython.const(246)  # E$NotRdy - Device not ready (network down)
 
 
+class RbfParser:
+    """Stateless utility for parsing OS-9 RBF disk structures."""
+    
+    @staticmethod
+    def get_root_dir_lsn(data):
+        """Extract DD.DIR (Root Directory FD LSN) from LSN 0."""
+        # DD.DIR is at offset 6, 3 bytes (big-endian)
+        return (data[6] << 16) | (data[7] << 8) | data[8]
+        
+    @staticmethod
+    def is_directory_fd(data):
+        """Check if a sector is likely an RBF Directory File Descriptor."""
+        # FD.ATT is at offset 0. Bit 7 (0x80) is the directory flag.
+        # We also check that it's not totally empty.
+        return bool(data[0] & 0x80)
+
+    @staticmethod
+    def get_segments(data):
+        """Extract segment list from an RBF File Descriptor."""
+        # FD.SEG starts at offset 16 (0x10).
+        # Each entry is 5 bytes: 3 for Physical LSN, 2 for Sector Count.
+        segments = []
+        for i in range(16, 251, 5):
+            lsn = (data[i] << 16) | (data[i+1] << 8) | data[i+2]
+            size = (data[i+3] << 8) | data[i+4]
+            if lsn == 0 and size == 0:
+                break
+            segments.append((lsn, size))
+        return segments
+
+    @staticmethod
+    def is_lsn0(data):
+        """Check if a sector looks like a valid RBF LSN 0."""
+        # Simple heuristic: total sectors (bytes 0-2) should be > 0
+        # and sectors per track (byte 3) should be > 0.
+        total = (data[0] << 16) | (data[1] << 8) | data[2]
+        return total > 0 and data[3] > 0
+
+
 class VirtualDrive:
     """Manages a virtual disk drive with write-back caching for flash wear protection."""
     
     def __init__(self, filename):
         self.filename = filename
         self.file = None
-        self.dirty_sectors = {}  # LSN -> data (write cache)
-        self.read_cache = {}     # LSN -> data (LRU read cache)
+        self.dirty_sectors = {}    # LSN -> data (write cache)
+        self.read_cache = {}       # LSN -> data (LRU read cache)
+        self.directory_cache = {}  # LSN -> data (Sticky directory cache)
+        self.dir_lsns = set()      # LSNs known to be directory metadata/body
         self.stats = {
             'read_hits': 0,
             'read_misses': 0,
+            'dir_cache_hits': 0,
+            'dir_cache_misses': 0,
+            'dir_cache_size': 0,
             'write_count': 0,
             'latency_us': 0
         }
@@ -143,6 +188,25 @@ class VirtualDrive:
         finally:
             activity_led.off()
 
+    def _update_dir_awareness(self, lsn, data):
+        """Identify if a sector is RBF directory metadata and update dir_lsns."""
+        if lsn == 0:
+            if RbfParser.is_lsn0(data):
+                root_lsn = RbfParser.get_root_dir_lsn(data)
+                if root_lsn not in self.dir_lsns:
+                    self.dir_lsns.add(root_lsn)
+                    resilience.log(f"Drive {self.filename}: Root dir at LSN {root_lsn}", level=0)
+        
+        elif lsn in self.dir_lsns:
+            # If we just read an FD, and it's a directory, add its children
+            if RbfParser.is_directory_fd(data):
+                segments = RbfParser.get_segments(data)
+                for start, size in segments:
+                    for i in range(size):
+                        self.dir_lsns.add(start + i)
+            # Future expansion: Scan directory bodies for sub-directory FD LSNs?
+            # For now, OS-9 reading the sub-directory FD will trigger the check above.
+
     def read_sector(self, lsn):
         """Read a sector from the virtual drive, checking caches first."""
         # 1. Check write cache (dirty sectors have priority)
@@ -150,15 +214,28 @@ class VirtualDrive:
             self.stats['read_hits'] += 1
             return self.dirty_sectors[lsn]
             
-        # 2. Check read cache (LRU)
+        # 2. Check directory cache (high performance for OS-9 RBF)
+        if lsn in self.directory_cache:
+            self.stats['dir_cache_hits'] += 1
+            # Move to end for LRU (except LSN 0)
+            if lsn != 0:
+                data = self.directory_cache.pop(lsn)
+                self.directory_cache[lsn] = data
+            return self.directory_cache[lsn]
+            
+        # 3. Check read cache (LRU)
         if lsn in self.read_cache:
             self.stats['read_hits'] += 1
             data = self.read_cache.pop(lsn)
-            self.read_cache[lsn] = data  # Move to end (most recent)
+            self.read_cache[lsn] = data
             return data
             
-        # 3. Read from disk
-        self.stats['read_misses'] += 1
+        # 4. Read from disk
+        if lsn in self.dir_lsns or lsn == 0:
+            self.stats['dir_cache_misses'] += 1
+        else:
+            self.stats['read_misses'] += 1
+            
         if not self.file:
             return None
             
@@ -169,11 +246,25 @@ class VirtualDrive:
             if len(data) < SECTOR_SIZE:
                 data = data + bytes(SECTOR_SIZE - len(data))
             
-            # Add to read cache (reduced size for memory optimization)
-            self.read_cache[lsn] = data
-            if len(self.read_cache) > MAX_READ_CACHE_ENTRIES:
-                # Remove oldest (first)
-                self.read_cache.pop(next(iter(self.read_cache)))
+            # Analyze for directory awareness
+            self._update_dir_awareness(lsn, data)
+            
+            # Cache strategy
+            if lsn == 0 or lsn in self.dir_lsns:
+                self.directory_cache[lsn] = data
+                # Evict oldest if we exceed limit, but NEVER LSN 0
+                if len(self.directory_cache) > MAX_DIR_CACHE_ENTRIES:
+                    it = iter(self.directory_cache)
+                    evict_lsn = next(it)
+                    if evict_lsn == 0: # Skip LSN 0 protect
+                        evict_lsn = next(it)
+                    self.directory_cache.pop(evict_lsn)
+                self.stats['dir_cache_size'] = len(self.directory_cache)
+            else:
+                self.read_cache[lsn] = data
+                if len(self.read_cache) > MAX_READ_CACHE_ENTRIES:
+                    self.read_cache.pop(next(iter(self.read_cache)))
+                    
             return data
         except Exception as e:
             resilience.log(f"Read Error LSN {lsn} ({self.filename}): {e}", level=3)
@@ -210,11 +301,16 @@ class RemoteDrive:
         self.filename = url
         self.file = True  # Sentinel for compatibility checks
         self.is_remote = True
-        self.dirty_sectors = {}  # Always empty (read-only)
+        self.dirty_sectors = {}    # Always empty (read-only)
         self.read_cache = {}
+        self.directory_cache = {}  # Sticky directory cache
+        self.dir_lsns = set()
         self.stats = {
             'read_hits': 0,
             'read_misses': 0,
+            'dir_cache_hits': 0,
+            'dir_cache_misses': 0,
+            'dir_cache_size': 0,
             'write_count': 0,
             'latency_us': 0
         }
@@ -239,15 +335,28 @@ class RemoteDrive:
     def read_sector(self, lsn):
         """Read a sector from remote server, checking caches first."""
         self.last_error = E_NONE
-        # 1. Check read cache (LRU)
+        
+        # 1. Check directory cache
+        if lsn in self.directory_cache:
+            self.stats['dir_cache_hits'] += 1
+            if lsn != 0:
+                data = self.directory_cache.pop(lsn)
+                self.directory_cache[lsn] = data
+            return self.directory_cache[lsn]
+
+        # 2. Check read cache (LRU)
         if lsn in self.read_cache:
             self.stats['read_hits'] += 1
             data = self.read_cache.pop(lsn)
             self.read_cache[lsn] = data  # Move to end (most recent)
             return data
 
-        # 2. Fetch from remote server using bulk read-ahead
-        self.stats['read_misses'] += 1
+        # 3. Fetch from remote server using bulk read-ahead
+        if lsn in self.dir_lsns or lsn == 0:
+            self.stats['dir_cache_misses'] += 1
+        else:
+            self.stats['read_misses'] += 1
+            
         retry_count = 0
         max_retries = 3
         backoff = 1  # Start with 1 second
@@ -288,27 +397,39 @@ class RemoteDrive:
                     target_data = None
                     
                     for i in range(sectors_received):
-                        chunk = data[i * SECTOR_SIZE : (i + 1) * SECTOR_SIZE]
+                        current_lsn = lsn + i
+                        chunk = bytes(data[i * SECTOR_SIZE : (i + 1) * SECTOR_SIZE])
                         if len(chunk) < SECTOR_SIZE:
                             chunk = chunk + bytes(SECTOR_SIZE - len(chunk))
                             
-                        current_lsn = lsn + i
-                        self.read_cache[current_lsn] = chunk
+                        # Analyze for directory awareness
+                        self._update_dir_awareness(current_lsn, chunk)
                         
-                        # Evict oldest if we exceed max size
-                        while len(self.read_cache) > MAX_READ_CACHE_ENTRIES:
-                            self.read_cache.pop(next(iter(self.read_cache)))
+                        # Cache strategy
+                        if current_lsn == 0 or current_lsn in self.dir_lsns:
+                            self.directory_cache[current_lsn] = chunk
+                            if len(self.directory_cache) > MAX_DIR_CACHE_ENTRIES:
+                                it = iter(self.directory_cache)
+                                ev_lsn = next(it)
+                                if ev_lsn == 0: ev_lsn = next(it)
+                                self.directory_cache.pop(ev_lsn)
+                            self.stats['dir_cache_size'] = len(self.directory_cache)
+                        else:
+                            self.read_cache[current_lsn] = chunk
+                            # Evict oldest if we exceed max size
+                            while len(self.read_cache) > MAX_READ_CACHE_ENTRIES:
+                                self.read_cache.pop(next(iter(self.read_cache)))
                             
                         if current_lsn == lsn:
                             target_data = chunk
                     
                     return target_data if target_data else bytes(SECTOR_SIZE)
                 
-                resp.close()
-                resilience.log(f"Remote Read Error LSN {lsn}: HTTP {resp.status_code}", level=2)
-                break # HTTP error (e.g. 404) shouldn't retry typically
+                resilience.log(f"Remote Read Error LSN {lsn}: HTTP failed", level=2)
+                break 
                 
             except (OSError, RuntimeError) as e:
+                # ... same retry logic
                 if sock:
                     try: sock.close()
                     except: pass
@@ -331,6 +452,25 @@ class RemoteDrive:
         self.last_error = E_NOTRDY
         return None
 
+    def _update_dir_awareness(self, lsn, data):
+        """Identify if a sector is RBF directory metadata and update dir_lsns."""
+        if lsn == 0:
+            if RbfParser.is_lsn0(data):
+                root_lsn = RbfParser.get_root_dir_lsn(data)
+                if root_lsn not in self.dir_lsns:
+                    self.dir_lsns.add(root_lsn)
+                    resilience.log(f"Remote Drive {self.url}: Root dir at LSN {root_lsn}", level=0)
+        
+        elif lsn in self.dir_lsns:
+            if RbfParser.is_directory_fd(data):
+                segments = RbfParser.get_segments(data)
+                for start, size in segments:
+                    for i in range(size):
+                        self.dir_lsns.add(start + i)
+
+        self.last_error = E_NOTRDY
+        return None
+
     def write_sector(self, lsn, data):
         """Remote drives are read-only. Returns error code E_WP."""
         resilience.log(f"Write rejected: Remote drive is read-only (LSN {lsn})", level=2)
@@ -344,6 +484,8 @@ class RemoteDrive:
     def close(self):
         """Clear caches."""
         self.read_cache = {}
+        self.directory_cache = {}
+        self.dir_lsns = set()
         self.file = None
 
 
@@ -414,13 +556,21 @@ class DriveWireServer:
             resilience.log(f"swap_drive: Invalid drive number {drive_num}", level=2)
             return False
         old = self.drives[drive_num]
-        # Transfer read cache from old drive for seamless transition
-        if old and new_drive and hasattr(old, 'read_cache'):
-            new_drive.read_cache = old.read_cache.copy()
-        self.drives[drive_num] = new_drive  # Atomic reference swap
+        
+        # In a hot-swap, we STRICTLY flush the old drive and clear all caches
         if old:
-            old.read_cache = {}  # Clear before close to avoid double-free
+            try:
+                old.flush()
+            except:
+                pass
+            old.read_cache = {}
+            if hasattr(old, 'directory_cache'):
+                old.directory_cache = {}
+            if hasattr(old, 'dir_lsns'):
+                old.dir_lsns = set()
             old.close()
+
+        self.drives[drive_num] = new_drive  # Atomic reference swap
         resilience.log(f"Drive {drive_num}: swapped to {new_drive.filename if new_drive else 'None'}")
         return True
 

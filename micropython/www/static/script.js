@@ -700,6 +700,10 @@ function renderDriveStats(stats) {
 
         const totalReads = (s.read_hits || 0) + (s.read_misses || 0);
         const hitRate = totalReads > 0 ? (((s.read_hits || 0) / totalReads) * 100).toFixed(1) : 0;
+        
+        const totalDirReads = (s.dir_cache_hits || 0) + (s.dir_cache_misses || 0);
+        const dirHitRate = totalDirReads > 0 ? (((s.dir_cache_hits || 0) / totalDirReads) * 100).toFixed(1) : 0;
+
         const isRemote = s.is_remote || false;
         const icon = isRemote ? '\uD83C\uDF10' : '';
         const modeBadge = isRemote
@@ -714,6 +718,13 @@ function renderDriveStats(stats) {
             <div class="serial-stat-row">READ HITS: ${s.read_hits || 0}</div>
             <div class="serial-stat-row">READ MISSES: ${s.read_misses || 0}</div>
             <div class="serial-stat-row">HIT RATE: ${hitRate}%</div>
+            
+            <div class="serial-stat-row" style="margin-top:10px; color:var(--coco-bright-green); font-weight:bold;">\uD83D\uDCC1 RBF DIR CACHE:</div>
+            <div class="serial-stat-row">DIR HITS: ${s.dir_cache_hits || 0}</div>
+            <div class="serial-stat-row">DIR MISSES: ${s.dir_cache_misses || 0}</div>
+            <div class="serial-stat-row">DIR HIT RATE: ${dirHitRate}%</div>
+            <div class="serial-stat-row">DIR CACHE SIZE: ${s.dir_cache_size || 0} SECTORS</div>
+
             <div class="serial-stat-row">LATENCY: ${s.latency_us ? s.latency_us + ' \u00B5s' : '--'}</div>
             <div class="serial-stat-row" style="margin-top:10px">TOTAL WRITES: ${s.write_count || 0}</div>
             <div class="serial-stat-row">DIRTY SECTORS: ${s.dirty_count || 0}</div>

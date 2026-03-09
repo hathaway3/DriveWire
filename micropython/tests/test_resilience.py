@@ -14,8 +14,8 @@ sys.modules['activity_led'] = MagicMock()
 if not hasattr(os, 'sync'):
     os.sync = lambda: None
 
-# Add current directory to path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Add project root to path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import resilience
 
@@ -28,17 +28,23 @@ class TestResilience(unittest.TestCase):
             pass
 
     def test_log_levels(self):
-        resilience.log("Debug message", level=0)
-        resilience.log("Info message", level=1)
-        resilience.log("Warn message", level=2)
-        resilience.log("Error message", level=3)
-        
-        with open('system.log', 'r') as f:
-            content = f.read()
-            self.assertIn("[DEBUG] Debug message", content)
-            self.assertIn("[INFO] Info message", content)
-            self.assertIn("[WARN] Warn message", content)
-            self.assertIn("[ERROR] Error message", content)
+        # Explicitly set log level to DEBUG (0) for this test
+        old_level = resilience.MIN_LOG_LEVEL
+        resilience.MIN_LOG_LEVEL = 0
+        try:
+            resilience.log("Debug message", level=0)
+            resilience.log("Info message", level=1)
+            resilience.log("Warn message", level=2)
+            resilience.log("Error message", level=3)
+            
+            with open('system.log', 'r') as f:
+                content = f.read()
+                self.assertIn("[DEBUG] Debug message", content)
+                self.assertIn("[INFO] Info message", content)
+                self.assertIn("[WARN] Warn message", content)
+                self.assertIn("[ERROR] Error message", content)
+        finally:
+            resilience.MIN_LOG_LEVEL = old_level
 
     def test_log_rotation(self):
         # Fill log file to beyond limit (4KB)

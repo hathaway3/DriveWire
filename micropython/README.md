@@ -95,15 +95,28 @@ See the [Wiring Guide](docs/wiring.md) for detailed hardware troubleshooting.
 
 | File | Purpose |
 |------|---------|
-| `main.py` | Entry point; starts the servers |
-| `drivewire.py` | Core DriveWire protocol logic |
-| `web_server.py` | Microdot-based web server and API |
-| `config.py` | Configuration management with validation |
-| `sd_card.py` | SD card SPI initialization and FAT mount |
-| `boot.py` | Boot sequence (WiFi, SD card, libraries) |
-| `resilience.py` | Centralized logging and watchdog timer |
-| `www/` | Static assets for the web dashboard |
-| `tools/` | Workstation tools (Sector Server) |
+| `tests/` | Host-side simulation tests and utilities |
+
+---
+
+## 🧪 Testing
+
+The DriveWire server includes host-side simulation tests to verify protocol correctness and RBF (OS-9) disk handling without needing physical hardware.
+
+### Running Tests
+To run the full suite of simulation tests:
+```bash
+python3 tests/test_drivewire.py
+python3 tests/test_resilience.py
+python3 tests/test_os9_disk.py
+```
+
+### Generating Test Disks
+You can create a minimal valid OS-9 RBF disk image for testing purposes using the utility:
+```bash
+python3 tests/os9_disk_util.py
+```
+This will create `test_os9.dsk` with a valid LSN 0 and root directory.
 
 ---
 

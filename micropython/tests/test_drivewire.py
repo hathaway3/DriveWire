@@ -76,7 +76,7 @@ if not os.path.exists("config.json"):
         json.dump(mock_config_data, f)
 
 # Now we can import DriveWireServer
-sys.path.append(os.getcwd())
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from drivewire import (
     DriveWireServer, RemoteDrive, VirtualDrive,
     OP_DWINIT, OP_READ, OP_WRITE, OP_TIME, OP_RESET,
@@ -403,17 +403,20 @@ class TestSwapDrive(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.server.drives[0].filename, "test_swap.dsk")
         self.assertIsNone(self.server.drives[1])  # Other drives unaffected
 
-    async def test_swap_drive_transfers_cache(self):
-        """swap_drive should copy read cache to new drive."""
+    async def test_swap_drive_clears_cache(self):
+        """swap_drive should clear cache from old drive and not transfer to new."""
         old_drive = VirtualDrive("test_drive.dsk")
         old_drive.read_cache = {0: bytes(256), 5: bytes(256)}
         self.server.drives[2] = old_drive
+        
+        # Capture old drive to verify its cache is cleared
+        target_old_drive = self.server.drives[2]
 
         new_drive = VirtualDrive("test_swap.dsk")
         self.server.swap_drive(2, new_drive)
 
-        self.assertIn(0, self.server.drives[2].read_cache)
-        self.assertIn(5, self.server.drives[2].read_cache)
+        self.assertEqual(len(target_old_drive.read_cache), 0)
+        self.assertEqual(len(self.server.drives[2].read_cache), 0)
 
     async def test_reload_config_http_url(self):
         """reload_config should create RemoteDrive for http:// paths."""
