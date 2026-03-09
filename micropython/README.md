@@ -67,12 +67,17 @@ The server maintains a circular log buffer for the Web Dashboard and an optional
 
 **Typical Memory Usage:**
 - **Base system**: ~60-80KB
-- **Per mounted drive**: ~2-4KB (with 8-entry cache)
 - **Web server**: ~20-30KB
-- **Total typical usage**: 80-120KB
+- **Per mounted drive**: ~14-16KB total
+    - **Directory Cache**: 8KB (32 entries)
+    - **Read Cache**: 2KB (8 entries)
+    - **Write Cache**: 4KB (16 entries)
+- **Total typical usage**: 100-180KB (depending on drive count)
 
 **Optimizations:**
-- Reduced read cache (8 entries per drive) saves ~2KB per drive.
+- **RBF-Aware Caching**: Dedicated 32-entry directory cache (8KB) for LSN 0 and OS-9 directory structures dramatically speeds up file operations.
+- **Micro-Read Cache**: 8-entry LRU cache (2KB) for general data sectors.
+- **Write-Back Cache**: 16-sector (4KB) buffer protects flash memory from redundant writes.
 - `micropython.const()` for all opcodes/constants saves RAM.
 - Limited channel buffers to 256 bytes max.
 - Efficient timeout handling reduces latency.

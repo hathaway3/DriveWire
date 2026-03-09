@@ -6,6 +6,7 @@ On the Raspberry Pi Pico W, the ~192KB heap is shared between the DriveWire prot
 
 | Component | RAM Usage (Est.) | Multiplier | Total |
 |-----------|-----------------|------------|-------|
+| Directory Cache | 8KB / drive | 4 drives | 32KB |
 | Read Cache | 2KB / drive | 4 drives | 8KB |
 | Write-Back Cache | ~4KB (at 16-sector limit) | 4 drives | 16KB |
 | TCP Channels | 0.25KB / channel | 32 channels | 8KB |
@@ -13,9 +14,9 @@ On the Raspberry Pi Pico W, the ~192KB heap is shared between the DriveWire prot
 | UI Polling Task | ~2KB / connection | ~3 clients | 6KB |
 | Cloning / Upload | 12KB (chunk buffer) | 1 task | 12KB |
 | System Overhead | MicroPython VM + WiFi | Shared | ~65KB |
-| **Pessimistic Peak** | | | **~140KB** |
+| **Pessimistic Peak** | | | **~172KB** |
 
-**Remaining Safety Buffer**: ~52KB (Critical for preventing fragmentation-induced OOM).
+**Remaining Safety Buffer**: ~20KB (Critical for preventing fragmentation-induced OOM).
 
 ## ⚠️ Potential Break Points
 
