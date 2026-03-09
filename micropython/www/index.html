@@ -785,8 +785,20 @@
                         <span>ENABLE WATCHDOG TIMER (WDT)</span>
                     </label>
                 </div>
-                <p style="font-size:0.8em; color:var(--coco-dark-green); margin-top:10px;">REBOOT REQUIRED AFTER PIN
-                    OR WDT CHANGES
+                <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--coco-dark-green);">
+                    <label for="log_level">DEFAULT LOG LEVEL:</label>
+                    <select id="log_level">
+                        <option value="0">DEBUG (0)</option>
+                        <option value="1">INFO (1)</option>
+                        <option value="2">WARN (2)</option>
+                        <option value="3">ERROR (3)</option>
+                        <option value="4">CRITICAL (4)</option>
+                    </select>
+                    <p style="font-size:0.8em; color:var(--coco-dark-green); margin-top:5px;">
+                        LOWER LEVELS INCREASE FLASH WEAR IF PERSISTENT LOGGING IS ACTIVE.
+                    </p>
+                </div>
+                <p style="font-size:0.8em; color:var(--coco-dark-green); margin-top:10px;">REBOOT REQUIRED AFTER PIN, WDT, OR LOG LEVEL CHANGES
                 </p>
             </div>
 

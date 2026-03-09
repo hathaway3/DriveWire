@@ -13,6 +13,15 @@ except ImportError:
 LOG_FILE = "system.log"
 MAX_LOG_SIZE = 4096  # 4KB circular buffer style
 
+# Global logging state
+MIN_LOG_LEVEL = 1  # 0=Debug, 1=Info, 2=Warn, 3=Error, 4=Crit
+_log_callback = None
+
+def set_log_callback(callback):
+    """Set a callback function to receive every log line (e.g. for Web UI dashboard)."""
+    global _log_callback
+    _log_callback = callback
+
 def get_reset_cause() -> str:
     """Return a human-readable string for the last reset cause."""
     cause = machine.reset_cause()
@@ -35,14 +44,28 @@ def log(message: str, level: int = 1, _from_syslog: bool = False) -> None:
     Centralized logging function.
     Level: 0=Debug, 1=Info, 2=Warning, 3=Error, 4=Critical
     """
+    global MIN_LOG_LEVEL, _log_callback
+    
+    if level < MIN_LOG_LEVEL:
+        return
+
     levels = ["DEBUG", "INFO", "WARN", "ERROR", "CRIT"]
     lvl_str = levels[level] if 0 <= level < len(levels) else "LOG"
     
     timestamp = time.localtime()
     ts_str = "{:04}-{:02}-{:02} {:02}:{:02}:{:02}".format(*timestamp[:6])
     
-    log_line = f"[{ts_str}] [{lvl_str}] {message}\n"
-    print(log_line, end='')
+    log_line = f"[{ts_str}] [{lvl_str}] {message}"
+    print(log_line) # MicroPython print automatically adds newline
+    
+    # Notify dashboard/active listeners
+    if _log_callback:
+        try:
+            _log_callback(log_line)
+        except Exception:
+            pass
+
+    log_line += "\n"
     
     # Persistent logging with circular buffer logic
     try:

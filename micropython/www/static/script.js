@@ -62,6 +62,7 @@ async function init() {
     document.getElementById('sd_cs').value = config.sd_cs != null ? config.sd_cs : 13;
     document.getElementById('sd_mount_point').value = config.sd_mount_point || '/sd';
     document.getElementById('wdt_enabled').checked = !!config.wdt_enabled;
+    document.getElementById('log_level').value = config.log_level != null ? config.log_level : 1;
 
     const container = document.getElementById('drives-container');
     container.innerHTML = '';
@@ -850,7 +851,8 @@ async function saveConfig() {
         sd_miso: sdMiso,
         sd_cs: sdCs,
         sd_mount_point: document.getElementById('sd_mount_point').value.trim() || '/sd',
-        wdt_enabled: document.getElementById('wdt_enabled').checked
+        wdt_enabled: document.getElementById('wdt_enabled').checked,
+        log_level: safeInt(document.getElementById('log_level').value, 1)
     };
 
     for (let i = 0; i < 4; i++) {

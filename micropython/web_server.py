@@ -61,7 +61,7 @@ async def config_endpoint(request):
             new_config = request.json
             
             update_data = {}
-            for key in ('baud_rate', 'wifi_ssid', 'wifi_password', 'ntp_server', 'timezone_offset', 'serial_map', 'syslog_server', 'syslog_port', 'remote_servers'):
+            for key in ('baud_rate', 'wifi_ssid', 'wifi_password', 'ntp_server', 'timezone_offset', 'serial_map', 'syslog_server', 'syslog_port', 'wdt_enabled', 'log_level', 'remote_servers'):
                 if key in new_config:
                     update_data[key] = new_config[key]
                     

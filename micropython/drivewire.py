@@ -356,15 +356,18 @@ class DriveWireServer:
         self.drives = [None] * NUM_DRIVES
         self.running = False
         self.print_buffer = bytearray()
+        # Shared activity stats
         self.stats = {
-            'last_drive': 0, 
-            'last_stat': 0, 
-            'last_opcode': 0,
-            'serial': {}  # Key: Channel, Val: {tx: 0, rx: 0}
+            'last_opcode': None,
+            'last_drive': None,
+            'serial': {} # chan -> {'tx': 0, 'rx': 0}
         }
         self.log_buffer = []
-        self.monitor_channel = -1
-        self.terminal_buffer = bytearray()
+        self.terminal_buffer = []
+        self.monitor_channel = -1 # -1 = all, 0-31 = specific channel
+        
+        # Connect centralized logging to our dashboard buffer
+        resilience.set_log_callback(self.log_msg)
         self.channels = [bytearray() for _ in range(NUM_CHANNELS)]
         self.tcp_connections = {}  # Key: Channel (int), Value: (reader, writer, task)
         self.rfm_paths = {}        # Key: path_addr (int), Value: {'handle': file, 'mode': int}
@@ -427,7 +430,9 @@ class DriveWireServer:
 
     def log_msg(self, msg):
         """Add a message to the log buffer (limited size for memory efficiency)."""
-        self.log_buffer.append(msg)
+        # Trim any trailing newlines if it came from resilience.log
+        clean_msg = msg.strip()
+        self.log_buffer.append(clean_msg)
         if len(self.log_buffer) > MAX_LOG_ENTRIES:
             self.log_buffer.pop(0)
 

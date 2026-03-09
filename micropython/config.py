@@ -30,6 +30,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "syslog_server": "",
     "syslog_port": 514,
     "wdt_enabled": False,
+    "log_level": 1,  # 0=Debug, 1=Info, 2=Warn, 3=Error, 4=Crit
     "remote_servers": []  # [{"name": "Dev", "url": "http://192.168.1.100:8080"}, ...]
 }
 
@@ -77,6 +78,7 @@ class Config:
             resilience.log(f"Warning: Unknown config key '{key}'", level=2)
             return
         self.config[key] = value
+        self.validate()
         self.save()
 
     def update(self, changes_dict: Dict[str, Any]) -> None:
@@ -91,6 +93,7 @@ class Config:
                 changed = True
         
         if changed:
+            self.validate()
             self.save()
     
     def validate(self) -> None:
@@ -118,5 +121,13 @@ class Config:
         if not isinstance(rs, list):
             resilience.log("Warning: Invalid remote_servers config, using defaults", level=2)
             self.config['remote_servers'] = []
+
+        # Validate log level and sync with resilience module
+        ll = self.config.get('log_level', 1)
+        if not isinstance(ll, int) or ll < 0 or ll > 4:
+            resilience.log(f"Warning: Invalid log level {ll}, using 1 (INFO)", level=2)
+            ll = 1
+            self.config['log_level'] = 1
+        resilience.MIN_LOG_LEVEL = ll
 
 shared_config = Config()

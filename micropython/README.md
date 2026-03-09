@@ -42,6 +42,24 @@ A full-featured DriveWire 4 server implementation in MicroPython, optimized for 
 - **Retro Web Dashboard**: Tandy/CoCo-inspired dark mode interface for configuration and monitoring.
 - **Virtual Serial TCP/IP**: Map CoCo virtual serial ports to external network services.
 - **Remote File Manager (RFM)**: Full DriveWire 4 RFM support natively from the CoCo.
+- **Configurable Logging**: Control log verbosity (DEBUG to CRITICAL) from the web dashboard.
+
+---
+
+## 📋 System Logging
+
+The server maintains a circular log buffer for the Web Dashboard and an optional persistent `system.log` file on the flash.
+
+| Level | Name | Description | Flash Wear |
+|-------|------|-------------|------------|
+| 0 | DEBUG | Verbosely log every packet and internal state change. | **HIGH** |
+| 1 | INFO | Log system startups, drive mounts, and major events. | LOW |
+| 2 | WARN | Log timeouts, retries, and non-fatal network issues. | MINIMAL |
+| 3 | ERROR | Log failed operations (SD errors, protocol failures). | MINIMAL |
+| 4 | CRIT | Log system crashes or hardware failures. | MINIMAL |
+
+> [!WARNING]
+> **Flash Wear Mitigation**: Setting the log level to **DEBUG (0)** results in frequent writes to the Pico's internal flash memory. Use this level only for active troubleshooting and revert to **INFO (1)** or **WARN (2)** for daily use to extend the lifespan of your device.
 
 ---
 
