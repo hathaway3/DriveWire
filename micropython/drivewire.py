@@ -224,12 +224,13 @@ class RemoteDrive:
         gc.collect()
         # Verify server is reachable
         try:
-            import urequests
-            resp = urequests.get(self.url + '/info')
-            if resp.status_code == 200:
-                info = resp.json()
-                resilience.log(f"Remote drive connected: {info.get('name', url)}")
-            resp.close()
+            sock = resilience.open_remote_stream(self.url + '/info')
+            if sock:
+                # Read a small amount of info to verify
+                data = sock.recv(512)
+                sock.close()
+                if data:
+                    resilience.log(f"Remote drive connected: {self.url}")
             resilience.feed_wdt()
         except Exception as e:
             resilience.feed_wdt()
@@ -252,16 +253,30 @@ class RemoteDrive:
         backoff = 1  # Start with 1 second
         
         while retry_count < max_retries:
+            sock = None
             try:
-                import urequests
                 # Fetch up to MAX_READ_CACHE_ENTRIES sectors sequentially
-                # Note: 8 sectors * 256 bytes = 2KB, well within 4KB "no-stream" limit
                 count = MAX_READ_CACHE_ENTRIES
-                resp = urequests.get(f"{self.url}/sectors/{lsn}?count={count}", timeout=5)
+                url = f"{self.url}/sectors/{lsn}?count={count}"
                 
-                if resp.status_code == 200:
-                    data = resp.content
-                    resp.close()
+                sock = resilience.open_remote_stream(url)
+                if sock:
+                    # Read the bulk payload
+                    expected = count * SECTOR_SIZE
+                    data = bytearray(expected)
+                    view = memoryview(data)
+                    pos = 0
+                    while pos < expected:
+                        n = sock.readinto(view[pos:])
+                        if n == 0: break
+                        pos += n
+                    
+                    sock.close()
+                    sock = None
+                    
+                    if pos == 0:
+                        raise OSError("Empty stream")
+                        
                     activity_led.blink()
                     resilience.feed_wdt()
                     
@@ -294,6 +309,9 @@ class RemoteDrive:
                 break # HTTP error (e.g. 404) shouldn't retry typically
                 
             except (OSError, RuntimeError) as e:
+                if sock:
+                    try: sock.close()
+                    except: pass
                 retry_count += 1
                 if retry_count < max_retries:
                     sleep_time = backoff * (2 ** (retry_count - 1))
@@ -304,6 +322,9 @@ class RemoteDrive:
                 else:
                     resilience.log(f"Remote Read LSN {lsn} failed after {max_retries} attempts: {e}", level=3)
             except Exception as e:
+                if sock:
+                    try: sock.close()
+                    except: pass
                 resilience.log(f"Remote Read Unexpected Error LSN {lsn}: {e}", level=3)
                 break
 

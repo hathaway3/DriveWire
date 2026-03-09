@@ -31,10 +31,11 @@ On the Pico W (~192KB RAM), buffering entire network payloads causes memory exha
 
 ## 🚫 Anti-Patterns
 
-1. **`urequests.get().content`**: Buffers entire response into RAM. Use `_raw_http_get_stream()` for responses larger than 4KB.
-2. **`request.json` on large POST bodies**: Parses entire body into a dict. For file uploads, use `request.stream.read(chunk_size)` with the `X-Filename` header convention.
-3. **Unbounded lists or bytearrays**: Any buffer that grows without a cap will eventually exhaust RAM. Always enforce a maximum size.
-4. **Blocking I/O without WDT feeding**: Any loop that waits for network or SD I/O must feed the watchdog timer.
+1. **`urequests` library at runtime**: **NEVER** use `urequests` in the main DriveWire server or protocol logic. It buffers entire responses (headers + body) into heap dictionaries and bytes objects, which causes `ENOMEM` errors and heap fragmentation during large transfers (like cloning).
+2. **`urequests.get().content`**: Specifically forbidden. Use `resilience.open_remote_stream(url)` for all network I/O.
+3. **`request.json` on large POST bodies**: Parses entire body into a dict. For file uploads, use `request.stream.read(chunk_size)` with the `X-Filename` header convention.
+4. **Unbounded lists or bytearrays**: Any buffer that grows without a cap will eventually exhaust RAM. Always enforce a maximum size.
+5. **Blocking I/O without WDT feeding**: Any loop that waits for network or SD I/O must feed the watchdog timer.
 
 ## 📐 Reference Implementations
 

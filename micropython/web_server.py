@@ -610,89 +610,13 @@ _remote_files_cache = None   # Cached result list
 _remote_files_cache_ts = 0   # Timestamp of last fetch (ticks_ms)
 _REMOTE_CACHE_TTL_MS = 30000  # 30 second TTL
 
-def _raw_http_get_stream(url):
-    """Open a raw socket HTTP GET and return the socket after consuming headers.
-    
-    This avoids urequests which buffers the entire response body into RAM.
-    Returns the socket object for incremental reading, or None on failure.
-    """
-    import usocket
-    try:
-        # Parse URL: http://host:port/path
-        url_no_proto = url.split('://', 1)[1] if '://' in url else url
-        slash_pos = url_no_proto.find('/')
-        if slash_pos >= 0:
-            hostport = url_no_proto[:slash_pos]
-            path = url_no_proto[slash_pos:]
-        else:
-            hostport = url_no_proto
-            path = '/'
-        
-        if ':' in hostport:
-            host, port_str = hostport.rsplit(':', 1)
-            port = int(port_str)
-        else:
-            host = hostport
-            port = 80
-        
-        addr = usocket.getaddrinfo(host, port)[0][-1]
-        sock = usocket.socket()
-        sock.settimeout(5)
-        sock.connect(addr)
-        resilience.feed_wdt()
-        
-        # Send minimal HTTP/1.0 request (Connection: close implied)
-        sock.send(b'GET ')
-        sock.send(path.encode())
-        sock.send(b' HTTP/1.0\r\nHost: ')
-        sock.send(host.encode())
-        sock.send(b'\r\n\r\n')
-        
-        # Read headers byte-by-byte looking for \r\n\r\n end marker
-        # Use a 4-byte ring buffer to detect the boundary without large allocs
-        hdr_end = bytearray(4)
-        status_line = bytearray(16)  # First few bytes to check status
-        status_pos = 0
-        
-        while True:
-            b = sock.recv(1)
-            if not b:
-                sock.close()
-                return None
-            
-            # Capture first 16 bytes for status code check
-            if status_pos < 16:
-                status_line[status_pos] = b[0]
-                status_pos += 1
-            
-            # Shift ring buffer
-            hdr_end[0] = hdr_end[1]
-            hdr_end[1] = hdr_end[2]
-            hdr_end[2] = hdr_end[3]
-            hdr_end[3] = b[0]
-            
-            if hdr_end == b'\r\n\r\n':
-                break
-        
-        resilience.feed_wdt()
-        
-        # Check for 200 status
-        if b'200' not in bytes(status_line):
-            sock.close()
-            return None
-        
-        return sock
-    except Exception as e:
-        resilience.log(f"Raw HTTP error ({url}): {e}", level=2)
-        return None
-
 def stream_remote_files(server_url):
     """Fetch list of .dsk files from a remote server using raw sockets.
     
     Yields one filename at a time, never holding more than ~100 bytes.
     """
     gc.collect()
-    sock = _raw_http_get_stream(server_url.rstrip('/') + '/files')
+    sock = resilience.open_remote_stream(server_url.rstrip('/') + '/files')
     if not sock:
         return
     
@@ -772,15 +696,24 @@ async def remote_test_endpoint(request):
         url = body.get('url', '').rstrip('/')
         if not url:
             return {'error': 'Missing URL'}, 400
-        import urequests
-        resp = urequests.get(url + '/info')
-        resilience.feed_wdt()
-        if resp.status_code == 200:
-            info = resp.json()
-            resp.close()
-            return {'status': 'ok', 'info': info}
-        resp.close()
-        return {'status': 'error', 'message': f'HTTP {resp.status_code}'}, 502
+        
+        # Avoid urequests - use the raw stream helper to check info
+        sock = resilience.open_remote_stream(url + '/info')
+        if sock:
+            # For test endpoint, it's small enough to buffer temporarily
+            # but we use a manually controlled read to avoid Response overhead
+            try:
+                data = bytearray()
+                while len(data) < 4096: # Safety cap
+                    chunk = sock.recv(512)
+                    if not chunk: break
+                    data.extend(chunk)
+                info = json.loads(data)
+                return {'status': 'ok', 'info': info}
+            finally:
+                sock.close()
+        
+        return {'status': 'error', 'message': 'Cannot reach remote server'}, 502
     except Exception as e:
         return {'status': 'error', 'message': str(e)}, 502
     finally:
@@ -812,13 +745,20 @@ async def remote_clone_endpoint(request):
 
         # Check SD card space
         try:
-            import urequests
-            resp = urequests.get(remote_url + '/info')
-            if resp.status_code != 200:
-                resp.close()
+            # Query info via raw stream to find total sectors
+            sock = resilience.open_remote_stream(remote_url + '/info')
+            if not sock:
                 return {'error': 'Cannot reach remote server'}, 502
-            info = resp.json()
-            resp.close()
+            
+            try:
+                data = bytearray()
+                while len(data) < 8192: # info can be large if many disks
+                    chunk = sock.recv(1024)
+                    if not chunk: break
+                    data.extend(chunk)
+                info = json.loads(data)
+            finally:
+                sock.close()
 
             # Find the disk in info
             total_sectors = 0
@@ -848,26 +788,45 @@ async def remote_clone_endpoint(request):
         async def _do_clone():
             global _cloning, _clone_progress, _dsk_files_cache
             try:
-                import urequests
                 BULK_COUNT = 16  # 16 sectors = 4KB per request (SD-aligned)
                 activity_led.on()
+
+                # Pre-allocate buffer to avoid fragmented heap allocations
+                buffer = bytearray(BULK_COUNT * 256)
 
                 with open(local_path, 'wb') as f:
                     lsn = 0
                     while lsn < total_sectors:
                         count = min(BULK_COUNT, total_sectors - lsn)
-                        resp = urequests.get(f"{remote_url}/sectors/{disk_name}/{lsn}?count={count}")
-                        if resp.status_code == 200:
-                            f.write(resp.content)
-                            resp.close()
-                        else:
-                            resp.close()
-                            raise Exception(f"HTTP {resp.status_code} at LSN {lsn}")
+                        url = f"{remote_url}/sectors/{disk_name}/{lsn}?count={count}"
+                        
+                        sock = resilience.open_remote_stream(url)
+                        if not sock:
+                            raise Exception(f"Failed to open stream at LSN {lsn}")
+                        
+                        try:
+                            # Read exactly count*256 bytes into our pre-allocated buffer
+                            expected = count * 256
+                            view = memoryview(buffer)[:expected]
+                            pos = 0
+                            while pos < expected:
+                                n = sock.readinto(view[pos:])
+                                if n == 0: break
+                                pos += n
+                            
+                            if pos < expected:
+                                raise Exception(f"Empty stream at LSN {lsn} (got {pos}/{expected})")
+                            
+                            f.write(view)
+                        finally:
+                            sock.close()
+
                         lsn += count
                         _clone_progress['progress'] = lsn
                         resilience.feed_wdt()
                         await asyncio.sleep(0)  # Yield to other tasks
-                        if lsn % 128 == 0:
+                        
+                        if lsn % 64 == 0:
                             gc.collect()
 
                 activity_led.off()

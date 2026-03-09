@@ -132,6 +132,7 @@ def feed_wdt():
     if wdt:
         wdt.feed()
 
+
 def collect_garbage(reason: str = "general"):
     """Explicitly trigger GC and log status."""
     try:
@@ -151,3 +152,80 @@ def log_mem_info(label: str = "Status"):
         log(f"Memory ({label}): {free/1024:.1f}KB free, {alloc/1024:.1f}KB alloc (Total: {total/1024:.1f}KB)", level=0)
     except Exception:
         pass
+
+def open_remote_stream(url: str):
+    """Open a raw socket HTTP GET and return the socket after consuming headers.
+    
+    This avoids urequests/Response objects which buffer entire payloads into RAM.
+    Returns the socket object for incremental reading, or None on failure.
+    Important: Caller MUST close the socket when finished.
+    """
+    import usocket
+    try:
+        # Parse URL: http://host:port/path
+        url_no_proto = url.split('://', 1)[1] if '://' in url else url
+        slash_pos = url_no_proto.find('/')
+        if slash_pos >= 0:
+            hostport = url_no_proto[:slash_pos]
+            path = url_no_proto[slash_pos:]
+        else:
+            hostport = url_no_proto
+            path = '/'
+        
+        if ':' in hostport:
+            host, port_str = hostport.rsplit(':', 1)
+            port = int(port_str)
+        else:
+            host = hostport
+            port = 80
+        
+        addr = usocket.getaddrinfo(host, port)[0][-1]
+        sock = usocket.socket()
+        sock.settimeout(5)
+        sock.connect(addr)
+        feed_wdt()
+        
+        # Send minimal HTTP/1.0 request (Connection: close implied)
+        sock.send(b'GET ')
+        sock.send(path.encode())
+        sock.send(b' HTTP/1.0\r\nHost: ')
+        sock.send(host.encode())
+        sock.send(b'\r\n\r\n')
+        
+        # Read headers byte-by-byte looking for \r\n\r\n end marker
+        # Use a 4-byte ring buffer to detect the boundary without large allocs
+        hdr_end = bytearray(4)
+        status_line = bytearray(16)  # First few bytes to check status
+        status_pos = 0
+        
+        while True:
+            b = sock.recv(1)
+            if not b:
+                sock.close()
+                return None
+            
+            # Capture first 16 bytes for status code check
+            if status_pos < 16:
+                status_line[status_pos] = b[0]
+                status_pos += 1
+            
+            # Shift ring buffer
+            hdr_end[0] = hdr_end[1]
+            hdr_end[1] = hdr_end[2]
+            hdr_end[2] = hdr_end[3]
+            hdr_end[3] = b[0]
+            
+            if hdr_end == b'\r\n\r\n':
+                break
+        
+        feed_wdt()
+        
+        # Check for 200 status
+        if b'200' not in bytes(status_line):
+            sock.close()
+            return None
+        
+        return sock
+    except Exception as e:
+        log(f"Remote stream error ({url}): {e}", level=2)
+        return None

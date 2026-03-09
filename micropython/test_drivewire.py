@@ -55,9 +55,9 @@ sys.modules['time_sync'] = mock_time_sync
 # Mock ntptime
 sys.modules['ntptime'] = MagicMock()
 
-# Mock urequests for RemoteDrive tests
-mock_urequests = MagicMock()
-sys.modules['urequests'] = mock_urequests
+# Mock resilience.open_remote_stream for RemoteDrive tests
+sys.modules['resilience'] = MagicMock()
+mock_resilience = sys.modules['resilience']
 sys.modules['activity_led'] = MagicMock()
 
 # Mock os.sync
@@ -305,29 +305,29 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
 
 class TestRemoteDrive(unittest.TestCase):
     def setUp(self):
-        # Reset urequests mock
-        mock_urequests.reset_mock()
-        mock_urequests.get.side_effect = None  # Clear any side_effect from previous tests
-        # Mock the /info response for RemoteDrive constructor
-        info_resp = MagicMock()
-        info_resp.status_code = 200
-        info_resp.json.return_value = {'name': 'Test Server', 'version': '1.0'}
-        mock_urequests.get.return_value = info_resp
-
+        # Reset resilience mock
+        mock_resilience.open_remote_stream.reset_mock()
+        mock_resilience.open_remote_stream.side_effect = None
+        
         self.drive = RemoteDrive('http://192.168.1.100:8080')
-        mock_urequests.reset_mock()
+        mock_resilience.open_remote_stream.reset_mock()
 
     def test_remote_read_sector(self):
-        """Remote read should HTTP GET and return sector data."""
+        """Remote read should use open_remote_stream and return sector data."""
         sector_data = bytes(range(256)) * 8  # Mock 8 sectors
-        resp = MagicMock()
-        resp.status_code = 200
-        resp.content = sector_data
-        mock_urequests.get.return_value = resp
+        
+        mock_sock = MagicMock()
+        def mock_readinto(buf):
+            size = min(len(buf), len(sector_data))
+            buf[:size] = sector_data[:size]
+            return size
+        mock_sock.readinto.side_effect = mock_readinto
+        mock_resilience.open_remote_stream.return_value = mock_sock
 
         result = self.drive.read_sector(5)
         self.assertEqual(result, bytes(range(256))) # Should return the 1 sector requested
-        mock_urequests.get.assert_called_once_with('http://192.168.1.100:8080/sectors/5?count=8', timeout=5)
+        mock_resilience.open_remote_stream.assert_called_with('http://192.168.1.100:8080/sectors/5?count=8')
+        mock_sock.close.assert_called()
         self.assertEqual(self.drive.stats['read_misses'], 1)
 
     def test_remote_write_protected(self):
@@ -338,27 +338,31 @@ class TestRemoteDrive(unittest.TestCase):
     def test_remote_cache_hit(self):
         """Second read of same sector should come from cache."""
         sector_data = bytes(range(256)) * 8  # Mock 8 sectors
-        resp = MagicMock()
-        resp.status_code = 200
-        resp.content = sector_data
-        mock_urequests.get.return_value = resp
+        
+        mock_sock = MagicMock()
+        def mock_readinto(buf):
+            size = min(len(buf), len(sector_data))
+            buf[:size] = sector_data[:size]
+            return size
+        mock_sock.readinto.side_effect = mock_readinto
+        mock_resilience.open_remote_stream.return_value = mock_sock
 
         # First read = cache miss
         self.drive.read_sector(10)
         self.assertEqual(self.drive.stats['read_misses'], 1)
         self.assertEqual(self.drive.stats['read_hits'], 0)
 
-        mock_urequests.reset_mock()
+        mock_resilience.open_remote_stream.reset_mock()
 
-        # Second read = cache hit (no HTTP call)
+        # Second read = cache hit (no network call)
         result = self.drive.read_sector(10)
         self.assertEqual(result, bytes(range(256)))
         self.assertEqual(self.drive.stats['read_hits'], 1)
-        mock_urequests.get.assert_not_called()
+        mock_resilience.open_remote_stream.assert_not_called()
 
     def test_remote_network_error_sets_notrdy(self):
         """Network failure should set last_error to E_NOTRDY."""
-        mock_urequests.get.side_effect = OSError("Network unreachable")
+        mock_resilience.open_remote_stream.side_effect = OSError("Network unreachable")
 
         result = self.drive.read_sector(0)
         self.assertIsNone(result)
@@ -413,10 +417,8 @@ class TestSwapDrive(unittest.IsolatedAsyncioTestCase):
 
     async def test_reload_config_http_url(self):
         """reload_config should create RemoteDrive for http:// paths."""
-        info_resp = MagicMock()
-        info_resp.status_code = 200
-        info_resp.json.return_value = {'name': 'TestSrv'}
-        mock_urequests.get.return_value = info_resp
+        # Setup mock for RemoteDrive constructor check
+        mock_resilience.open_remote_stream.return_value = MagicMock()
 
         self.server.config.config['drives'] = [
             'http://192.168.1.100:8080', None, None, None
