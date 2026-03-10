@@ -504,7 +504,13 @@ class DriveWireServer:
         self.stats = {
             'last_opcode': None,
             'last_drive': None,
-            'serial': {} # chan -> {'tx': 0, 'rx': 0}
+            'serial': {}, # chan -> {'tx': 0, 'rx': 0}
+            'latency': {
+                'rx_header_us': 0,
+            'uart_wait_us': 0,
+            'turnaround_us': 0,
+            'total_request_us': 0
+            }
         }
         self.log_buffer = []
         self.terminal_buffer = []
@@ -655,6 +661,10 @@ class DriveWireServer:
                 # UART.any() is non-blocking.
                 
                 if self.uart.any():
+                    # Loop start time for latency tracking
+                    req_start_t = utime.ticks_us()
+                    self.stats['latency']['uart_wait_us'] = 0
+                    
                     # Read OpCode
                     op_data = await self.read_bytes(1)
                     if not op_data:
@@ -689,6 +699,9 @@ class DriveWireServer:
                             
                             is_extended = opcode in (OP_READEX, OP_REREADEX)
                             
+                            # Update header receive latency
+                            self.stats['latency']['rx_header_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
+                            
                             if drive_num < NUM_DRIVES and self.drives[drive_num]:
                                 start_t = utime.ticks_us()
                                 data = await self.drives[drive_num].read_sector(lsn)
@@ -702,16 +715,31 @@ class DriveWireServer:
                                         coco_cs_bytes = await self.read_bytes(2)
                                         if coco_cs_bytes:
                                             coco_cs = (coco_cs_bytes[0] << 8) | coco_cs_bytes[1]
+                                            
+                                            # Record turnaround time (header in to response bytes out)
+                                            self.stats['latency']['turnaround_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
+                                            
                                             if coco_cs == cs:
                                                 self.uart.write(bytes([0])) # No Error
                                             else:
                                                 self.uart.write(bytes([243])) # E_CRC
+                                                
+                                            # Total request time (including CoCo checksum wait)
+                                            self.stats['latency']['total_request_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
                                     else:
                                         # Standard Read: 0x00 + Checksum(2) + Data(256)
                                         resp = bytearray([0])
                                         resp += struct.pack(">H", cs)
                                         resp += data
+                                        
+                                        # Record turnaround time (just before final TX)
+                                        proc_done_t = utime.ticks_us()
+                                        self.stats['latency']['turnaround_us'] = utime.ticks_diff(proc_done_t, req_start_t)
+                                        
                                         self.uart.write(resp)
+                                        
+                                        # Total request time
+                                        self.stats['latency']['total_request_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
                                 else:
                                     # Read Failure — use drive-specific error if available
                                     err = getattr(self.drives[drive_num], 'last_error', E_UNIT) or E_UNIT
@@ -738,6 +766,9 @@ class DriveWireServer:
                             drive_num = header[0]
                             lsn = (header[1] << 16) | (header[2] << 8) | header[3]
                             
+                            # Record header RX latency
+                            self.stats['latency']['rx_header_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
+                            
                             data = await self.read_bytes(SECTOR_SIZE)
                             checksum_bytes = await self.read_bytes(2)
                             
@@ -754,7 +785,14 @@ class DriveWireServer:
                                         self.drives[drive_num].stats['latency_us'] = utime.ticks_diff(utime.ticks_us(), start_t)
                                     
                                     if success:
+                                        # Record turnaround time
+                                        proc_done_t = utime.ticks_us()
+                                        self.stats['latency']['turnaround_us'] = utime.ticks_diff(proc_done_t, req_start_t)
+                                        
                                         self.uart.write(bytes([E_NONE]))  # ACK
+                                        
+                                        # Total request time
+                                        self.stats['latency']['total_request_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
                                     else:
                                         # Use drive-specific error (E_WP for remote, E_UNIT for missing)
                                         err = getattr(self.drives[drive_num], 'last_error', E_UNIT) or E_UNIT
@@ -842,6 +880,11 @@ class DriveWireServer:
                                 response_byte_1 = ch_idx + 1 + 16
                                 self.uart.write(bytes([response_byte_1, count]))
                             
+                            # Record turnaround time (just before final TX or end of op)
+                            self.stats['latency']['turnaround_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
+                            # For SERREAD, the last write happened above, so total time is similar
+                            self.stats['latency']['total_request_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
+
                             # Stats
                             if ch_idx not in self.stats['serial']: self.stats['serial'][ch_idx] = {'tx':0, 'rx':0}
                             self.stats['serial'][ch_idx]['rx'] += 1
@@ -1363,7 +1406,9 @@ class DriveWireServer:
                     data.extend(chunk)
                     attempts = 0  # Reset on successful read
             else:
+                wait_start = utime.ticks_us()
                 await asyncio.sleep(0.001)
+                self.stats['latency']['uart_wait_us'] += utime.ticks_diff(utime.ticks_us(), wait_start)
                 attempts += 1
                 # Feed WDT periodically during long waits
                 if attempts % 500 == 0:

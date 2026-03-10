@@ -109,6 +109,8 @@ class Config:
         if not isinstance(tz_offset, (int, float)) or tz_offset < -12 or tz_offset > 14:
             resilience.log(f"Warning: Invalid timezone offset {tz_offset}, using 0", level=2)
             self.config['timezone_offset'] = 0
+            tz_offset = 0
+        resilience.set_timezone_offset(int(tz_offset))
         
         # Validate drives is a list of 4 items
         drives = self.config.get('drives')

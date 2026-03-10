@@ -16,11 +16,17 @@ MAX_LOG_SIZE = 4096  # 4KB circular buffer style
 # Global logging state
 MIN_LOG_LEVEL = 1  # 0=Debug, 1=Info, 2=Warn, 3=Error, 4=Crit
 _log_callback = None
+_timezone_offset = 0 # Hours from UTC
 
 def set_log_callback(callback):
     """Set a callback function to receive every log line (e.g. for Web UI dashboard)."""
     global _log_callback
     _log_callback = callback
+
+def set_timezone_offset(offset: int):
+    """Set the timezone offset in hours from UTC."""
+    global _timezone_offset
+    _timezone_offset = offset
 
 def get_reset_cause() -> str:
     """Return a human-readable string for the last reset cause."""
@@ -52,7 +58,10 @@ def log(message: str, level: int = 1, _from_syslog: bool = False) -> None:
     levels = ["DEBUG", "INFO", "WARN", "ERROR", "CRIT"]
     lvl_str = levels[level] if 0 <= level < len(levels) else "LOG"
     
-    timestamp = time.localtime()
+    # Calculate local time using timezone offset
+    utc_timestamp = time.time()
+    local_timestamp = utc_timestamp + (_timezone_offset * 3600)
+    timestamp = time.localtime(local_timestamp)
     ts_str = "{:04}-{:02}-{:02} {:02}:{:02}:{:02}".format(*timestamp[:6])
     
     log_line = f"[{ts_str}] [{lvl_str}] {message}"
