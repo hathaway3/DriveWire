@@ -140,8 +140,8 @@ class SectorHandler(BaseHTTPRequestHandler):
                 return
 
             count = int(query.get('count', [1])[0])
-            if count < 1 or count > 64:  # Safety limit
-                self._send_error(400, 'Count must be 1-64')
+            if count < 1:
+                self._send_error(400, 'Count must be at least 1')
                 return
 
             disk_path = self._get_disk_path(filename)

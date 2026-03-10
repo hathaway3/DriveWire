@@ -96,7 +96,7 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
         self.server.running = True
 
     async def asyncTearDown(self):
-        self.server.stop()
+        await self.server.stop()
         if os.path.exists("test_drive.dsk"):
             try: os.remove("test_drive.dsk")
             except Exception: pass
@@ -148,7 +148,7 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
         drives = [None] * 4
         drives[0] = "test_drive.dsk"
         self.server.config.set("drives", drives)
-        self.server.reload_config()
+        await self.server.reload_config()
         self.uart = self.server.uart
         
         # READ
@@ -211,7 +211,7 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
         # Standard Setup
         drives = ["test_drive.dsk"] + [None]*3
         self.server.config.set("drives", drives)
-        self.server.reload_config()
+        await self.server.reload_config()
         self.uart = self.server.uart
         
         # READEX
@@ -303,8 +303,8 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
         try: await task
         except asyncio.CancelledError: pass
 
-class TestRemoteDrive(unittest.TestCase):
-    def setUp(self):
+class TestRemoteDrive(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         # Reset resilience mock
         mock_resilience.open_remote_stream.reset_mock()
         mock_resilience.open_remote_stream.side_effect = None
@@ -312,7 +312,7 @@ class TestRemoteDrive(unittest.TestCase):
         self.drive = RemoteDrive('http://192.168.1.100:8080')
         mock_resilience.open_remote_stream.reset_mock()
 
-    def test_remote_read_sector(self):
+    async def test_remote_read_sector(self):
         """Remote read should use open_remote_stream and return sector data."""
         sector_data = bytes(range(256)) * 8  # Mock 8 sectors
         
@@ -324,18 +324,18 @@ class TestRemoteDrive(unittest.TestCase):
         mock_sock.readinto.side_effect = mock_readinto
         mock_resilience.open_remote_stream.return_value = mock_sock
 
-        result = self.drive.read_sector(5)
+        result = await self.drive.read_sector(5)
         self.assertEqual(result, bytes(range(256))) # Should return the 1 sector requested
         mock_resilience.open_remote_stream.assert_called_with('http://192.168.1.100:8080/sectors/5?count=8')
         mock_sock.close.assert_called()
         self.assertEqual(self.drive.stats['read_misses'], 1)
 
-    def test_remote_write_protected(self):
+    async def test_remote_write_protected(self):
         """Remote drives should reject writes."""
-        result = self.drive.write_sector(0, bytes(256))
+        result = await self.drive.write_sector(0, bytes(256))
         self.assertFalse(result)
 
-    def test_remote_cache_hit(self):
+    async def test_remote_cache_hit(self):
         """Second read of same sector should come from cache."""
         sector_data = bytes(range(256)) * 8  # Mock 8 sectors
         
@@ -348,29 +348,29 @@ class TestRemoteDrive(unittest.TestCase):
         mock_resilience.open_remote_stream.return_value = mock_sock
 
         # First read = cache miss
-        self.drive.read_sector(10)
+        await self.drive.read_sector(10)
         self.assertEqual(self.drive.stats['read_misses'], 1)
         self.assertEqual(self.drive.stats['read_hits'], 0)
 
         mock_resilience.open_remote_stream.reset_mock()
 
         # Second read = cache hit (no network call)
-        result = self.drive.read_sector(10)
+        result = await self.drive.read_sector(10)
         self.assertEqual(result, bytes(range(256)))
         self.assertEqual(self.drive.stats['read_hits'], 1)
         mock_resilience.open_remote_stream.assert_not_called()
 
-    def test_remote_network_error_sets_notrdy(self):
+    async def test_remote_network_error_sets_notrdy(self):
         """Network failure should set last_error to E_NOTRDY."""
         mock_resilience.open_remote_stream.side_effect = OSError("Network unreachable")
 
-        result = self.drive.read_sector(0)
+        result = await self.drive.read_sector(0)
         self.assertIsNone(result)
         self.assertEqual(self.drive.last_error, E_NOTRDY)
 
-    def test_remote_write_sets_wp_error(self):
+    async def test_remote_write_sets_wp_error(self):
         """Write attempts should set last_error to E_WP."""
-        result = self.drive.write_sector(0, bytes(256))
+        result = await self.drive.write_sector(0, bytes(256))
         self.assertFalse(result)
         self.assertEqual(self.drive.last_error, E_WP)
 
@@ -384,7 +384,7 @@ class TestSwapDrive(unittest.IsolatedAsyncioTestCase):
         self.server = DriveWireServer()
 
     async def asyncTearDown(self):
-        self.server.stop()
+        await self.server.stop()
         for fn in ["test_drive.dsk", "test_swap.dsk"]:
             if os.path.exists(fn):
                 try: os.remove(fn)
@@ -397,7 +397,7 @@ class TestSwapDrive(unittest.IsolatedAsyncioTestCase):
         self.server.drives[1] = None
 
         new_drive = VirtualDrive("test_swap.dsk")
-        result = self.server.swap_drive(0, new_drive)
+        result = await self.server.swap_drive(0, new_drive)
 
         self.assertTrue(result)
         self.assertEqual(self.server.drives[0].filename, "test_swap.dsk")
@@ -413,7 +413,7 @@ class TestSwapDrive(unittest.IsolatedAsyncioTestCase):
         target_old_drive = self.server.drives[2]
 
         new_drive = VirtualDrive("test_swap.dsk")
-        self.server.swap_drive(2, new_drive)
+        await self.server.swap_drive(2, new_drive)
 
         self.assertEqual(len(target_old_drive.read_cache), 0)
         self.assertEqual(len(self.server.drives[2].read_cache), 0)
@@ -426,7 +426,7 @@ class TestSwapDrive(unittest.IsolatedAsyncioTestCase):
         self.server.config.config['drives'] = [
             'http://192.168.1.100:8080', None, None, None
         ]
-        self.server.reload_config()
+        await self.server.reload_config()
 
         self.assertIsInstance(self.server.drives[0], RemoteDrive)
         self.assertIsNone(self.server.drives[1])

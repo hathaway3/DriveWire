@@ -337,9 +337,6 @@ async function refreshFilesTab() {
             }
 
             listBody.appendChild(tr);
-
-
-            listBody.appendChild(tr);
         });
     }
 
@@ -700,7 +697,7 @@ function renderDriveStats(stats) {
 
         const totalReads = (s.read_hits || 0) + (s.read_misses || 0);
         const hitRate = totalReads > 0 ? (((s.read_hits || 0) / totalReads) * 100).toFixed(1) : 0;
-        
+
         const totalDirReads = (s.dir_cache_hits || 0) + (s.dir_cache_misses || 0);
         const dirHitRate = totalDirReads > 0 ? (((s.dir_cache_hits || 0) / totalDirReads) * 100).toFixed(1) : 0;
 
@@ -1024,7 +1021,7 @@ async function submitCreateDisk() {
 
     // UI Loading state
     btn.disabled = true;
-    btn.textContent = 'CREATING...';
+    btn.textContent = 'STARTING...';
     btn.style.opacity = '0.7';
 
     try {
@@ -1034,17 +1031,51 @@ async function submitCreateDisk() {
             body: JSON.stringify({ filename: nameInput, size: sizeInput })
         });
 
-        const data = await response.json();
-
-        if (response.ok) {
-            hideCreateDiskModal();
-            refreshFilesTab(); // Reload files list to see the newly generated disk
-        } else {
+        if (!response.ok) {
+            const data = await response.json();
             alert('Failed to create disk: ' + (data.error || 'Unknown error.'));
+            btn.disabled = false;
+            btn.textContent = 'CREATE';
+            btn.style.opacity = '1';
+            return;
         }
+
+        // Poll for progress
+        let creationDone = false;
+        const pollInterval = setInterval(async () => {
+            if (creationDone) return;
+            try {
+                const statusRes = await fetch('/api/files/create/status');
+                const status = await statusRes.json();
+
+                if (status.total > 0) {
+                    const pct = (status.written / status.total) * 100;
+                    btn.textContent = `CREATING... ${Math.round(pct)}%`;
+                }
+
+                if (status.state === 'complete' && !creationDone) {
+                    creationDone = true;
+                    clearInterval(pollInterval);
+                    btn.textContent = 'COMPLETE!';
+                    setTimeout(() => {
+                        hideCreateDiskModal();
+                        refreshFilesTab();
+                    }, 1000);
+                } else if (status.state === 'error' && !creationDone) {
+                    creationDone = true;
+                    clearInterval(pollInterval);
+                    alert('CREATION FAILED: ' + (status.error || 'Unknown error'));
+                    btn.disabled = false;
+                    btn.textContent = 'CREATE';
+                    btn.style.opacity = '1';
+                }
+            } catch (e) {
+                console.warn('Disk creation status poll error', e);
+            }
+        }, 500);
+
     } catch (error) {
         alert('Network error while creating disk: ' + error.message);
-    } finally {
         btn.disabled = false;
         btn.textContent = 'CREATE';
         btn.style.opacity = '1';
@@ -1059,7 +1090,22 @@ async function fetchRemoteFiles() {
     try {
         const response = await fetch('/api/remote/files');
         if (response.ok) {
-            _remoteFiles = await response.json();
+            const data = await response.json();
+            const flattened = [];
+            if (data.servers) {
+                data.servers.forEach(srv => {
+                    if (srv.files) {
+                        srv.files.forEach(filename => {
+                            flattened.push({
+                                name: filename,
+                                server: srv.name,
+                                url: srv.url
+                            });
+                        });
+                    }
+                });
+            }
+            _remoteFiles = flattened;
         } else {
             _remoteFiles = [];
         }
@@ -1235,7 +1281,9 @@ async function submitClone() {
         }
 
         // Poll for progress
+        let cloneDone = false;
         const pollInterval = setInterval(async () => {
+            if (cloneDone) return;
             try {
                 const statusRes = await fetch('/api/remote/clone/status');
                 const status = await statusRes.json();
@@ -1247,24 +1295,35 @@ async function submitClone() {
                         `${status.state.toUpperCase()}: ${status.progress} / ${status.total} SECTORS`;
                 }
 
-                if (status.state === 'complete') {
+                if (status.state === 'complete' && !cloneDone) {
+                    cloneDone = true;
                     clearInterval(pollInterval);
                     document.getElementById('clone-progress-bar').style.width = '100%';
                     document.getElementById('clone-status-text').textContent = 'CLONE COMPLETE!';
+
+                    // Final UI refresh sequence
                     setTimeout(async () => {
                         hideCloneModal();
-                        // Stagger requests to avoid concurrent burst
+
+                        // Consolidation: refreshFilesTab already fetches files and remote files.
+                        // We also need fresh config for drive assignments, but we can do it 
+                        // efficiently by coordinating with refreshFilesTab.
+                        await refreshFilesTab();
+
                         const freshConfig = await fetchConfig();
                         const freshDrives = freshConfig.drives || [null, null, null, null];
-                        const freshFiles = await fetchFiles();
-                        await refreshDriveSelects(freshFiles);
+                        // refreshDriveSelects already called inside refreshFilesTab indirectly
+                        // via the 'files' tab switch or manual call? No, it's called here.
+                        // Let's pass the files we just got if we can, or just call it.
+                        await refreshDriveSelects();
+
                         for (let i = 0; i < 4; i++) {
                             const sel = document.getElementById(`drive_${i}`);
                             if (sel) sel.value = freshDrives[i] || '';
                         }
-                        await refreshFilesTab();
-                    }, 2000);
-                } else if (status.state === 'error') {
+                    }, 1500);
+                } else if (status.state === 'error' && !cloneDone) {
+                    cloneDone = true;
                     clearInterval(pollInterval);
                     document.getElementById('clone-status-text').textContent = 'ERROR: ' + (status.error || 'Unknown');
                     btn.disabled = false;

@@ -79,7 +79,9 @@ def log(message: str, level: int = 1, _from_syslog: bool = False) -> None:
     try:
         with open(LOG_FILE, "a") as f:
             f.write(log_line)
-            os.sync()
+            # Only sync on critical errors/warnings to avoid UART latency spikes
+            if level >= 3:
+                os.sync()
     except (OSError, KeyboardInterrupt):
         pass
 
@@ -176,7 +178,7 @@ def log_mem_info(label: str = "Status"):
     except Exception:
         pass
 
-def open_remote_stream(url: str):
+def open_remote_stream(url: str, addr=None):
     """Open a raw socket HTTP GET and return the socket after consuming headers.
     
     This avoids urequests/Response objects which buffer entire payloads into RAM.
@@ -202,7 +204,9 @@ def open_remote_stream(url: str):
             host = hostport
             port = 80
         
-        addr = usocket.getaddrinfo(host, port)[0][-1]
+        if addr is None:
+            addr = usocket.getaddrinfo(host, port)[0][-1]
+            
         sock = usocket.socket()
         sock.settimeout(5)
         sock.connect(addr)
@@ -243,8 +247,8 @@ def open_remote_stream(url: str):
         
         feed_wdt()
         
-        # Check for 200 status
-        if b'200' not in bytes(status_line):
+        # Check for 2xx status (allowing 200, 206 etc)
+        if b' 2' not in bytes(status_line):
             sock.close()
             return None
         

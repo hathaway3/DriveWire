@@ -31,6 +31,8 @@ Request.max_content_length = 100 * 1024 * 1024  # 100MB limit for uploads
 Request.max_body_length = 16 * 1024          # Small body limit to force streaming
 config = shared_config
 _uploading = False  # Flag to prevent SD polling during uploads
+_creating_disk = False
+_disk_creation_progress = {'state': 'idle', 'written': 0, 'total': 0, 'filename': '', 'error': None}
 
 @app.route('/')
 async def index(request):
@@ -80,7 +82,7 @@ async def config_endpoint(request):
             # Trigger reload on DriveWire Server if attached
             if hasattr(app, 'dw_server'):
                 resilience.log("Reloading DriveWire Config...")
-                app.dw_server.reload_config()
+                await app.dw_server.reload_config()
 
             return {'status': 'ok'}
         except Exception as e:
@@ -349,7 +351,11 @@ async def download_file_endpoint(request):
 @app.route('/api/files/create', methods=['POST'])
 async def create_blank_dsk_endpoint(request):
     """Create a new blank zero-filled .dsk image file."""
+    global _creating_disk, _disk_creation_progress
     try:
+        if _creating_disk:
+            return {'error': 'Disk creation already in progress'}, 409
+
         if not hasattr(app, 'dw_server'):
             return {'error': 'DriveWire Server not attached'}, 500
             
@@ -392,46 +398,65 @@ async def create_blank_dsk_endpoint(request):
         except Exception as e:
             return {'error': f'SD card check failed: {e}'}, 500
             
-        # Generate the file with zero-fill chunks to prevent memory exhaustion
-        resilience.log(f"Creating blank disk image: {target_path} ({size_bytes} bytes)")
+        # Start the background task
+        _creating_disk = True
+        _disk_creation_progress = {
+            'state': 'creating',
+            'written': 0,
+            'total': size_bytes,
+            'filename': clean_name,
+            'error': None
+        }
         
-        try:
-            chunk_size = 4096
-            written = 0
-            empty_chunk = bytearray(chunk_size)
-            
+        async def _do_create_blank_dsk():
+            global _creating_disk, _disk_creation_progress, _dsk_files_cache
             try:
                 activity_led.on() # Keep LED solid during heavy SD write operation
+                chunk_size = 4096
+                empty_chunk = bytearray(chunk_size)
+                
                 with open(target_path, 'wb') as f:
-                    while written < size_bytes:
-                        to_write = min(chunk_size, size_bytes - written)
+                    while _disk_creation_progress['written'] < size_bytes:
+                        to_write = min(chunk_size, size_bytes - _disk_creation_progress['written'])
                         if to_write < chunk_size:
                             f.write(bytearray(to_write)) # Last partial chunk
                         else:
                             f.write(empty_chunk)
-                        written += to_write
                         
-                        if written % (16 * chunk_size) == 0:
-                            resilience.feed_wdt()
-                            await asyncio.sleep(0) # yield periodically for massive files
+                        _disk_creation_progress['written'] += to_write
+                        
+                        # Yield after EVERY chunk to maintain UART responsiveness
+                        resilience.feed_wdt()
+                        await asyncio.sleep(0)
+                
+                resilience.log(f"Successfully created blank disk: {target_path}")
+                _disk_creation_progress['state'] = 'complete'
+                _dsk_files_cache = None # Invalidate local file list cache
+            except Exception as e:
+                resilience.log(f"Blank disk creation failed: {e}", level=3)
+                _disk_creation_progress['state'] = 'error'
+                _disk_creation_progress['error'] = str(e)
+                try:
+                    os.remove(target_path)
+                except OSError:
+                    pass
             finally:
+                _creating_disk = False
                 activity_led.off()
-                        
-            resilience.log(f"Successfully created: {target_path}")
-            return {'status': 'ok', 'filename': clean_name, 'size': size_bytes}, 201
-            
-        except Exception as e:
-            try:
-                os.remove(target_path) # cleanup partial broken file
-            except OSError:
-                pass
-            return {'error': f'File creation failed: {e}'}, 500
+
+        asyncio.create_task(_do_create_blank_dsk())
+        return {'status': 'accepted', 'filename': clean_name, 'size': size_bytes}, 202
             
     except Exception as e:
         resilience.log(f"Disk creation request error: {e}", level=3)
         return {'error': f'Failed to process request: {e}'}, 500
     finally:
         gc.collect()
+
+@app.route('/api/files/create/status', methods=['GET'])
+async def create_disk_status_endpoint(request):
+    """Return the status of an ongoing disk creation."""
+    return _disk_creation_progress
 
 @app.route('/api/files/upload', methods=['POST'])
 async def upload_file_endpoint(request):
@@ -498,6 +523,8 @@ async def upload_file_endpoint(request):
                                 return
                             f.write(chunk)
                             app.upload_written += len(chunk)
+                            # Yield after every chunk to let serial loop run
+                            await asyncio.sleep(0)
                             
                         # Empty buffer, clear event and wait for more data
                         activity_led.off()
@@ -606,10 +633,6 @@ async def monitor_chan_endpoint(request):
 _cloning = False
 _clone_progress = {'state': 'idle', 'progress': 0, 'total': 0, 'error': None}
 
-_remote_files_cache = None   # Cached result list
-_remote_files_cache_ts = 0   # Timestamp of last fetch (ticks_ms)
-_REMOTE_CACHE_TTL_MS = 30000  # 30 second TTL
-
 def stream_remote_files(server_url):
     """Fetch list of .dsk files from a remote server using raw sockets.
     
@@ -660,33 +683,40 @@ def stream_remote_files(server_url):
 
 @app.route('/api/remote/files')
 async def remote_files_endpoint(request):
-    """List .dsk files from all configured remote servers (cached for 30s)."""
-    global _remote_files_cache, _remote_files_cache_ts
+    """List .dsk files from all configured remote servers (streaming JSON)."""
+    gc.collect()
     
-    now = utime.ticks_ms()
-    if _remote_files_cache is not None and utime.ticks_diff(now, _remote_files_cache_ts) < _REMOTE_CACHE_TTL_MS:
-        return _remote_files_cache
-    
-    remote_servers = config.get('remote_servers') or []
-    result = []
-    for srv in remote_servers:
-        url = srv.get('url', '')
-        name = srv.get('name', url)
-        if not url:
-            continue
-        for filename in stream_remote_files(url):
-            result.append({
-                'name': filename,
-                'server': name,
-                'url': url,
-                'path': url.rstrip('/') + '/disk/' + filename
-            })
-        resilience.feed_wdt()
-    
-    _remote_files_cache = result
-    _remote_files_cache_ts = utime.ticks_ms()
-    gc.collect() # Clean up after remote file list compilation
-    return result
+    async def generate():
+        yield '{"servers":['
+        remote_servers = config.get('remote_servers') or []
+        first_server = True
+        for srv in remote_servers:
+            if not first_server:
+                yield ','
+            first_server = False
+            
+            url = srv.get('url', '')
+            name = srv.get('name', url)
+            if not url:
+                yield json.dumps({"name": name, "url": url, "files": []})
+                continue
+                
+            yield '{"name":' + json.dumps(name) + ',"url":' + json.dumps(url) + ',"files":['
+            
+            first_file = True
+            for filename in stream_remote_files(url):
+                if not first_file:
+                    yield ','
+                yield json.dumps(filename)
+                first_file = False
+                resilience.feed_wdt()
+            
+            yield ']}'
+            gc.collect()
+            
+        yield ']}'
+
+    return Response(generate(), headers={'Content-Type': 'application/json'})
 
 @app.route('/api/remote/test', methods=['POST'])
 async def remote_test_endpoint(request):
@@ -788,46 +818,62 @@ async def remote_clone_endpoint(request):
         async def _do_clone():
             global _cloning, _clone_progress, _dsk_files_cache
             try:
-                BULK_COUNT = 16  # 16 sectors = 4KB per request (SD-aligned)
                 activity_led.on()
+                
+                # Resolve remote host IP once to avoid repeated getaddrinfo calls
+                import usocket
+                host_url = remote_url.split('://', 1)[1] if '://' in remote_url else remote_url
+                host = host_url.split('/')[0]
+                port = 80
+                if ':' in host:
+                    host, port_str = host.rsplit(':', 1)
+                    port = int(port_str)
+                
+                resilience.log(f"Resolving {host}:{port} for clone...")
+                remote_addr = usocket.getaddrinfo(host, port)[0][-1]
+                resilience.log_mem_info("Clone Start (Single Stream)")
 
-                # Pre-allocate buffer to avoid fragmented heap allocations
-                buffer = bytearray(BULK_COUNT * 256)
+                # Request ALL sectors in a single persistent stream
+                url = f"{remote_url}/sectors/{disk_name}/0?count={total_sectors}"
+                sock = resilience.open_remote_stream(url, addr=remote_addr)
+                if not sock:
+                    raise Exception(f"Failed to open clone stream at {url}")
 
-                with open(local_path, 'wb') as f:
-                    lsn = 0
-                    while lsn < total_sectors:
-                        count = min(BULK_COUNT, total_sectors - lsn)
-                        url = f"{remote_url}/sectors/{disk_name}/{lsn}?count={count}"
-                        
-                        sock = resilience.open_remote_stream(url)
-                        if not sock:
-                            raise Exception(f"Failed to open stream at LSN {lsn}")
-                        
-                        try:
-                            # Read exactly count*256 bytes into our pre-allocated buffer
-                            expected = count * 256
-                            view = memoryview(buffer)[:expected]
+                try:
+                    CHUNK_SIZE = 4096 # 16 sectors at a time (SD-aligned)
+                    buffer = bytearray(CHUNK_SIZE)
+                    view = memoryview(buffer)
+                    
+                    with open(local_path, 'wb') as f:
+                        lsn = 0
+                        while lsn < total_sectors:
+                            count = min(CHUNK_SIZE // 256, total_sectors - lsn)
+                            expected_bytes = count * 256
+                            
+                            # Read from persistent socket
                             pos = 0
-                            while pos < expected:
-                                n = sock.readinto(view[pos:])
+                            while pos < expected_bytes:
+                                n = sock.readinto(view[pos:expected_bytes])
                                 if n == 0: break
                                 pos += n
+                                resilience.feed_wdt()
                             
-                            if pos < expected:
-                                raise Exception(f"Empty stream at LSN {lsn} (got {pos}/{expected})")
+                            if pos < expected_bytes:
+                                raise Exception(f"Stream ended early at LSN {lsn} (got {pos}/{expected_bytes})")
                             
-                            f.write(view)
-                        finally:
-                            sock.close()
-
-                        lsn += count
-                        _clone_progress['progress'] = lsn
-                        resilience.feed_wdt()
-                        await asyncio.sleep(0)  # Yield to other tasks
-                        
-                        if lsn % 64 == 0:
-                            gc.collect()
+                            f.write(view[:expected_bytes])
+                            lsn += count
+                            _clone_progress['progress'] = lsn
+                            
+                            # Yield to web server and other tasks
+                            await asyncio.sleep(0)
+                            
+                            if lsn % 128 == 0:
+                                resilience.log_mem_info(f"Cloning {lsn}/{total_sectors}")
+                                gc.collect()
+                finally:
+                    sock.close()
+                    gc.collect()
 
                 activity_led.off()
                 _clone_progress['state'] = 'swapping'
@@ -837,7 +883,7 @@ async def remote_clone_endpoint(request):
                     from drivewire import VirtualDrive
                     new_drive = VirtualDrive(local_path)
                     if new_drive.file:
-                        app.dw_server.swap_drive(drive_num, new_drive)
+                        await app.dw_server.swap_drive(drive_num, new_drive)
                         # Update config to point to local path and persist
                         drives = config.get('drives')
                         drives[drive_num] = local_path
