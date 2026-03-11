@@ -10,11 +10,12 @@ Before starting any work on the DriveWire MicroPython server, **read the knowled
 - **[task-priority.md](task-priority.md)** — Performance & Tasking rules.
 - **[streaming-data.md](streaming-data.md)** — Memory-safe data patterns.
 - **[web-ui-standards.md](web-ui-standards.md)** — Responsive UI standards.
+- **[error-recovery.md](error-recovery.md)** — Timeout and WDT recovery.
 - **[code-quality.md](code-quality.md)** — MicroPython coding standards.
 - **[testing-standards.md](testing-standards.md)** — Host and on-device testing.
-- **[feature-development.md](../workflows/feature-development.md) — Safe feature addition workflow.
-- **[hardware-verification.md](../workflows/hardware-verification.md) — Hardware health checks.
-- **[release-checklist.md](../workflows/release-checklist.md) — Pre-release verification.
+- **[feature-development.md](../workflows/feature-development.md)** — Safe feature addition workflow.
+- **[hardware-verification.md](../workflows/hardware-verification.md)** — Hardware health checks.
+- **[release-checklist.md](../workflows/release-checklist.md)** — Pre-release verification.
 - **[documentation-sync.md](documentation-sync.md)** — Code/Doc sync rules.
 
 ### Documentation & GitHub Pages

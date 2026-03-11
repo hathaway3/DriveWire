@@ -16,6 +16,7 @@ On the Pico W, disk and network latency are high but RAM is scarce. Efficient se
    - Use an LRU (Least Recently Used) cache for sector data.
    - **Limit**: `MAX_READ_CACHE_ENTRIES` (default 8) to stay within RAM bounds.
    - **Pattern**: Check `dirty_sectors` first, then `read_cache`, then disk/network.
+   - **Note**: This 2KB cache (8 sectors * 256B) is intentionally kept below the 4KB streaming threshold defined in [streaming-data.md](streaming-data.md).
 
 ### 🥇 Priority of Truth (Layering)
 To ensure absolute data integrity, the server must query layers in this strict order:

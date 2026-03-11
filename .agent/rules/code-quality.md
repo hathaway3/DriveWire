@@ -12,6 +12,7 @@ To ensure the DriveWire project remains performant and reliable on the RP2040 an
 2. **Avoid Large String Concatenation**: Use `f-strings` or `.format()` for simple formatting. For complex logs or long strings, use `write()` directly to a file or stream to avoid large intermediate allocations.
 3. **Pre-allocate Buffers**: For any loop doing I/O, pre-allocate a `bytearray` or `memoryview` outside the loop.
 4. **Explicit GC**: Call `gc.collect()` after significant memory-intensive operations (e.g., loading a large JSON config or initializing a network interface).
+5. **RAM Monitoring**: Use `resilience.log_mem_info(label)` to baseline performance during development and check for leaks in new features.
 
 ## ⚡ Performance
 

@@ -17,6 +17,10 @@ Use this workflow to troubleshoot or verify a new hardware setup (SD card, WiFi,
 2. **Write/Read Test**: Create a temporary file and read it back.
    - `with open('/sd/test.tmp', 'w') as f: f.write('PicoTest')`
 3. **Speed Test**: Measure time to write a 1MB file (4KB chunks). This confirms SPI bus performance (10MHz+).
+4. **Recovery**: If mount fails:
+   - Verify physical seat and write-protect tab.
+   - Use a PC to run `chkdsk` or `fsck` on the card.
+   - Re-format as FAT32 (NOT exFAT) if corruption persists.
 
 ## 🏎️ UART & Protocol Verification
 1. **Loopback Test**: Connect GP0 to GP1 and send/receive data at 115200 baud.
