@@ -74,3 +74,26 @@ utime.sleep(2)
 ```
 
 ---
+
+## 🐕 Hardware Constraints & WDT Strategy
+
+### Raspberry Pi Pico (RP2040/RP2350)
+- **Watchdog Timer (WDT)**: Once started (`machine.WDT`), it cannot be disabled without a hardware reset.
+- **Max Timeout**: ~8388ms (fixed to 8000ms in our codebase).
+- **RAM Constraints**: ~192KB usable on Pico W after MicroPython and network buffers.
+
+### WDT Feeding Strategy
+
+| Location | Pattern | Why |
+|----------|---------|-----|
+| `main.py` | Async task, every 2s | Primary feeder during normal operation |
+| `main.py` | `machine.Timer` on KeyboardInterrupt | Keeps device alive in REPL after Ctrl+C |
+| `drivewire.py` | After every opcode transaction | Prevents starvation during sustained I/O |
+| `drivewire.py` | Inside `read_bytes()` every 500ms | Prevents starvation during long UART timeouts |
+| `boot.py` | Between WiFi/SD/lib steps | Prevents starvation during slow boot sequence |
+| `web_server.py`| During upload/clones | Prevents starvation during long SD/Network I/O |
+| `drivewire.py` | Inside `flush_loop()` | Prevents starvation during multi-drive flush |
+
+---
+
+---

@@ -2,13 +2,14 @@
 
 Before starting any work on the DriveWire MicroPython server, **read the knowledge base**:
 
-- **[.agent/knowledge/drivewire_codebase.md](../knowledge/drivewire_codebase.md)** — Architecture, protocol implementation, security patterns, WDT strategy, exception handling conventions, and known limitations.
-
-This document is the single source of truth for codebase patterns and decisions. **Update it** when making significant architectural changes.
-
-- **[.agent/rules/documentation-sync.md](documentation-sync.md)** — Rules for ensuring documentation stays in sync with code changes.
-- **[.agent/rules/web-ui-standards.md](web-ui-standards.md)** — Best practices for responsive mobile/desktop UI development.
-- **[.agent/workflows/deploy-docs.md](../workflows/deploy-docs.md)** — Workflow for updating and verifying documentation links.
+- **[.agent/knowledge/drivewire_codebase.md](../knowledge/drivewire_codebase.md)** — Architecture, protocol implementation, and pointers to specialized rules.
+- **[.agent/rules/mp-raspi-pico.md](mp-raspi-pico.md)** — Hardware resilience, WDT strategy, and Pico-specific memory management.
+- **[.agent/rules/sector-caching.md](sector-caching.md)** — Read/Write caching and RBF-specific parser rules.
+- **[.agent/rules/security-exceptions.md](security-exceptions.md)** — Path traversal, XSS, and exception handling standards.
+- **[.agent/rules/task-priority.md](task-priority.md)** — Cooperative multitasking and Performance Checklist.
+- **[.agent/rules/streaming-data.md](streaming-data.md)** — Memory-safe data transfer patterns.
+- **[.agent/rules/web-ui-standards.md](web-ui-standards.md)** — Responsive mobile/desktop UI development.
+- **[.agent/rules/documentation-sync.md](documentation-sync.md)** — Syncing code and docs.
 
 ### Documentation & GitHub Pages
 

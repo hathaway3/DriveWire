@@ -1,4 +1,15 @@
-# Task Priority & Non-Blocking Resilience
+## ⚡ Performance & Context Checklist
+
+To ensure the Pico W remains responsive and the agent context remains efficient:
+
+1. **Avoid `view_file` on `drivewire.py`**: It is 1100+ lines. Use `grep_search` or `view_file_outline` first.
+2. **Minimize `os.listdir`**: Use the `_dsk_files_cache` in the Web API or query `shared_config`.
+3. **Batch Writes**: When updating multiple files on the SD card, call `os.sync()` only once at the end.
+4. **WDT Awareness**: If adding a loop that takes >1s, YOU MUST call `machine.WDT().feed()` inside that loop.
+5. **Grep Before View**: Before reading large files, use `grep_search` to find specific opcodes or functions.
+6. **Use Outlines**: Always call `view_file_outline` on new files over 200 lines before reading code.
+
+---
 
 To ensure that the DriveWire server remains responsive to the CoCo (guest computer), follow these rules regarding task priority and cooperative multitasking.
 

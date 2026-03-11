@@ -101,61 +101,19 @@ The Swift `DriveWireHost.swift` (~1768 lines) is the macOS reference implementat
 
 ---
 
-## Security Hardening (Applied 2026-03-07)
-
-### Path Traversal Protection
-
-- **Web API**: `_sanitize_path()` in `web_server.py` — rejects `..`, restricts to `/sd/` or root-level `.dsk` files. Applied to delete/download endpoints.
-- **RFM Protocol**: `_sanitize_rfm_path()` in `drivewire.py` — sandboxes all RFM file operations to `RFM_BASE_DIR = '/sd'`.
-- **NamedObj Mount**: Rejects filenames containing `..` or not ending in `.dsk`.
-
-### Input Validation
-
-- **Config GET**: WiFi password masked as `'********'` in API responses.
-- **File creation**: Capped at `MAX_DSK_SIZE = 50MB`.
-- **Monitor channel**: Validated to range -1 (off) through 31.
-- **Config POST**: Already had baud rate and timezone validation in `config.py`.
-
-### No Authentication
-
-The web server runs on port 80 with **no auth**. This is by design for a LAN-only embedded device, but be aware all endpoints are open.
-
 ---
 
-## WDT (Watchdog Timer) Patterns
+## 🛡️ Security, Resilience & Safety
 
-### Hardware Constraints (RP2040)
+Detailed rules and patterns for security, exception handling, and memory safety have been moved to specialized rule files to ensure clarity and avoid redundancy.
 
-- **Cannot be disabled** once started — `machine.WDT` is permanent until reboot.
-- **Max timeout**: ~8388ms (set to 8000ms). Originally was 15s but fixed to 8s.
-- Once started, must be fed continuously or the device resets.
-
-### Feeding Strategy
-
-| Location | Pattern | Why |
-|----------|---------|-----|
-| `main.py` line 47 | Async task, every 2s | Primary feeder during normal operation |
-| `main.py` line 68 | `machine.Timer` on KeyboardInterrupt | Keeps device alive in REPL after Ctrl+C |
-| `drivewire.py` run() | After every opcode transaction | Prevents starvation during sustained I/O |
-| `drivewire.py` read_bytes() | Every 500 iterations (~500ms) | Prevents starvation during UART timeout |
-| `boot.py` | Between WiFi/SD/lib steps | Prevents starvation during slow boot |
-| `web_server.py` | During upload/clone loops | Prevents starvation during long SD writes |
-| `drivewire.py` flush_loop() | Before each drive flush | Prevents starvation during multi-drive flush |
-
-### Known Safe Patterns
-
-- `boot.py` caps `time.sleep()` to 6s (within 8s WDT window).
-- `time_sync.py` retry: 3 × 1s = 3s max blocking (safe).
+- **[security-exceptions.md](../rules/security-exceptions.md)**: Path traversal protection, XSS prevention, and standardized exception handling.
+- **[mp-raspi-pico.md](../rules/mp-raspi-pico.md)**: Hardware constraints and the detailed **Watchdog Timer (WDT) Strategy**.
+- **[streaming-data.md](../rules/streaming-data.md)**: Patterns for handling large data transfers on memory-constrained hardware.
+- **[sector-caching.md](../rules/sector-caching.md)**: Write-back, LRU, and RBF-specific caching logic.
+- **[task-priority.md](../rules/task-priority.md)**: Cooperative multitasking and the **Performance Checklist**.
 
 ---
-
-## Exception Handling Conventions
-
-- **Always use `resilience.log()`** — never raw `print()` for errors (ensures file + syslog logging).
-- **No bare `except:`** — all exception clauses specify types (`OSError`, `Exception`, etc.) to avoid catching `KeyboardInterrupt`.
-- **Hardware I/O** (UART, SPI, WiFi): wrap in `try/except OSError`.
-- **TCP connections**: catch `Exception`, log, then `close_tcp()`.
-- **Levels**: 0=Debug, 1=Info, 2=Warning, 3=Error, 4=Critical.
 
 ---
 
@@ -204,12 +162,11 @@ During early boot, `syslog.py` was spamming `Errno 113 EHOSTUNREACH` before WiFi
 
 ---
 
-## ⚡ Performance Checklist for Agents
+---
 
-1. **Avoid `view_file` on `drivewire.py`**: It is 1100+ lines. Use `view_file_outline` or `grep_search` first.
-2. **Minimize `os.listdir`**: Use the `_dsk_files_cache` in the Web API or query `shared_config`.
-3. **Batch Writes**: When updating multiple files on the SD card, call `os.sync()` only once at the end.
-4. **WDT Awareness**: If adding a loop that takes >1s, YOU MUST call `machine.WDT().feed()` inside that loop.
+## ⚡ Performance & Context Checklist
+
+This checklist has been moved to **[task-priority.md](../rules/task-priority.md)** to ensure it is always visible during task execution.
 
 ---
 
@@ -221,128 +178,3 @@ During early boot, `syslog.py` was spamming `Errno 113 EHOSTUNREACH` before WiFi
 | `WEB:` | `web_server.py` | API requests, status, config changes. |
 | `SYS:` | `resilience.py` | Boot, WDT, Memory, WiFi status. |
 | `SD:` | `sd_card.py` | SPI init, mount, bus lock issues. |
-
----
-
-## Web UI Architecture
-
-- **Framework**: Microdot (lightweight async web framework, ~6KB)
-- **Theme**: "Radio Shack" retro terminal aesthetic — green-on-dark (`#0f0` on `#222`), `Michroma` headers, `VT323` monospace body
-- **Static files**: Served from `/www/static/` (script.js, style.css)
-- **Pages**: Main terminal view (`index.html`), Setup page, Debug page
-- **API polling**: Frontend polls `/api/status` for drive stats and log buffer, `/api/sd/status` for storage info
-
-### Responsive Design Patterns
-The UI uses a mobile-first philosophy with a **600px breakpoint**:
-- **Desktop**: 700px max-width centered container, 2-column grids for configuration.
-- **Mobile**: Full-width container, single-column stacked layout, larger touch targets for buttons.
-- **CRT Effect**: A sticky scanline overlay and flicker animation are applied globally but designed not to interfere with readability on high-DPI mobile screens.
-
----
-
-## Configuration
-
-Stored in [config.json](../../micropython/config.json). Key fields:
-
-| Key | Type | Description |
-|-----|------|-------------|
-| `baud_rate` | int | UART speed (validated against VALID_BAUD_RATES) |
-| `drives` | list[4] | Paths to .dsk files or `http://` URLs for remote drives |
-| `serial_map` | dict | Channel → `{host, port, mode}` for TCP bridging |
-| `sd_spi_*` | int | SPI pins for SD card (id, sck, mosi, miso, cs) |
-| `remote_servers` | list | `[{name, url}]` for remote sector servers |
-| `syslog_server` | str | Remote syslog host (UDP) |
-
----
-
-## Related Hardware
-
-### COCOMMC.PLD
-PLD logic file for the CoCo MMC hardware interface. Handles address decoding, SPI bus control, and data transfer synchronization between the CoCo bus and the DriveWire adapter. Past sessions optimized the state machine and fixed counter reset logic.
-
-### Serial Port Wiring (MAX3232)
-CoCo connects via UART through a MAX3232 level shifter with DB9 connector. Wiring documented in `micropython/docs/wiring.md`. Pins: VCC, GND, RXD, TXD.
-
-### NitrOS-9 Level 2 Integration
-Documentation for running NitrOS-9 Level 2 over DriveWire was created and lives in the project docs. NitrOS-9 uses the DriveWire protocol for both disk I/O and virtual serial terminals.
-
----
-
-## Known Limitations & Future Work
-
-1. **RFM write operations** (CREATE, MAKDIR, DELETE, WRITE, WRITLN) are **stubbed** — return error codes without implementation.
-2. **VWindow FASTWRITE** ($91–$9E) not handled — only standard serial FASTWRITE ($80–$8F) implemented.
-3. **SERSETSTAT SS.Open/SS.Close** not implemented — uses SERINIT/SERTERM (4.0.5+ approach) instead.
-4. **No HTTPS** — remote server communication is HTTP only.
-5. **Single client per TCP channel** — new connections override existing ones.
-6. **No web authentication** — all API endpoints are unauthenticated.
-7. **SD SPI speed** — stuck at 1MHz; higher speeds failed in testing.
-
----
-
-## Testing Infrastructure
-
-### Host-Side Simulation
-Unit tests exist in the `micropython/` directory (e.g., `test_drivewire.py`) that mock the `machine` and `network` modules. This allows verifying protocol logic on a standard Python host without a physical Pico.
-
-### Remote Drive Testing
-The `micropython/tools/sector_server.py` utility acts as a local HTTP sector server. It can be used to test `RemoteDrive` logic:
-- Serves `.dsk` files from a local directory via HTTP.
-- Supports the same sector-level API used by remote DriveWire servers.
-
----
-
-## Development Tips
-
-- **2-second boot delay** in `main.py` allows interrupting boot loops via Thonny/REPL.
-- **`resilience.blink_state()`** provides visual debugging: 'boot' (3 quick), 'wifi_wait' (slow), 'error' (rapid), 'running' (one long).
-- **SD card lock** (`sd_card.get_lock()`) should be acquired for concurrent SD access, though currently only used in `get_info()`.
-- **File cache invalidation**: Set `_dsk_files_cache = None` after any SD file modification to force rescan.
-- **Config reload**: Call `app.dw_server.reload_config()` after config changes to hot-reload drives and serial map.
-- **LED audit**: All SD card operations should trigger `activity_led.blink()` — 10 operations were missing and fixed in a past session.
-- **Unit tests**: Exist in `tests/` directory, mock `machine` and `network` modules for host-side testing.
-
----
-
-## Streaming Data Patterns
-
-On the Pico W's ~192KB RAM, all network data transfers >4KB **must** use streaming. See [streaming-data.md](../rules/streaming-data.md) for the full rule set.
-
-Three proven patterns exist in `web_server.py`:
-
-| Pattern | Function | Technique |
-|---------|----------|-----------|
-| **Async Upload** | `upload_file_endpoint` | `request.stream.read()` → bounded buffer (depth 3) → background SD writer |
-| **Raw Socket** | `_raw_http_get_stream` + `stream_remote_files` | Raw socket with byte-by-byte header scan + state-machine JSON parser |
-| **Chunked Clone** | `remote_clone_endpoint` | Bulk 4KB sector fetches → immediate SD write → periodic GC + WDT feed |
-
-**Key anti-patterns**: `urequests.get().content` (buffers entire response), `request.json` on large bodies, unbounded lists/bytearrays.
-
----
-
-## Security & Exception Handling
-
-This is an unauthenticated, LAN-only device. See [security-exceptions.md](../rules/security-exceptions.md) for the full rule set.
-
-| Category | Key Pattern | Reference |
-|----------|-------------|-----------|
-| **Path Traversal** | `_sanitize_path()` / `_sanitize_rfm_path()` reject `..` segments | `web_server.py`, `drivewire.py` |
-| **XSS Prevention** | `escHtml()` wraps all dynamic HTML; `textContent` for logs | `script.js` |
-| **Input Validation** | Config whitelist, drive array length, `.dsk` extension check | `web_server.py`, `config.py` |
-| **Exception Handling** | No bare `except:`; all errors logged via `resilience.log()` | All files |
-| **Crash Recovery** | Top-level handler: log → blink → sleep 10s → `machine.reset()` | `main.py` |
-
----
-
-## Sector Caching & Read-Ahead
-
-Efficient sector access is critical for OS-9 performance on high-latency storage. See [sector-caching.md](../rules/sector-caching.md) for the full rule set.
-
-| Pattern | Implementation | Benefit |
-|---------|----------------|---------|
-| **Write-Back** | `dirty_sectors` dict (max 16 sectors) | Auto-flushes at 4KB to prevent OOM |
-| **LRU Read Cache** | `read_cache` dict (8 entries) | Lowers latency for repeated access |
-| **Bulk Read-Ahead** | `RemoteDrive` fetches 8 sectors at once | Optimizes sequential read performance |
-| **Zero-Copy** | `memoryview` for cache entries | Reduces RAM usage and overhead |
-
-**Key resilience patterns**: 16-sector auto-flush limit, predictive `gc.collect()` in Drive constructors, `resilience.log_mem_info()` for debugging.

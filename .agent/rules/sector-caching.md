@@ -54,6 +54,27 @@ To ensure absolute data integrity, the server must query layers in this strict o
 2. **Immediate Sync on Every Write**: Avoid calling `os.sync()` after every 256-byte write; use the write-back cache instead.
 3. **Ignoring Read-Ahead**: Fetching only one sector at a time from a remote server is too slow for the CoCo's expectations.
 
+## 🧠 RBF Caching & RbfParser (OS-9 Specific)
+
+To ensure performance when dealing with OS-9 RBF file systems, follow these specialized rules.
+
+### RbfParser Helper Usage
+- **Statelessness**: The `RbfParser` must remain a stateless utility. Use `memoryview` where possible and return specific offsets.
+- **Minimal Allocation**: Avoid creating new objects (lists/dicts) during parsing. Use generators or yield offsets.
+- **LSN 0 Identification**: Use `RbfParser.is_lsn0(data)` to verify Identification Sectors before extracting `DD.DIR`.
+- **Inode Detection**: Use `RbfParser.is_file_descriptor(data)` to identify OS-9 File Descriptors.
+
+### Directory Cache Management
+- **LSN 0 Persistence**: Once identified, LSN 0 should NOT be evicted unless the drive is swapped/flushed.
+- **Breadcrumb Strategy**: Mark directory FD segments as "sticky" directory body sectors for high-priority caching.
+- **Flush on Swap**: The `directory_cache` MUST be cleared along with `read_cache` and `dirty_sectors` whenever a drive is swapped or closed.
+- **Isolation**: Each drive instance maintains its own `directory_cache`. No global directory caching.
+
+### 📊 Observability
+- **Stats**: Track entry counts and hit/miss rates for the directory cache in the drive's `stats` object.
+
+---
+
 ## 📐 Reference Implementations
 
 | Feature | Class | File |
@@ -62,3 +83,4 @@ To ensure absolute data integrity, the server must query layers in this strict o
 | LRU Read Cache | `VirtualDrive`/`RemoteDrive` | `drivewire.py` |
 | Bulk Read-Ahead | `RemoteDrive.read_sector` | `drivewire.py` |
 | Cache inheritance | `DriveWireServer.swap_drive` | `drivewire.py` |
+| RBF Parsing | `RbfParser` | `drivewire.py` |
