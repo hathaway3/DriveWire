@@ -77,65 +77,25 @@ All opcodes handled in `DriveWireServer.run()` main loop via `if/elif` chain:
 | **RFM** | OPEN, CHGDIR, SEEK, READ, READLN, GETSTT, CLOSE | ✅ Sandboxed to /sd |
 | **RFM (stubs)** | CREATE, MAKDIR, DELETE, WRITE, WRITLN, SETSTT | ❌ Not implemented |
 
-### Important Protocol Details
-
-- **FASTWRITE** is the primary CoCo→server data path (33% more efficient than SERWRITE). Encoded as opcode $80–$8F where channel = opcode & 0x0F.
-- **SERREAD** uses dual response modes: single-byte (byte1=1–15) and bulk (byte1=17–31, triggers SERREADM).
-- **READEX** has a 3-step handshake: server sends 256 bytes → CoCo sends checksum → server ACKs.
-- **Error codes**: E_NONE(0), E_UNIT(240), E_WP(242), E_CRC(243), E_READ(244), E_NOTRDY(246).
-
-### Swift Reference Comparison
-
-The Swift `DriveWireHost.swift` (~1768 lines) is the macOS reference implementation. A detailed cross-reference was performed against both the MicroPython code and the DriveWire Specification.
-
-**What Swift implements fully**: Disk I/O (READ, READEX, WRITE, REWRITE), TIME, PRINT, GETSTAT/SETSTAT, RESET, DWINIT, NAMEOBJ_MOUNT, RFM (all sub-ops including CREATE, MAKDIR, DELETE — which MicroPython stubs).
-
-**What Swift stubs**: Virtual serial handlers (SERREAD, SERWRITE, SERREADM, SERWRITEM, FASTWRITE) — Swift consumes the correct byte counts per the spec but doesn't implement actual TCP bridging or channel queues. The MicroPython implementation is **functionally ahead** on serial.
-
-**Key discrepancies resolved during cross-reference**:
-1. **FASTWRITE** — MicroPython was silently discarding data instead of routing to TCP connections (fixed)
-2. **SERREADM/SERWRITEM** — MicroPython had opcode constants defined but no handlers (added)
-3. **SERGETSTAT** — Missing handler caused protocol sync loss on CoCo side (added)
-4. **SERREAD bulk mode** — Single-byte mode worked but bulk response (byte1=17–31) was missing (added)
-5. **Terminal channel range** — README documented 0–14 but code supports 0–31 via `NUM_CHANNELS=32` (doc fixed)
+### Protocol Details
+| Context | Implementation Detail |
+|---------|-----------------------|
+| **FASTWRITE** | Primary CoCo->Server path ($80-$8F). channel = opcode & 0x0F. |
+| **SERREAD** | Supports 1-15 (single) and 17-31 (bulk, triggers SERREADM). |
+| **READEX** | 3-step: server sends 256B -> CoCo sends checksum -> Server ACKs. |
+| **Swift Ref** | Swift implements RFM fully but stubs virtual serial TCP bridging. |
 
 ---
 
----
-
-## 🛡️ Security, Resilience & Safety
-
-Detailed rules and patterns for security, exception handling, and memory safety have been moved to specialized rule files to ensure clarity and avoid redundancy.
-
-- **[security-exceptions.md](../rules/security-exceptions.md)**: Path traversal protection, XSS prevention, and standardized exception handling.
-- **[mp-raspi-pico.md](../rules/mp-raspi-pico.md)**: Hardware constraints and the detailed **Watchdog Timer (WDT) Strategy**.
-- **[streaming-data.md](../rules/streaming-data.md)**: Patterns for handling large data transfers on memory-constrained hardware.
-- **[sector-caching.md](../rules/sector-caching.md)**: Write-back, LRU, and RBF-specific caching logic.
-- **[task-priority.md](../rules/task-priority.md)**: Cooperative multitasking and the **Performance Checklist**.
-
----
-
----
-
-## Known Bugs & Gotchas (from past sessions)
-
-### Duplicate `/sd` Ghost Directory (RP2040)
-`os.listdir('/')` can return `['sd', ..., 'sd']` — a physical folder on flash named `sd` conflicts with the SD card mount point. This causes VFS hangs, upload failures, and delete failures. **Fix**: `fs_repair.scrub_root()` runs at boot to rename ghost directories.
-
-### SPI Bus Contention During Uploads
-Background polling of SD status (`/api/sd/status`) while a file upload is in progress causes SPI bus contention. The hardware-level SPI driver can deadlock, hanging uploads around 320KB. **Fix**: Frontend sets `_uploading = True` flag; status endpoint returns minimal info without SPI access during uploads.
-
-### SD Card SPI Clock Speed Limits
-Tested 1MHz, 2MHz, and 10MHz SPI clock speeds. **Only 1MHz is reliable.** 10MHz and 2MHz both caused initialization failures with a `sdcard.py` driver. MicroPython firmware's built-in SD driver is more stable than the `micropython-lib` version. The experimental `sdcard.py` was removed.
-
-### Frontend Polling Exhausts Pico W RAM  
-Concurrent HTTP requests from browser polling (`pollStatus` + `pollSdStatus` + `pollFiles`) can exhaust RAM on the Pico W (264KB total). **Fixes applied**: reduced polling frequency, added in-flight request guards (skip if previous request pending), added `gc.collect()` calls after each request handler, added `_dsk_files_cache` with 30s TTL.
-
-### Streaming Uploads Required
-Standard Microdot body parsing buffers the entire request in RAM, causing OOM for files >100KB. **Fix**: `request.stream` is used to read upload data in chunks, writing directly to SD.
-
-### Syslog UDP Spam Before WiFi
-During early boot, `syslog.py` was spamming `Errno 113 EHOSTUNREACH` before WiFi connected. **Fix**: Added `wlan.isconnected()` check before attempting UDP send, plus 30s exponential backoff after failures.
+### Known Bugs & Hardware Gotchas
+| Issue | Cause | Fix/Workaround |
+|-------|-------|----------------|
+| **Ghost `/sd`** | Folder named `sd` on flash conflicts with mount. | `fs_repair.scrub_root()` at boot. |
+| **SPI Deadlock** | Status polling during bulk uploads. | `_uploading` flag suspends polling. |
+| **SPI Clock** | Reliability issues at >1MHz. | Hardware SPI fixed at 1MHz. |
+| **OOM Polling** | Rapid concurrent polling from browser UI. | Polling guards + aggressive `gc.collect()`. |
+| **OOM Uploads** | Buffering >100KB files in Microdot. | Use `request.stream` for chunked SD write. |
+| **Syslog Spam** | Early boot UDP send without WiFi. | Added `isconnected()` check + 30s backoff. |
 
 ---
 

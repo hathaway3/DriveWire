@@ -2,14 +2,15 @@
 
 Before starting any work on the DriveWire MicroPython server, **read the knowledge base**:
 
-- **[.agent/knowledge/drivewire_codebase.md](../knowledge/drivewire_codebase.md)** — Architecture, protocol implementation, and pointers to specialized rules.
-- **[.agent/rules/mp-raspi-pico.md](mp-raspi-pico.md)** — Hardware resilience, WDT strategy, and Pico-specific memory management.
-- **[.agent/rules/sector-caching.md](sector-caching.md)** — Read/Write caching and RBF-specific parser rules.
-- **[.agent/rules/security-exceptions.md](security-exceptions.md)** — Path traversal, XSS, and exception handling standards.
-- **[.agent/rules/task-priority.md](task-priority.md)** — Cooperative multitasking and Performance Checklist.
-- **[.agent/rules/streaming-data.md](streaming-data.md)** — Memory-safe data transfer patterns.
-- **[.agent/rules/web-ui-standards.md](web-ui-standards.md)** — Responsive mobile/desktop UI development.
-- **[.agent/rules/documentation-sync.md](documentation-sync.md)** — Syncing code and docs.
+- **[drivewire_codebase.md](../knowledge/drivewire_codebase.md)** — Architecture & protocol summary.
+- **[protocol-standards.md](protocol-standards.md)** — DW/Sector server protocol standards.
+- **[mp-raspi-pico.md](mp-raspi-pico.md)** — Hardware resilience & WDT strategy.
+- **[sector-caching.md](sector-caching.md)** — Sector/RBF caching & parser.
+- **[security-exceptions.md](security-exceptions.md)** — Security & Error standards.
+- **[task-priority.md](task-priority.md)** — Performance & Tasking rules.
+- **[streaming-data.md](streaming-data.md)** — Memory-safe data patterns.
+- **[web-ui-standards.md](web-ui-standards.md)** — Responsive UI standards.
+- **[documentation-sync.md](documentation-sync.md)** — Code/Doc sync rules.
 
 ### Documentation & GitHub Pages
 
