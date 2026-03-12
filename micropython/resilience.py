@@ -213,12 +213,35 @@ def open_remote_stream(url: str, addr=None):
             host = hostport
             port = 80
         
+        gc.collect()
         if addr is None:
             addr = usocket.getaddrinfo(host, port)[0][-1]
             
-        sock = usocket.socket()
-        sock.settimeout(5)
-        sock.connect(addr)
+        # Retry up to 3 times on ENOMEM — LwIP TIME_WAIT PCBs may need time
+        sock = None
+        _delays = [1000, 2000]  # ms to wait on 1st and 2nd retry
+        for attempt in range(3):
+            try:
+                sock = usocket.socket()
+                sock.settimeout(5)
+                sock.connect(addr)
+                break
+            except OSError as e:
+                if sock is not None:
+                    try:
+                        sock.close()
+                    except Exception:
+                        pass
+                    sock = None
+                if e.errno == 12 and attempt < 2:
+                    # ENOMEM: GC + wait for LwIP to reclaim TIME_WAIT PCBs
+                    gc.collect()
+                    import time as _time
+                    _time.sleep_ms(_delays[attempt])
+                    feed_wdt()
+                    log(f"Retrying socket after ENOMEM cooldown ({attempt+1}/2)", level=0)
+                    continue
+                raise  # Re-raise on final attempt or non-ENOMEM error
         feed_wdt()
         
         # Send minimal HTTP/1.0 request (Connection: close implied)

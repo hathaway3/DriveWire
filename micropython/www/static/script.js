@@ -123,6 +123,7 @@ async function init() {
     // Fetch remote files and wait for them, then rebuild dropdown options so they include remote drives
     await fetchRemoteFiles();
     refreshDriveSelects();
+    await new Promise(r => setTimeout(r, 500)); // Socket TIME_WAIT cooldown
 
     // Check SD card status on load
     pollSdStatus();
@@ -151,6 +152,14 @@ async function init() {
 
     // Config just loaded from server, clear dirty state
     clearConfigDirty();
+
+    // Allow switchTab to trigger heavy refreshes now that init is done
+    _initComplete = true;
+
+    // If the initial tab was 'files', now do the heavy refresh
+    if (VALID_TABS.includes(initialHash) && initialHash === 'files') {
+        refreshFilesTab();
+    }
 }
 
 function markConfigDirty() {
@@ -186,6 +195,8 @@ async function revertConfig() {
 let mountedFiles = [];
 let _driveAssignments = [null, null, null, null]; // Indexed by drive number
 let _pollInFlight = false;  // Global guard: only one poll/fetch at a time
+let _remoteInFlight = false;  // Guard: only one remote file fetch at a time
+let _initComplete = false;  // Suppress heavy tab refreshes during init
 let isUploading = false;
 let configDirty = false;
 let _dialogOpen = false;
@@ -214,7 +225,7 @@ function switchTab(tabName, updateHash = true) {
     const tabIdx = VALID_TABS.indexOf(tabName);
     if (tabIdx >= 0 && btns[tabIdx]) btns[tabIdx].classList.add('active');
 
-    if (tabName === 'files') {
+    if (tabName === 'files' && _initComplete) {
         refreshFilesTab();
     }
     if (tabName === 'drives') {
@@ -1112,6 +1123,8 @@ async function submitCreateDisk() {
 // ---------------------------------------------------------
 
 async function fetchRemoteFiles() {
+    if (_remoteInFlight) return;  // Prevent concurrent remote socket allocations
+    _remoteInFlight = true;
     try {
         const response = await fetch('/api/remote/files');
         if (response.ok) {
@@ -1137,6 +1150,8 @@ async function fetchRemoteFiles() {
     } catch (e) {
         console.warn('Failed to fetch remote files', e);
         _remoteFiles = [];
+    } finally {
+        _remoteInFlight = false;
     }
 }
 
@@ -1177,9 +1192,9 @@ function addRemoteServerRow(name, url) {
             <input type="text" class="remote-url" value="${escHtml(url)}" placeholder="http://192.168.1.100:8080">
         </div>
         <div class="remote-status" title="Connection status">⚪</div>
-        <div style="display:flex; align-items:flex-end; gap:5px;">
-            <button class="btn btn-action" onclick="testRemoteServer(this)" style="font-size:1em; padding:8px 10px;">TEST</button>
-            <button class="btn btn-danger" onclick="this.closest('.remote-row').remove(); markConfigDirty();">X</button>
+        <div class="remote-actions">
+            <button class="btn btn-action btn-test" onclick="testRemoteServer(this)">TEST</button>
+            <button class="btn btn-danger btn-delete" onclick="this.closest('.remote-row').remove(); markConfigDirty();">X</button>
         </div>
     `;
     container.appendChild(div);
