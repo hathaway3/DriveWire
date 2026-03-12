@@ -151,8 +151,8 @@ def _sanitize_path(path):
     """Validate and normalize file paths. Returns sanitized path or None."""
     if not path or not isinstance(path, str):
         return None
-    # Reject path traversal attempts
-    if '..' in path:
+    # Reject path traversal attempts (only block ".." as a full segment)
+    if any(part == '..' for part in path.split('/')):
         return None
     # Must be under /sd/ or be a .dsk file directly in root
     if path.startswith('/sd/'):

@@ -619,7 +619,7 @@ class DriveWireServer:
         """Resolve an RFM path to a safe absolute path under RFM_BASE_DIR."""
         if not path_str:
             return None
-        if '..' in path_str:
+        if any(part == '..' for part in path_str.split('/')):
             return None
         # Prepend base dir if path is relative
         if not path_str.startswith('/'):
