@@ -1,5 +1,12 @@
 document.addEventListener('DOMContentLoaded', init);
 
+window.addEventListener('hashchange', () => {
+    const hash = window.location.hash.replace('#', '');
+    if (VALID_TABS.includes(hash)) {
+        switchTab(hash, false);
+    }
+});
+
 /** Escape HTML special characters to prevent XSS */
 function escHtml(str) {
     if (str == null) return '';
@@ -130,6 +137,15 @@ async function init() {
 
     // Config just loaded from server, clear dirty state
     clearConfigDirty();
+
+    // Check initial hash
+    const initialHash = window.location.hash.replace('#', '');
+    if (VALID_TABS.includes(initialHash)) {
+        switchTab(initialHash, false);
+    } else {
+        history.replaceState(null, null, '#config');
+        switchTab('config', false);
+    }
 }
 
 function markConfigDirty() {
@@ -173,8 +189,13 @@ let _remoteFiles = [];    // Cached remote file list
 let _cloneServerUrl = ''; // For clone modal
 let _cloneDiskName = '';  // For clone modal
 
-function switchTab(tabName) {
+function switchTab(tabName, updateHash = true) {
     if (!VALID_TABS.includes(tabName)) return;
+
+    if (updateHash && window.location.hash !== '#' + tabName) {
+        window.location.hash = tabName;
+        return; // Let the hashchange event trigger the UI update to avoid double-execution
+    }
 
     // Hide all tabs
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
