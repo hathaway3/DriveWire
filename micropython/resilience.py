@@ -263,5 +263,10 @@ def open_remote_stream(url: str, addr=None):
         
         return sock
     except Exception as e:
+        if 'sock' in locals() and sock is not None:
+            try:
+                sock.close()
+            except Exception:
+                pass
         log(f"Remote stream error ({url}): {e}", level=2)
         return None

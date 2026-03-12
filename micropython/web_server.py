@@ -639,6 +639,7 @@ def stream_remote_info(server_url):
     This avoids buffering the entire JSON response which can cause ENOMEM.
     """
     gc.collect()
+    resilience.feed_wdt()
     sock = resilience.open_remote_stream(server_url.rstrip('/') + '/info')
     if not sock:
         return
@@ -656,7 +657,6 @@ def stream_remote_info(server_url):
             resilience.feed_wdt()
             
             for b in chunk:
-                c = chr(b)
                 if not in_disks:
                     # Look for "disks": [
                     buffer.append(b)
@@ -704,6 +704,7 @@ def stream_remote_files(server_url):
     Yields one filename at a time, never holding more than ~100 bytes.
     """
     gc.collect()
+    resilience.feed_wdt()
     sock = resilience.open_remote_stream(server_url.rstrip('/') + '/files')
     if not sock:
         return
@@ -711,7 +712,7 @@ def stream_remote_files(server_url):
     try:
         in_string = False
         escape = False
-        current_str = []
+        current_str = bytearray()
         
         while True:
             chunk = sock.recv(64)
@@ -719,24 +720,25 @@ def stream_remote_files(server_url):
                 break
             resilience.feed_wdt()
             for b in chunk:
-                c = chr(b) if isinstance(b, int) else chr(b)
+                # In MicroPython iterating over bytes yields ints
+                b_val = b if isinstance(b, int) else ord(b)
                 if escape:
-                    if c == 'n': current_str.append('\n')
-                    elif c == 'r': current_str.append('\r')
-                    elif c == 't': current_str.append('\t')
-                    else: current_str.append(c)
+                    if b_val == 110: current_str.append(10) # 'n' -> '\n'
+                    elif b_val == 114: current_str.append(13) # 'r' -> '\r'
+                    elif b_val == 116: current_str.append(9)  # 't' -> '\t'
+                    else: current_str.append(b_val)
                     escape = False
-                elif c == '\\':
+                elif b_val == 92: # '\\'
                     escape = True
-                elif c == '"':
+                elif b_val == 34: # '"'
                     if in_string:
-                        yield ''.join(current_str)
-                        current_str = []
+                        yield current_str.decode('utf-8')
+                        current_str = bytearray()
                         in_string = False
                     else:
                         in_string = True
                 elif in_string:
-                    current_str.append(c)
+                    current_str.append(b_val)
     except Exception as e:
         resilience.log(f"Remote files stream error ({server_url}): {e}", level=2)
     finally:
@@ -785,31 +787,30 @@ async def remote_files_endpoint(request):
 
 @app.route('/api/remote/test', methods=['POST'])
 async def remote_test_endpoint(request):
-    """Test connectivity to a remote sector server (streaming proxy)."""
+    """Test connectivity to a remote sector server (single socket)."""
     try:
         body = request.json
         url = body.get('url', '').rstrip('/')
         if not url:
             return {'error': 'Missing URL'}, 400
         
-        # Connectivity check
+        gc.collect()
+        # Single socket: open once, reuse for both validation and streaming
         sock = resilience.open_remote_stream(url + '/info')
         if not sock:
             return {'status': 'error', 'message': 'Cannot reach remote server'}, 502
-        sock.close()
 
         async def generate():
             yield '{"status":"ok","info":'
-            rsock = resilience.open_remote_stream(url + '/info')
-            if rsock:
-                try:
-                    while True:
-                        chunk = rsock.recv(512)
-                        if not chunk: break
-                        yield chunk
-                        resilience.feed_wdt()
-                finally:
-                    rsock.close()
+            try:
+                while True:
+                    chunk = sock.recv(512)
+                    if not chunk: break
+                    yield chunk
+                    resilience.feed_wdt()
+            finally:
+                sock.close()
+                gc.collect()
             yield '}'
 
         return Response(generate(), headers={'Content-Type': 'application/json'})

@@ -131,8 +131,12 @@ async function init() {
     initFilesTab();
 
     // Automatically test each configured remote server connection on startup
+    // Serialize tests to avoid concurrent socket allocation on the Pico W
     const remoteTestBtns = document.querySelectorAll('#remote-servers-container .remote-row .btn-action');
-    remoteTestBtns.forEach(btn => testRemoteServer(btn));
+    for (const btn of remoteTestBtns) {
+        await testRemoteServer(btn);
+        await new Promise(r => setTimeout(r, 200)); // GC breathing room
+    }
 
     // Start Polling (staggered to avoid concurrent bursts)
     setInterval(pollStatus, 3000);  // 3 seconds for live time + heartbeat
