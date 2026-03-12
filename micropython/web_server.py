@@ -633,6 +633,71 @@ async def monitor_chan_endpoint(request):
 _cloning = False
 _clone_progress = {'state': 'idle', 'progress': 0, 'total': 0, 'error': None}
 
+def stream_remote_info(server_url):
+    """Fetch info from a remote server and yield disk objects one by one.
+    
+    This avoids buffering the entire JSON response which can cause ENOMEM.
+    """
+    gc.collect()
+    sock = resilience.open_remote_stream(server_url.rstrip('/') + '/info')
+    if not sock:
+        return
+    
+    try:
+        import json
+        buffer = bytearray()
+        in_disks = False
+        depth = 0
+        
+        while True:
+            chunk = sock.recv(128)
+            if not chunk:
+                break
+            resilience.feed_wdt()
+            
+            for b in chunk:
+                c = chr(b)
+                if not in_disks:
+                    # Look for "disks": [
+                    buffer.append(b)
+                    if b == ord('['):
+                        if b'"disks"' in buffer:
+                            in_disks = True
+                            buffer = bytearray()
+                            depth = 1
+                    elif len(buffer) > 100: 
+                        buffer.pop(0) # Sliding window
+                else:
+                    # Inside the disks array
+                    if b == ord(',' ) and depth == 1:
+                        # Skip commas between objects in the array
+                        continue
+                    buffer.append(b)
+                    if b == ord('{'):
+                        depth += 1
+                    elif b == ord('}'):
+                        depth -= 1
+                        if depth == 1:
+                            # Found a complete disk object
+                            try:
+                                yield json.loads(buffer)
+                            except:
+                                pass
+                            buffer = bytearray()
+                    elif b == ord(']'):
+                        depth -= 1
+                        if depth == 0:
+                            in_disks = False
+                            break
+    except Exception as e:
+        resilience.log(f"Remote info stream error ({server_url}): {e}", level=2)
+    finally:
+        try:
+            sock.close()
+        except Exception:
+            pass
+        gc.collect()
+
 def stream_remote_files(server_url):
     """Fetch list of .dsk files from a remote server using raw sockets.
     
@@ -720,30 +785,34 @@ async def remote_files_endpoint(request):
 
 @app.route('/api/remote/test', methods=['POST'])
 async def remote_test_endpoint(request):
-    """Test connectivity to a remote sector server."""
+    """Test connectivity to a remote sector server (streaming proxy)."""
     try:
         body = request.json
         url = body.get('url', '').rstrip('/')
         if not url:
             return {'error': 'Missing URL'}, 400
         
-        # Avoid urequests - use the raw stream helper to check info
+        # Connectivity check
         sock = resilience.open_remote_stream(url + '/info')
-        if sock:
-            # For test endpoint, it's small enough to buffer temporarily
-            # but we use a manually controlled read to avoid Response overhead
-            try:
-                data = bytearray()
-                while len(data) < 4096: # Safety cap
-                    chunk = sock.recv(512)
-                    if not chunk: break
-                    data.extend(chunk)
-                info = json.loads(data)
-                return {'status': 'ok', 'info': info}
-            finally:
-                sock.close()
-        
-        return {'status': 'error', 'message': 'Cannot reach remote server'}, 502
+        if not sock:
+            return {'status': 'error', 'message': 'Cannot reach remote server'}, 502
+        sock.close()
+
+        async def generate():
+            yield '{"status":"ok","info":'
+            rsock = resilience.open_remote_stream(url + '/info')
+            if rsock:
+                try:
+                    while True:
+                        chunk = rsock.recv(512)
+                        if not chunk: break
+                        yield chunk
+                        resilience.feed_wdt()
+                finally:
+                    rsock.close()
+            yield '}'
+
+        return Response(generate(), headers={'Content-Type': 'application/json'})
     except Exception as e:
         return {'status': 'error', 'message': str(e)}, 502
     finally:
@@ -775,27 +844,13 @@ async def remote_clone_endpoint(request):
 
         # Check SD card space
         try:
-            # Query info via raw stream to find total sectors
-            sock = resilience.open_remote_stream(remote_url + '/info')
-            if not sock:
-                return {'error': 'Cannot reach remote server'}, 502
-            
-            try:
-                data = bytearray()
-                while len(data) < 8192: # info can be large if many disks
-                    chunk = sock.recv(1024)
-                    if not chunk: break
-                    data.extend(chunk)
-                info = json.loads(data)
-            finally:
-                sock.close()
-
-            # Find the disk in info
+            # Find the disk using streaming parser to avoid buffering massive /info
             total_sectors = 0
-            for d in info.get('disks', []):
+            for d in stream_remote_info(remote_url):
                 if d['name'] == disk_name:
                     total_sectors = d.get('total_sectors', 0)
                     break
+            
             if total_sectors == 0:
                 return {'error': f'Disk {disk_name} not found on remote server'}, 404
 

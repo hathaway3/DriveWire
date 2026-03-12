@@ -14,7 +14,7 @@ On the Pico W (~192KB RAM), buffering entire network payloads causes memory exha
 
 1. **SD Card I/O**: Use **4KB chunks** (SD-aligned) for reads and writes. This balances network efficiency with RAM usage.
 2. **Network Reads**: Match chunk size to SD write size (4096 bytes) to avoid intermediate buffering.
-3. **JSON Parsing**: For large responses, use character-by-character state-machine parsing (see `stream_remote_files` for the reference pattern).
+3. **JSON Parsing**: For large responses (e.g., `/info` or `/files`), use character-by-character state-machine parsing to extract required fields without loading the entire JSON into a dictionary.
 
 ## 🚰 Backpressure & Flow Control
 
@@ -42,5 +42,5 @@ On the Pico W (~192KB RAM), buffering entire network payloads causes memory exha
 | Pattern | File | Lines | Use Case |
 |---------|------|-------|----------|
 | Async Upload Pipeline | `web_server.py` | `upload_file_endpoint` | Browser → Pico file upload with backpressure |
-| Raw Socket Streaming | `web_server.py` | `_raw_http_get_stream` + `stream_remote_files` | Parsing large JSON lists from remote servers |
+| Raw Socket Streaming | `web_server.py` | `_raw_http_get_stream`, `stream_remote_files`, `stream_remote_info` | Parsing large JSON lists or objects from remote servers |
 | Chunked Clone Download | `web_server.py` | `remote_clone_endpoint` | Sector-by-sector disk image cloning |
