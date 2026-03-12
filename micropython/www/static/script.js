@@ -1,4 +1,5 @@
 document.addEventListener('DOMContentLoaded', init);
+const VALID_TABS = ['config', 'status', 'terminal', 'drives', 'files'];
 
 window.addEventListener('hashchange', () => {
     const hash = window.location.hash.replace('#', '');
@@ -53,6 +54,15 @@ async function fetchFiles() {
 }
 
 async function init() {
+    // Check initial hash before doing async work to prevent UI flashing
+    const initialHash = window.location.hash.replace('#', '');
+    if (VALID_TABS.includes(initialHash)) {
+        switchTab(initialHash, false);
+    } else {
+        history.replaceState(null, null, '#config');
+        switchTab('config', false);
+    }
+
     const [config, files] = await Promise.all([fetchConfig(), fetchFiles()]);
 
     document.getElementById('baud').value = config.baud_rate || 115200;
@@ -137,15 +147,6 @@ async function init() {
 
     // Config just loaded from server, clear dirty state
     clearConfigDirty();
-
-    // Check initial hash
-    const initialHash = window.location.hash.replace('#', '');
-    if (VALID_TABS.includes(initialHash)) {
-        switchTab(initialHash, false);
-    } else {
-        history.replaceState(null, null, '#config');
-        switchTab('config', false);
-    }
 }
 
 function markConfigDirty() {
@@ -178,7 +179,6 @@ async function revertConfig() {
     }
 }
 
-const VALID_TABS = ['config', 'status', 'terminal', 'drives', 'files'];
 let mountedFiles = [];
 let _driveAssignments = [null, null, null, null]; // Indexed by drive number
 let _pollInFlight = false;  // Global guard: only one poll/fetch at a time
