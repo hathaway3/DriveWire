@@ -66,7 +66,7 @@ OP_RFM_CLOSE = micropython.const(0x0D)
 # Constants for memory management
 MAX_READ_CACHE_ENTRIES = micropython.const(8)
 MAX_DIR_CACHE_ENTRIES = micropython.const(32)
-MAX_DIRTY_CACHE_ENTRIES = micropython.const(16) # 4KB auto-flush threshold
+MAX_DIRTY_CACHE_ENTRIES = micropython.const(8) # 2KB auto-flush threshold
 MAX_CHANNEL_BUFFER_SIZE = micropython.const(256)
 MAX_LOG_ENTRIES = micropython.const(20)
 MAX_TERMINAL_BUFFER_SIZE = micropython.const(512)

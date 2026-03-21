@@ -29,20 +29,28 @@ Most endpoints return JSON. For example, `/api/status` returns a structure like:
 
 ```json
 {
-  "uptime": 12345,
-  "mem_free": 150240,
-  "drives": [
-    {"file": "NitrOS9.dsk", "storage": "SD", "readonly": false},
-    {"file": "", "storage": "", "readonly": false},
+  "server_time": "2026-03-21 09:00:00",
+  "stats": {
+    "last_opcode": 82,
+    "latency": {"rx_header_us": 120, "turnaround_us": 450}
+  },
+  "drive_stats": [
+    {
+      "filename": "NitrOS9.dsk",
+      "full_path": "/sd/NitrOS9.dsk",
+      "read_hits": 1050,
+      "read_misses": 210,
+      "dirty_count": 0,
+      "is_remote": false
+    },
+    null,
     ...
   ],
-  "stats": {
-    "reads": 1050,
-    "writes": 210,
-    "hits": 840
-  }
+  "logs": ["..."],
+  "monitor_chan": 0
 }
 ```
+
 
 ## Internal Use
 

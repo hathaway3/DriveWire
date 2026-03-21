@@ -88,8 +88,8 @@ def log(message: str, level: int = 1, _from_syslog: bool = False) -> None:
     try:
         with open(LOG_FILE, "a") as f:
             f.write(log_line)
-            # Only sync on critical errors/warnings to avoid UART latency spikes
-            if level >= 3:
+            # Sync on warnings and errors to ensure persistence
+            if level >= 2:
                 os.sync()
     except (OSError, KeyboardInterrupt):
         pass
