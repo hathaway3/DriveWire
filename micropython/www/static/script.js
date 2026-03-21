@@ -526,29 +526,49 @@ async function handleFileUpload(files) {
 
         try {
             const xhr = new XMLHttpRequest();
-            let uploadPollInterval;
+            let uploadPollTimeoutId; // Use a single ID for setTimeout
 
             const promise = new Promise((resolve, reject) => {
                 // Remove xhr.upload.onprogress to avoid browser TCP buffering jumps
 
-                // Start polling the server for TRUE SD card write progress
-                uploadPollInterval = setInterval(async () => {
+                // Poll for progress using recursive setTimeout to avoid overlapping requests
+                let pollInFlight = false;
+                let uploadDone = false;
+                const pollUploadStatus = async () => {
+                    if (uploadDone || pollInFlight) return;
+                    pollInFlight = true;
                     try {
-                        const res = await fetch('/api/files/upload_status');
-                        if (res.ok) {
-                            const stats = await res.json();
-                            if (stats.total > 0) {
-                                const pct = (stats.written / stats.total) * 100;
+                        const response = await fetch('/api/files/upload_status');
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (data.total > 0) {
+                                const pct = (data.written / data.total) * 100;
                                 progressBar.style.width = pct + '%';
+                                statusEl.textContent = `UPLOADING: ${Math.round(pct)}% (${Math.round(data.written / 1024)}KB / ${Math.round(data.total / 1024)}KB)`;
+
+                                if (data.written >= data.total) {
+                                    clearTimeout(uploadPollTimeoutId);
+                                    // The XHR onload will handle the final resolve/reject
+                                    return;
+                                }
                             }
                         }
                     } catch (e) {
                         // Ignore polling errors, let the XHR error handler deal with fatal network issues
+                        console.warn("Upload status poll failed", e);
+                    } finally {
+                        pollInFlight = false;
+                        uploadPollTimeoutId = setTimeout(pollUploadStatus, 1000); // Schedule next poll
                     }
-                }, 500);
+                };
+
+                // Start initial poll
+                uploadPollTimeoutId = setTimeout(pollUploadStatus, 1000);
+
 
                 xhr.onload = () => {
-                    clearInterval(uploadPollInterval);
+                    uploadDone = true;
+                    clearTimeout(uploadPollTimeoutId);
                     if (xhr.status === 200) {
                         try {
                             const data = JSON.parse(xhr.responseText);
@@ -567,7 +587,8 @@ async function handleFileUpload(files) {
                 };
 
                 xhr.onerror = () => {
-                    clearInterval(uploadPollInterval);
+                    uploadDone = true;
+                    clearTimeout(uploadPollTimeoutId);
                     reject('NETWORK ERROR');
                 };
             });
@@ -1078,8 +1099,10 @@ async function submitCreateDisk() {
 
         // Poll for progress
         let creationDone = false;
+        let pollInFlight = false;
         const pollInterval = setInterval(async () => {
-            if (creationDone) return;
+            if (creationDone || pollInFlight) return;
+            pollInFlight = true;
             try {
                 const statusRes = await fetch('/api/files/create/status');
                 const status = await statusRes.json();
@@ -1107,8 +1130,10 @@ async function submitCreateDisk() {
                 }
             } catch (e) {
                 console.warn('Disk creation status poll error', e);
+            } finally {
+                pollInFlight = false;
             }
-        }, 500);
+        }, 1000);
 
     } catch (error) {
         alert('Network error while creating disk: ' + error.message);
@@ -1322,8 +1347,10 @@ async function submitClone() {
 
         // Poll for progress
         let cloneDone = false;
+        let pollInFlight = false;
         const pollInterval = setInterval(async () => {
-            if (cloneDone) return;
+            if (cloneDone || pollInFlight) return;
+            pollInFlight = true;
             try {
                 const statusRes = await fetch('/api/remote/clone/status');
                 const status = await statusRes.json();
@@ -1372,8 +1399,10 @@ async function submitClone() {
                 }
             } catch (e) {
                 console.warn('Clone status poll error', e);
+            } finally {
+                pollInFlight = false;
             }
-        }, 500);
+        }, 1000);
 
     } catch (e) {
         document.getElementById('clone-status-text').textContent = 'NETWORK ERROR: ' + e;

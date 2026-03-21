@@ -359,7 +359,7 @@
         /* Remote Server Styles */
         .remote-row {
             display: flex;
-            gap: 15px;
+            gap: 10px;
             margin-bottom: 15px;
             align-items: flex-end;
             border-bottom: 1px dashed var(--coco-dark-green);
@@ -375,6 +375,27 @@
             padding: 8px 4px;
             min-width: 24px;
             text-align: center;
+            align-self: flex-end;
+        }
+
+        .remote-row .remote-actions {
+            display: flex;
+            align-items: flex-end;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .remote-row .btn-test {
+            font-size: 1em;
+            padding: 8px 12px;
+            width: auto;
+        }
+
+        .remote-row .btn-delete {
+            font-size: 0.9em;
+            padding: 8px 10px;
+            width: auto;
+            line-height: 1;
         }
 
         .remote-badge {
