@@ -37,6 +37,19 @@ To ensure absolute data integrity, the server must query layers in this strict o
 - **Cache Eviction**: If a dirty sector is evicted from the `read_cache` (due to a large read-ahead batch filling the LRU slots), it **remains safely in the `dirty_sectors` list** and continues to be the "source of truth" for that LSN.
 - **Consistency**: When a write occurs, the entry is updated in **both** `dirty_sectors` and `read_cache` to ensure the next sequential read reflects the modification.
 
+## 🚀 Read-Ahead Strategy
+
+1. **Bulk Remote Fetch**: 
+   - When a cache miss occurs on a `RemoteDrive`, fetch up to 8 sequential sectors in a single HTTP request (`?count=8`).
+   - Populating the cache with sequential sectors dramatically improves OS-9 multi-sector read performance.
+2. **Adaptive Read-Ahead (Planned)**: 
+   - Future implementations should consider the CoCo's access pattern (e.g., sequential vs. random).
+
+### 🔄 Read-Ahead vs. Dirty Interaction
+- **Non-Blocking Logic**: A read-ahead operation never flushes dirty sectors, and dirty sectors never block a read-ahead fetch.
+- **Cache Eviction**: If a dirty sector is evicted from the `read_cache` (due to a large read-ahead batch filling the LRU slots), it **remains safely in the `dirty_sectors` list** and continues to be the "source of truth" for that LSN.
+- **Consistency**: When a write occurs, the entry is updated in **both** `dirty_sectors` and `read_cache` to ensure the next sequential read reflects the modification.
+
 ## 🚰 Memory Efficiency
 
 1. **Pre-allocate Buffers**: Use a single `bytearray(256)` for sector transfers where possible instead of creating new ones.

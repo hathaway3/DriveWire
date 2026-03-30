@@ -30,6 +30,12 @@ To ensure the DriveWire project remains performant and reliable on the RP2040 an
 2. **Log Every Exception**: All caught exceptions must be logged using `resilience.log(msg, level=N)`.
 3. **Hardware Isolation**: Hardware-interacting code must be wrapped in `try...except` to prevent a single component failure (e.g., a bad SD card) from crashing the entire server.
 
+## 🚰 Async Resilience
+
+1. **Yielding vs. WDT**: `await asyncio.sleep(0)` yields to the scheduler, allowing other tasks (like the UART loop) to run. `resilience.feed_wdt()` only prevents a hardware reset.
+2. **High-Latency Loops**: Any loop performing SD or Network I/O MUST call both `await asyncio.sleep(0)` for responsiveness and `resilience.feed_wdt()` for stability.
+3. **Non-Blocking I/O**: Use `stream.read()` and `stream.write()` with `await` instead of blocking `file.read()`.
+
 ## 📖 Documentation & Readability
 
 1. **Type Hints**: Use standard Python type hints. Use the `try...except ImportError` pattern for `typing` to ensure compatibility and save memory on the device.
