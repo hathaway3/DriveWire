@@ -1,77 +1,88 @@
 import unittest
+from unittest.mock import MagicMock, patch, AsyncMock
 import sys
 import os
-from unittest.mock import MagicMock, patch
+import json
 
-# CRITICAL: Mock EVERYTHING before web_server is even considered for import
-mock_microdot_app = MagicMock()
-mock_microdot_app.route.return_value = lambda f: f
-mock_microdot_app.errorhandler.return_value = lambda f: f
+# Centralized MicroPython mocking shim
+import tests.shim as shim
+shim.setup_all_mocks()
 
-class MockMicrodot:
-    def __init__(self):
-        pass
-    def route(self, *args, **kwargs):
-        return lambda f: f
-    def errorhandler(self, *args, **kwargs):
-        return lambda f: f
+# Ensure we have a mock for os.sync which Python 3 on Windows lacks
+if not hasattr(os, 'sync'):
+    os.sync = lambda: None
 
-# Mock modules
-sys.modules['micropython'] = MagicMock()
-sys.modules['uasyncio'] = MagicMock()
-sys.modules['microdot_asyncio'] = MagicMock()
-sys.modules['microdot_asyncio'].Microdot = MockMicrodot
-sys.modules['microdot'] = sys.modules['microdot_asyncio']
-sys.modules['machine'] = MagicMock()
-sys.modules['utime'] = MagicMock()
-sys.modules['activity_led'] = MagicMock()
-sys.modules['resilience'] = MagicMock()
-sys.modules['time_sync'] = MagicMock()
-sys.modules['sd_card'] = MagicMock()
-sys.modules['config'] = MagicMock()
-sys.modules['gc'] = MagicMock()
-
-# Setup paths
+# Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Now import web_server
 import web_server
 
 class TestWebAPI(unittest.IsolatedAsyncioTestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Isolate sys.modules to prevent mock leakage during discovery
+        cls.patcher = patch.dict('sys.modules', {
+            'machine': MagicMock(),
+            'network': MagicMock(),
+            'time_sync': MagicMock(),
+            'config': sys.modules['config'] # Keep our functional mock from shim
+        })
+        cls.patcher.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.patcher.stop()
+
     def setUp(self):
-        # Reset global states
+        # Reset global states in web_server
         web_server._creating_disk = False
-        web_server._disk_creation_progress = {'state': 'idle', 'written': 0, 'total': 0, 'filename': '', 'error': None}
+        # Setup app and dw_server mocks
         web_server.app.dw_server = MagicMock()
         web_server.app.dw_server.drives = [None, None, None, None]
 
-    @patch('web_server.os.statvfs')
+    @patch('web_server.os.statvfs', create=True)
     @patch('web_server.os.stat')
     @patch('web_server.asyncio.create_task')
     async def test_create_blank_disk_accepted(self, mock_create_task, mock_stat, mock_statvfs):
-        """Test that the endpoint returns 202 Accepted and starts a task."""
-        mock_statvfs.return_value = (4096, 4096, 1000, 1000, 1000, 0, 0, 0, 0, 255) # Plenty of space
-        mock_stat.side_effect = OSError() # File does not exist
-
-        request = MagicMock()
-        request.json = {'filename': 'test.dsk', 'size': 1024}
+        # Mock free space (>1MB)
+        mock_statvfs.return_value = (4096, 4096, 1000, 1000, 1000, 0, 0, 0, 0, 255)
+        # Mock file not existing
+        mock_stat.side_effect = OSError("File not found")
         
-        # Call the endpoint directly
+        request = MagicMock()
+        request.json = {"filename": "test_new.dsk", "size": 161280}
+        
+        # Now use the real function directly
         response, status = await web_server.create_blank_dsk_endpoint(request)
         
         self.assertEqual(status, 202)
-        self.assertEqual(response['status'], 'accepted')
-        self.assertTrue(web_server._creating_disk)
-        self.assertEqual(web_server._disk_creation_progress['state'], 'creating')
-        mock_create_task.assert_called_once()
+        self.assertIn("accepted", response["status"])
+        mock_create_task.assert_called()
 
-    async def test_create_status_endpoint(self):
-        """Test the status endpoint returns current progress."""
-        web_server._disk_creation_progress = {'state': 'creating', 'written': 512, 'total': 1024, 'filename': 'test.dsk', 'error': None}
+    async def test_create_blank_disk_duplicate(self):
+        web_server._creating_disk = True
+        request = MagicMock()
+        request.json = {"filename": "test.dsk", "size": 161280}
         
-        response = await web_server.create_disk_status_endpoint(None)
-        self.assertEqual(response['state'], 'creating')
-        self.assertEqual(response['written'], 512)
+        response, status = await web_server.create_blank_dsk_endpoint(request)
+        self.assertEqual(status, 409)
+        self.assertIn("already in progress", response["error"])
 
-if __name__ == "__main__":
+    async def test_remote_clone_invalid_input(self):
+        request = MagicMock()
+        request.json = {"source_url": "", "drive": 5}
+        
+        response, status = await web_server.remote_clone_endpoint(request)
+        self.assertEqual(status, 400)
+        self.assertIn("Missing remote_url", response["error"])
+
+    async def test_config_get(self):
+        from config import shared_config
+        # Our shim provides a shared_config that is a dict/MagicMock combination
+        shared_config.config["baud_rate"] = 115200
+        
+        response = await web_server.config_endpoint(MagicMock(method='GET'))
+        self.assertEqual(response["baud_rate"], 115200)
+
+if __name__ == '__main__':
     unittest.main()

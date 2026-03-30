@@ -17,6 +17,7 @@ MAX_LOG_SIZE = 4096  # 4KB circular buffer style
 MIN_LOG_LEVEL = 1  # 0=Debug, 1=Info, 2=Warn, 3=Error, 4=Crit
 _log_callback = None
 _timezone_offset = 0 # Hours from UTC
+_log_calls = 0 # Throttling counter
 
 def set_log_callback(callback):
     """Set a callback function to receive every log line (e.g. for Web UI dashboard)."""
@@ -50,10 +51,12 @@ def log(message: str, level: int = 1, _from_syslog: bool = False) -> None:
     Centralized logging function.
     Level: 0=Debug, 1=Info, 2=Warning, 3=Error, 4=Critical
     """
-    global MIN_LOG_LEVEL, _log_callback
+    global MIN_LOG_LEVEL, _log_callback, _log_calls
     
     if level < MIN_LOG_LEVEL:
         return
+
+    _log_calls += 1
 
     levels = ["DEBUG", "INFO", "WARN", "ERROR", "CRIT"]
     lvl_str = levels[level] if 0 <= level < len(levels) else "LOG"
@@ -61,8 +64,8 @@ def log(message: str, level: int = 1, _from_syslog: bool = False) -> None:
     # Calculate local time using timezone offset
     utc_timestamp = time.time()
     local_timestamp = utc_timestamp + (_timezone_offset * 3600)
-    timestamp = time.localtime(local_timestamp)
-    ts_str = "{:04}-{:02}-{:02} {:02}:{:02}:{:02}".format(*timestamp[:6])
+    t = time.localtime(local_timestamp)
+    ts_str = f"{t[0]:04d}-{t[1]:02d}-{t[2]:02d} {t[3]:02d}:{t[4]:02d}:{t[5]:02d}"
     
     log_line = f"[{ts_str}] [{lvl_str}] {message}"
     print(log_line) # MicroPython print automatically adds newline
@@ -76,20 +79,26 @@ def log(message: str, level: int = 1, _from_syslog: bool = False) -> None:
 
     log_line += "\n"
     
-    # Persistent logging with circular buffer logic
-    try:
-        stats = os.stat(LOG_FILE)
-        if stats[6] > MAX_LOG_SIZE:
-            # Simple "clear if full" strategy for flash safety
-            os.rename(LOG_FILE, LOG_FILE + ".old")
-    except (OSError, KeyboardInterrupt):
-        pass
+    # Persistent logging with rotation logic
+    # We check size on Level 1 (INFO) or higher to keep debug logs fast but maintain safety
+    if level >= 1:
+        try:
+            stats = os.stat(LOG_FILE)
+            if stats[6] > MAX_LOG_SIZE:
+                # Rename the file to .old to preserve recent history without unbounded growth
+                try:
+                    os.remove(LOG_FILE + ".old") # Delete stale backup if it exists
+                except OSError:
+                    pass
+                os.rename(LOG_FILE, LOG_FILE + ".old")
+        except (OSError, KeyboardInterrupt):
+            pass
     
     try:
         with open(LOG_FILE, "a") as f:
             f.write(log_line)
-            # Sync on warnings and errors to ensure persistence
-            if level >= 2:
+            # Sync only on critical/error levels (level >= 3) to reduce SD wait
+            if level >= 3:
                 os.sync()
     except (OSError, KeyboardInterrupt):
         pass

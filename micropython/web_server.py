@@ -91,30 +91,31 @@ async def config_endpoint(request):
         finally:
             gc.collect() # Clean up memory after parsing JSON payload
 
-def _scan_dsk_dir(base_path: str, depth: int = 0, max_depth: int = 1) -> List[str]:
-    """Recursively scan a directory for .dsk files up to max_depth levels deep."""
-    results = []
+def _scan_dsk_dir(base_path: str, depth: int = 0, max_depth: int = 3):
+    """Recursively scan a directory for .dsk files up to max_depth levels deep (yields results)."""
     try:
         if base_path.startswith('/sd') and not sd_card.is_mounted():
-            return []
+            return
         entries = os.listdir(base_path)
         if base_path.startswith('/sd'):
             activity_led.blink()
         for entry in entries:
+            # Skip hidden files
+            if entry.startswith('.'):
+                continue
             full_path = base_path.rstrip('/') + '/' + entry
             if entry.lower().endswith('.dsk'):
-                results.append(full_path)
+                yield full_path
             elif depth < max_depth:
                 # Check if it's a directory
                 try:
                     s = os.stat(full_path)
                     if s[0] & 0x4000: # Directory bit
-                        results.extend(_scan_dsk_dir(full_path, depth + 1, max_depth))
+                        yield from _scan_dsk_dir(full_path, depth + 1, max_depth)
                 except OSError:
                     pass
     except OSError:
         pass
-    return results
 
 
 _dsk_files_cache = None
@@ -128,22 +129,23 @@ def get_dsk_files():
     if _dsk_files_cache is not None and utime.ticks_diff(now, _dsk_files_cache_ts) < _DSK_CACHE_TTL_MS:
         return _dsk_files_cache
     
-    files = []
-    # Scan internal flash root (1 level deep)
-    files.extend(_scan_dsk_dir('/', max_depth=1))
-    # Scan SD card if mounted (1 level deep)
-    files.extend(_scan_dsk_dir('/sd', max_depth=1))
-    # Remove duplicates (in case /sd is inside /)
+    # Use a set to efficiently collect unique paths from generator
     seen = set()
-    unique = []
-    for f in files:
-        if f not in seen:
-            seen.add(f)
-            unique.append(f)
-    unique.sort()
+    
+    # Scan internal flash root (3 levels deep)
+    seen.update(_scan_dsk_dir('/', max_depth=3))
+    
+    # Scan SD card if mounted (3 levels deep)
+    if sd_card.is_mounted():
+        seen.update(_scan_dsk_dir('/sd', max_depth=3))
+        
+    unique = sorted(list(seen))
     _dsk_files_cache = unique
     _dsk_files_cache_ts = utime.ticks_ms()
-    resilience.log_mem_info("DSK Cache Updated")
+    
+    # Force GC after potentially heavy directory scan
+    gc.collect()
+    resilience.log_mem_info("DSK Cache Updated (Deep Scan)")
     return unique
 
 
@@ -151,16 +153,17 @@ def _sanitize_path(path):
     """Validate and normalize file paths. Returns sanitized path or None."""
     if not path or not isinstance(path, str):
         return None
-    # Reject path traversal attempts (only block ".." as a full segment)
-    if any(part == '..' for part in path.split('/')):
-        return None
+    # Reject path traversal attempts (efficient check for '..')
+    if '..' in path:
+        # Extra safety: ensure it's not a path segment
+        if path == '..' or path.startswith('../') or path.endswith('/..') or '/../' in path:
+            return None
     # Must be under /sd/ or be a .dsk file directly in root
     if path.startswith('/sd/'):
         return path
     # Allow .dsk files from root level only (no subdirectory traversal)
-    stripped = path.lstrip('/')
-    if stripped.endswith('.dsk') and '/' not in stripped:
-        return '/' + stripped
+    if path.endswith('.dsk') and '/' not in path.lstrip('/'):
+        return '/' + path.lstrip('/')
     return None
 
 
@@ -187,20 +190,30 @@ async def files_endpoint(request):
 
 @app.route('/api/files/info')
 async def files_info_endpoint(request):
-    """Return metadata (size, modification time) for all .dsk files."""
+    """Return metadata (size, modification time) for all .dsk files (streamed)."""
     resilience.log_mem_info("Files Info Start")
     files = get_dsk_files()
-    result = {}
-    for f in files:
-        try:
-            st = os.stat(f)
-            size = st[6]  # file size in bytes
-            mtime_str = _get_file_mtime(f)
-            result[f] = {'size': size, 'mtime': mtime_str}
-        except OSError:
-            result[f] = {'size': 0, 'mtime': None}
-    gc.collect() # Clean up after massive dict creation
-    return result
+    
+    async def generate_info():
+        yield '{'
+        first = True
+        for f in files:
+            try:
+                st = os.stat(f)
+                size = st[6]
+                mtime_str = _get_file_mtime(f)
+                if not first:
+                    yield ','
+                first = False
+                yield json.dumps(f) + ':' + json.dumps({'size': size, 'mtime': mtime_str})
+                # Yield to serial protocol loop
+                await asyncio.sleep(0)
+            except OSError:
+                pass
+        yield '}'
+        gc.collect()
+
+    return Response(generate_info(), headers={'Content-Type': 'application/json'})
 
 
 @app.route('/api/sd/status')
@@ -478,21 +491,31 @@ async def upload_file_endpoint(request):
         # Clean filename 
         clean_name = filename.split('/')[-1].split('\\')[-1]
         target_path = '/sd/' + clean_name
-        total_size = int(content_length) if content_length else 0
         
-        if total_size == 0:
-            return {'error': 'Content-Length is required'}, 400
-        
-        # Quick SD card check
+        # Check if this file is currently mounted in any drive to prevent corruption
+        if hasattr(app, 'dw_server'):
+            for drive in app.dw_server.drives:
+                if drive and hasattr(drive, 'filename') and drive.filename == target_path:
+                    resilience.log(f"Upload rejected: {target_path} is currently MOUNTED", level=3)
+                    return {'error': 'File is currently IN USE. Unmount first.'}, 409
+
+        # Check SD card status
+        card_info = sd_card.get_status()
+        if not card_info.get('mounted'):
+            resilience.log("Upload rejected: SD Card not mounted", level=3)
+            return {'error': 'SD Card not mounted'}, 503
+
+        # Check free space
         try:
-            sd_stat = os.statvfs('/sd')
-            sd_free = sd_stat[0] * sd_stat[3]
-            resilience.log(f"SD free: {sd_free // 1024}KB, need: {total_size // 1024}KB")
-            if sd_free < total_size:
-                return {'error': 'Insufficient SD card space'}, 400
-        except Exception as e:
-            resilience.log(f"SD check failed: {e}", level=3)
-            return {'error': f'SD card not accessible: {e}'}, 500
+            total_size = int(content_length) if content_length else 0
+            if total_size > 0:
+                sd_stat = os.statvfs(sd_card.get_mount_point())
+                free_bytes = sd_stat[0] * sd_stat[3]
+                if free_bytes < total_size:
+                    resilience.log(f"Upload rejected: Insufficient space ({free_bytes} < {total_size})", level=3)
+                    return {'error': 'Insufficient SD card space'}, 400
+        except (ValueError, TypeError, OSError):
+            pass # Optional check
 
         # Signal that an upload is in progress (prevents SD polling from interfering)
         _uploading = True
@@ -577,14 +600,7 @@ async def upload_file_endpoint(request):
                 raise Exception(f"Background write failed at EOF: {write_error}")
                 
         except Exception as e:
-            resilience.log(f"Upload pipeline error at {bytes_written}: {e}", level=3)
-            _uploading = False
-            
-            # Cancel writer on error
-            try:
-                writer_task.cancel()
-            except Exception:
-                pass
+            resilience.log(f"Upload pipeline failed: {e}", level=3)
             return {'error': f'Upload pipeline failed: {e}'}, 500
         finally:
             _uploading = False
@@ -678,10 +694,9 @@ def stream_remote_info(server_url):
                     elif b == ord('}'):
                         depth -= 1
                         if depth == 1:
-                            # Found a complete disk object
                             try:
                                 yield json.loads(buffer)
-                            except:
+                            except Exception:
                                 pass
                             buffer = bytearray()
                     elif b == ord(']'):
@@ -839,9 +854,23 @@ async def remote_clone_endpoint(request):
         if not remote_url or not disk_name:
             return {'error': 'Missing remote_url or disk_name'}, 400
 
-        # Auto-generate local path if not specified
-        if not local_path:
-            local_path = '/sd/' + disk_name
+        # Sanitize all user-provided paths to prevent reversal/injection
+        disk_name = _sanitize_path(disk_name.split('/')[-1].split('\\')[-1])
+        if not disk_name:
+             return {'error': 'Invalid disk name'}, 400
+             
+        if local_path:
+            local_path = _sanitize_path(local_path)
+        else:
+            local_path = _sanitize_path('/sd/' + disk_name)
+            
+        if not local_path or not local_path.endswith('.dsk'):
+             return {'error': 'Invalid local path (must be .dsk)'}, 400
+
+        # Check if the target clone path is currently in use
+        for drive in app.dw_server.drives:
+            if drive and hasattr(drive, 'filename') and drive.filename == local_path:
+                return {'error': 'Local target is currently IN USE. Unmount first.'}, 409
 
         # Check SD card space
         try:

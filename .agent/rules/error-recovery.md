@@ -1,4 +1,9 @@
-# Error Recovery & Timeout Handling
+---
+trigger: always_on
+---
+
+# DriveWire Error Recovery Standards
+& Timeout Handling
 
 To ensure high reliability in a networked embedded environment, DriveWire MUST handle timeouts and transient failures gracefully.
 

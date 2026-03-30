@@ -13,6 +13,8 @@ try:
 except ImportError:
     pass
 
+VERSION = "1.1.0"
+
 # OpCodes - using const() to save RAM on MicroPython
 # OpCodes - using const() to save RAM on MicroPython
 OP_NOP = micropython.const(0x00)
@@ -525,6 +527,7 @@ class DriveWireServer:
         # Initial UART initialization (synchronous for test compatibility)
         self.init_uart()
 
+        
     async def reload_config(self):
         """Reload configuration and reinitialize drives and UART."""
         # Close existing drives
@@ -645,706 +648,728 @@ class DriveWireServer:
         # Initial drive load (async)
         self.init_drives()
         
-        resilience.log("DriveWire server started.")
+        resilience.log(f"DriveWire Server (v{VERSION}) started.")
         self.running = True
+        
+        # Pre-allocate buffers to avoid GC during protocol transactions (MicroPython best practice)
+        _sector_buf = bytearray(SECTOR_SIZE)
+        _header_buf = bytearray(4)
+        _resp_buf = bytearray(1 + 2) # Stat(1) + CS(2)
+        _crc_buf = bytearray(2)
         
         # Track loop count to trigger GC safely without penalizing latency
         loop_counter = 0
         
-        # Start background tasks
-        asyncio.create_task(self.flush_loop())
-        
-        while self.running:
-            try:
-                # Read 1 byte for OpCode
-                # We use uasyncio.StreamReader if available or just poll UART
-                # UART.any() is non-blocking.
-                
-                if self.uart.any():
-                    # Loop start time for latency tracking
-                    req_start_t = utime.ticks_us()
-                    self.stats['latency']['uart_wait_us'] = 0
+        try:
+            # Start background tasks
+            asyncio.create_task(self.flush_loop())
+            
+            while self.running:
+                try:
+                    # Read 1 byte for OpCode
+                    # We use uasyncio.StreamReader if available or just poll UART
+                    # UART.any() is non-blocking.
                     
-                    # Read OpCode
-                    op_data = await self.read_bytes(1)
-                    if not op_data:
-                        continue
-                    
-                    opcode = op_data[0]
-                    self.stats['last_opcode'] = opcode
-                    
-                    # Process OpCodes
-                    if opcode in (OP_RESET, OP_RESET2, OP_RESET3):
-                        # RESET
-                        # Flush buffers
-                        while self.uart.any():
-                            self.uart.read()
-                        resilience.log("Reset received")
+                    if self.uart.any():
+                        # Loop start time for latency tracking
+                        req_start_t = utime.ticks_us()
+                        self.stats['latency']['uart_wait_us'] = 0
                         
-                    elif opcode == OP_DWINIT:
-                         # Read capability byte
-                         cap = await self.read_bytes(1)
-                         if cap:
-                             # Send our capability (0)
-                             self.uart.write(bytes([0]))
-                             print("DWINIT Handshake")
+                        # Read OpCode
+                        op_data = await self.read_bytes(1)
+                        if not op_data:
+                            continue
+                        
+                        opcode = op_data[0]
+                        self.stats['last_opcode'] = opcode
+                        
+                        # Process OpCodes
+                        if opcode in (OP_RESET, OP_RESET2, OP_RESET3):
+                            # RESET
+                            # Flush buffers
+                            while self.uart.any():
+                                self.uart.read()
+                            resilience.log("Reset received")
+                            
+                        elif opcode == OP_DWINIT:
+                             # Read capability byte
+                             cap = await self.read_bytes(1)
+                             if cap:
+                                 # Send our capability (0)
+                                 self.uart.write(bytes([0]))
+                                 print("DWINIT Handshake")
 
-                    elif opcode in (OP_READ, OP_READEX, OP_REREAD, OP_REREADEX):
-                        # READ / READEX / REREAD / REREADEX
-                        # All these use a 4-byte request: Drive(1) + LSN(3)
-                        req = await self.read_bytes(4)
-                        if req:
-                            drive_num = req[0]
-                            lsn = (req[1] << 16) | (req[2] << 8) | req[3]
-                            
-                            is_extended = opcode in (OP_READEX, OP_REREADEX)
-                            
-                            # Update header receive latency
-                            self.stats['latency']['rx_header_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
-                            
-                            if drive_num < NUM_DRIVES and self.drives[drive_num]:
-                                start_t = utime.ticks_us()
-                                data = await self.drives[drive_num].read_sector(lsn)
-                                if data:
-                                    cs = self.checksum(data)
-                                    self.drives[drive_num].stats['latency_us'] = utime.ticks_diff(utime.ticks_us(), start_t)
-                                    if is_extended:
-                                        # Extended Read: 256 bytes data -> CoCo calcs checksum -> CoCo sends checksum -> Server ACKs
-                                        self.uart.write(data)
-                                        # Wait for CoCo checksum (2 bytes)
-                                        coco_cs_bytes = await self.read_bytes(2)
-                                        if coco_cs_bytes:
-                                            coco_cs = (coco_cs_bytes[0] << 8) | coco_cs_bytes[1]
-                                            
-                                            # Record turnaround time (header in to response bytes out)
-                                            self.stats['latency']['turnaround_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
-                                            
-                                            if coco_cs == cs:
-                                                self.uart.write(bytes([0])) # No Error
-                                            else:
-                                                self.uart.write(bytes([243])) # E_CRC
+                        elif opcode in (OP_READ, OP_READEX, OP_REREAD, OP_REREADEX):
+                            # READ / READEX / REREAD / REREADEX
+                            # All these use a 4-byte request: Drive(1) + LSN(3)
+                            req = await self.read_bytes(4)
+                            if req:
+                                drive_num = req[0]
+                                lsn = (req[1] << 16) | (req[2] << 8) | req[3]
+                                
+                                is_extended = opcode in (OP_READEX, OP_REREADEX)
+                                
+                                # Update header receive latency
+                                self.stats['latency']['rx_header_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
+                                
+                                if drive_num < NUM_DRIVES and self.drives[drive_num]:
+                                    start_t = utime.ticks_us()
+                                    # Use pre-allocated sector buffer for memory efficiency
+                                    # Note: read_sector returns the data, but we can copy it if needed
+                                    # However, many drive implementations might return a memoryview.
+                                    data = await self.drives[drive_num].read_sector(lsn)
+                                    if data:
+                                        cs = self.checksum(data)
+                                        self.drives[drive_num].stats['latency_us'] = utime.ticks_diff(utime.ticks_us(), start_t)
+                                        if is_extended:
+                                            # Extended Read: 256 bytes data -> CoCo calcs checksum -> CoCo sends checksum -> Server ACKs
+                                            self.uart.write(data)
+                                            # Wait for CoCo checksum (2 bytes)
+                                            coco_cs_bytes = await self.read_bytes(2)
+                                            if coco_cs_bytes:
+                                                coco_cs = (coco_cs_bytes[0] << 8) | coco_cs_bytes[1]
                                                 
-                                            # Total request time (including CoCo checksum wait)
+                                                # Record turnaround time (header in to response bytes out)
+                                                self.stats['latency']['turnaround_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
+                                                
+                                                if coco_cs == cs:
+                                                    self.uart.write(bytes([0])) # No Error
+                                                else:
+                                                    self.uart.write(bytes([E_CRC]))
+                                                    
+                                                # Total request time (including CoCo checksum wait)
+                                                self.stats['latency']['total_request_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
+                                        else:
+                                            # Standard Read: 0x00 + Checksum(2) + Data(256)
+                                            # Use pre-allocated response buffer
+                                            _resp_buf[0] = 0
+                                            _resp_buf[1] = (cs >> 8) & 0xFF
+                                            _resp_buf[2] = cs & 0xFF
+                                            
+                                            # Record turnaround time (just before final TX)
+                                            proc_done_t = utime.ticks_us()
+                                            self.stats['latency']['turnaround_us'] = utime.ticks_diff(proc_done_t, req_start_t)
+                                            
+                                            self.uart.write(_resp_buf)
+                                            self.uart.write(data)
+                                            
+                                            # Total request time
                                             self.stats['latency']['total_request_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
                                     else:
-                                        # Standard Read: 0x00 + Checksum(2) + Data(256)
-                                        resp = bytearray([0])
-                                        resp += struct.pack(">H", cs)
-                                        resp += data
-                                        
-                                        # Record turnaround time (just before final TX)
-                                        proc_done_t = utime.ticks_us()
-                                        self.stats['latency']['turnaround_us'] = utime.ticks_diff(proc_done_t, req_start_t)
-                                        
-                                        self.uart.write(resp)
-                                        
-                                        # Total request time
-                                        self.stats['latency']['total_request_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
-                                else:
-                                    # Read Failure — use drive-specific error if available
-                                    err = getattr(self.drives[drive_num], 'last_error', E_UNIT) or E_UNIT
-                                    if is_extended:
-                                        self.uart.write(bytes([0] * 256))
-                                        await self.read_bytes(2) 
-                                        self.uart.write(bytes([err]))
-                                    else:
-                                        self.uart.write(bytes([err]))
-                            else:
-                                # Unit error
-                                if is_extended:
-                                     self.uart.write(bytes([0] * 256))
-                                     await self.read_bytes(2) 
-                                     self.uart.write(bytes([E_UNIT]))
-                                else:
-                                     self.uart.write(bytes([E_UNIT]))
-
-                    elif opcode in (OP_WRITE, OP_REWRITE):
-                        # Write / ReWrite
-                        # Req: Drive(1) + LSN(3) + Data(256) + Checksum(2)
-                        header = await self.read_bytes(4) 
-                        if header:
-                            drive_num = header[0]
-                            lsn = (header[1] << 16) | (header[2] << 8) | header[3]
-                            
-                            # Record header RX latency
-                            self.stats['latency']['rx_header_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
-                            
-                            data = await self.read_bytes(SECTOR_SIZE)
-                            checksum_bytes = await self.read_bytes(2)
-                            
-                            if data and checksum_bytes:
-                                remote_cs = (checksum_bytes[0] << 8) | checksum_bytes[1]
-                                local_cs = self.checksum(data)
-                                
-                                if remote_cs == local_cs:
-                                    # Write to disk cache
-                                    success = False
-                                    if drive_num < NUM_DRIVES and self.drives[drive_num]:
-                                        start_t = utime.ticks_us()
-                                        success = await self.drives[drive_num].write_sector(lsn, data)
-                                        self.drives[drive_num].stats['latency_us'] = utime.ticks_diff(utime.ticks_us(), start_t)
-                                    
-                                    if success:
-                                        # Record turnaround time
-                                        proc_done_t = utime.ticks_us()
-                                        self.stats['latency']['turnaround_us'] = utime.ticks_diff(proc_done_t, req_start_t)
-                                        
-                                        self.uart.write(bytes([E_NONE]))  # ACK
-                                        
-                                        # Total request time
-                                        self.stats['latency']['total_request_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
-                                    else:
-                                        # Use drive-specific error (E_WP for remote, E_UNIT for missing)
+                                        # Read Failure — use drive-specific error if available
                                         err = getattr(self.drives[drive_num], 'last_error', E_UNIT) or E_UNIT
-                                        self.uart.write(bytes([err]))
+                                        if is_extended:
+                                            self.uart.write(bytes([0] * 256))
+                                            await self.read_bytes(2) 
+                                            self.uart.write(bytes([err]))
+                                        else:
+                                            self.uart.write(bytes([err]))
                                 else:
-                                    self.uart.write(bytes([243]))  # E_CRC
+                                    # Unit error
+                                    if is_extended:
+                                         self.uart.write(bytes([0] * 256))
+                                         await self.read_bytes(2) 
+                                         self.uart.write(bytes([E_UNIT]))
+                                    else:
+                                         self.uart.write(bytes([E_UNIT]))
 
-                    elif opcode == OP_TIME:
-                        # OP_TIME ($23)
-                        # Bi-directional.
-                        # Server response: Year(0-255, yr-1900), Month(1-12), Day(1-31), Hour(0-23), Minute(0-59), Second(0-59)
-                        try:
-                            import time_sync
-                            t = time_sync.get_local_time()
-                            if not t or len(t) < 6:
-                                raise ValueError("Invalid time tuple")
-                            # t is (year, month, day, hour, minute, second, wday, yday)
-                            year = t[0] - 1900
-                            if year < 0: year = 0
-                            if year > 255: year = 255
-                            resp = bytes([year, t[1], t[2], t[3], t[4], t[5]])
-                        except Exception as e:
-                            print(f"OP_TIME Error: {e}")
-                            resp = bytes([0, 1, 1, 0, 0, 0])  # Fallback: 1900-01-01 00:00:00
-                        self.uart.write(resp)
-
-                    elif opcode == OP_PRINT:
-                        # OP_PRINT ($50) + 1 byte
-                        b = await self.read_bytes(1)
-                        if b:
-                            self.print_buffer.extend(b)
-                    
-                    elif opcode == OP_PRINTFLUSH:
-                        # OP_PRINTFLUSH ($46)
-                        # Flush buffer to stdout (log)
-                        try:
-                            # Try decoding as text, fallback to hex if needed
-                            msg = self.print_buffer.decode('utf-8', 'ignore')
-                            print(f"[PRINTER] {msg}")
-                        except Exception:
-                            resilience.log(f"[PRINTER HEX] {self.print_buffer.hex()}")
-                        self.print_buffer = bytearray()
-                        
-                    elif opcode == OP_GETSTAT:
-                        # OP_GETSTAT ($47) + Drive(1) + Code(1)
-                        # Server just logs it/updates stats? Spec says "informational purposes only".
-                        req = await self.read_bytes(2)
-                        if req:
-                            self.stats['last_drive'] = req[0]
-                            self.stats['last_stat'] = req[1]
-                            # print(f"GETSTAT Drv:{req[0]} Code:{req[1]}")
-                            
-                    elif opcode == OP_SETSTAT:
-                        # OP_SETSTAT ($53) + Drive(1) + Code(1)
-                        req = await self.read_bytes(2)
-                        if req:
-                            self.stats['last_drive'] = req[0]
-                            self.stats['last_stat'] = req[1]
-                            # print(f"SETSTAT Drv:{req[0]} Code:{req[1]}")
-
-                    elif opcode == OP_SERREAD:
-                        # OP_SERREAD ($43) - Polling
-                        # Response: Byte 1 (Status/Data Avail), Byte 2 (Data or Count)
-                        # Byte1 1-15: single byte for channel (byte1-1), byte2=data
-                        # Byte1 17-31: bulk count for channel (byte1-1-16), byte2=count
-                        found_channel = -1
-                        for i in range(NUM_CHANNELS):
-                            if len(self.channels[i]) > 0:
-                                found_channel = i
-                                break
+                        elif opcode in (OP_WRITE, OP_REWRITE):
+                            # Write / ReWrite
+                            # Req: Drive(1) + LSN(3) + Data(256) + Checksum(2)
+                            header = await self.read_bytes(4) 
+                            if header:
+                                drive_num = header[0]
+                                lsn = (header[1] << 16) | (header[2] << 8) | header[3]
                                 
-                        if found_channel >= 0 and len(self.channels[found_channel]) > 0:
-                            ch_idx = found_channel
-                            buf_len = len(self.channels[ch_idx])
-                            
-                            if buf_len == 1:
-                                # Single byte mode: byte1 = channel + 1, byte2 = data
-                                response_byte_1 = ch_idx + 1
-                                data_byte = self.channels[ch_idx].pop(0)
-                                self.uart.write(bytes([response_byte_1, data_byte]))
-                                self.snoop_serial(ch_idx, data_byte)
-                            else:
-                                # Bulk mode: byte1 = channel + 1 + 16, byte2 = count
-                                count = min(buf_len, 255)
-                                response_byte_1 = ch_idx + 1 + 16
-                                self.uart.write(bytes([response_byte_1, count]))
-                            
-                            # Record turnaround time (just before final TX or end of op)
-                            self.stats['latency']['turnaround_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
-                            # For SERREAD, the last write happened above, so total time is similar
-                            self.stats['latency']['total_request_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
-
-                            # Stats
-                            if ch_idx not in self.stats['serial']: self.stats['serial'][ch_idx] = {'tx':0, 'rx':0}
-                            self.stats['serial'][ch_idx]['rx'] += 1
-                        else:
-                            self.uart.write(bytes([0, 0]))
-
-                    elif opcode == OP_SERWRITE:
-                        # OP_SERWRITE ($C3) + Channel(1) + Data(1)
-                        req = await self.read_bytes(2)
-                        if req:
-                            chan = req[0]
-                            val = req[1]
-                            # Handle Write. 
-                            if chan in self.tcp_connections:
-                                try:
-                                    _, writer, _ = self.tcp_connections[chan]
-                                    writer.write(bytes([val]))
-                                    await writer.drain()
+                                # Record header RX latency
+                                self.stats['latency']['rx_header_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
+                                
+                                data = await self.read_bytes(SECTOR_SIZE)
+                                checksum_bytes = await self.read_bytes(2)
+                                
+                                if data and checksum_bytes:
+                                    remote_cs = (checksum_bytes[0] << 8) | checksum_bytes[1]
+                                    local_cs = self.checksum(data)
                                     
-                                    # Stats
-                                    if chan not in self.stats['serial']: self.stats['serial'][chan] = {'tx':0, 'rx':0}
-                                    self.stats['serial'][chan]['tx'] += 1
-                                    
-                                    # Snoop
-                                    self.snoop_serial(chan, val)
-                                    
-                                except Exception as e:
-                                    resilience.log(f"TCP Write Error Ch{chan}: {e}", level=2)
-                                    # Clean up dead connection
-                                    self.log_msg(f"TCP Ch{chan} write failed, closing")
-                                    await self.close_tcp(chan)
-                            else:
-                                pass # No connection, discard
-
-                    elif opcode == OP_SERREADM:
-                        # OP_SERREADM ($63) - Bulk read
-                        # CoCo sends: Channel(1) + Count(1)
-                        # Server responds: Count bytes from channel queue
-                        req = await self.read_bytes(2)
-                        if req:
-                            chan = req[0]
-                            count = req[1]
-                            if chan < NUM_CHANNELS and len(self.channels[chan]) >= count:
-                                data = bytes(self.channels[chan][:count])
-                                self.channels[chan] = self.channels[chan][count:]
-                                self.uart.write(data)
-                                self.snoop_serial(chan, data)
-                                if chan not in self.stats['serial']: self.stats['serial'][chan] = {'tx':0, 'rx':0}
-                                self.stats['serial'][chan]['rx'] += count
-                            # If not enough data, spec says server doesn't respond (CoCo times out)
-
-                    elif opcode == OP_SERWRITEM:
-                        # OP_SERWRITEM ($64) - Bulk write
-                        # CoCo sends: Channel(1) + Count(1) + Data(Count)
-                        hdr = await self.read_bytes(2)
-                        if hdr:
-                            chan = hdr[0]
-                            count = hdr[1]
-                            data = await self.read_bytes(count)
-                            if data and chan in self.tcp_connections:
-                                try:
-                                    _, writer, _ = self.tcp_connections[chan]
-                                    writer.write(data)
-                                    await writer.drain()
-                                    if chan not in self.stats['serial']: self.stats['serial'][chan] = {'tx':0, 'rx':0}
-                                    self.stats['serial'][chan]['tx'] += count
-                                    self.snoop_serial(chan, data)
-                                except Exception as e:
-                                    resilience.log(f"SERWRITEM TCP Error Ch{chan}: {e}", level=2)
-                                    await self.close_tcp(chan)
-
-                    elif opcode == OP_SERGETSTAT:
-                        # OP_SERGETSTAT ($44) + Channel(1) + Code(1)
-                        # Uni-directional, for logging only (per spec)
-                        await self.read_bytes(2)
-
-                    elif (opcode & 0xF0) == 0x80:
-                        # FASTWRITE ($8x) + Data(1)
-                        # Channel is opcode & 0x0F
-                        chan = opcode & 0x0F
-                        val = await self.read_bytes(1)
-                        if val:
-                            if chan in self.tcp_connections:
-                                try:
-                                    _, writer, _ = self.tcp_connections[chan]
-                                    writer.write(val)
-                                    await writer.drain()
-                                    if chan not in self.stats['serial']: self.stats['serial'][chan] = {'tx':0, 'rx':0}
-                                    self.stats['serial'][chan]['tx'] += 1
-                                    self.snoop_serial(chan, val[0])
-                                except Exception as e:
-                                    resilience.log(f"FASTWRITE TCP Error Ch{chan}: {e}", level=2)
-                                    await self.close_tcp(chan)
-
-                    elif opcode == OP_SERINIT:
-                         # 1 byte channel
-                         ch_byte = await self.read_bytes(1)
-                         if ch_byte:
-                             chan = ch_byte[0]
-                             # Check config for mapping
-                             smap = self.config.get("serial_map")
-                             # Keys are strings in json
-                             if smap and str(chan) in smap:
-                                 mapping = smap[str(chan)]
-                                 host = mapping['host']
-                                 port = mapping['port']
-                                 mode = mapping.get('mode', 'client') # client or server
-                                 
-                                 resilience.log(f"Initialize VSerial Ch{chan} ({mode}) -> {host}:{port}")
-                                 try:
-                                     # Close existing if needed
-                                     if chan in self.tcp_connections:
-                                         await self.close_tcp(chan)
-                                     
-                                     if mode == 'server':
-                                         # Start a server
-                                         # We use a helper to capture chan in closure
-                                         def make_accept_handler(c):
-                                             return lambda r, w: self.tcp_accept_handler(c, r, w)
-                                             
-                                         server = await asyncio.start_server(make_accept_handler(chan), host, port)
-                                         # Store server object so we can close it?
-                                         # Actually asyncio.start_server returns a Server object.
-                                         # But we also need to store the active client connection if one is made.
-                                         # tcp_connections currently stores (reader, writer, task).
-                                         # For server mode, we might need to store (server_obj, current_client_tuple).
-                                         # To keep it simple: tcp_connections will ONLY store the active data connection (reader, writer, task).
-                                         # We will need a separate dict for "servers" so we can close the listening port.
-                                         if not hasattr(self, 'tcp_servers'): self.tcp_servers = {}
-                                         self.tcp_servers[chan] = server
-                                         resilience.log(f"Listening on {host}:{port} for Ch{chan}")
-                                     else:
-                                         # Client mode
-                                         reader, writer = await asyncio.open_connection(host, port)
-                                         # Start background reader
-                                         task = asyncio.create_task(self.tcp_reader_task(chan, reader))
-                                         self.tcp_connections[chan] = (reader, writer, task)
-
-                                 except Exception as e:
-                                     print(f"Failed to connect/listen VSerial Ch{chan}: {e}")
-
-                    
-                    elif opcode == OP_SERTERM:
-                         # 1 byte channel
-                         ch_byte = await self.read_bytes(1)
-                         if ch_byte:
-                             chan = ch_byte[0]
-                             await self.close_tcp(chan)
-                             # Also close server if any
-                             if hasattr(self, 'tcp_servers') and chan in self.tcp_servers:
-                                 self.tcp_servers[chan].close()
-                                 # await self.tcp_servers[chan].wait_closed() # Optional in recent MP?
-                                 del self.tcp_servers[chan]
-                                 print(f"Stopped Listening on Ch{chan}")
-                         
-                    elif opcode == OP_SERSETSTAT:
-                        # Channel(1) + Code(1) + Optional...
-                        req = await self.read_bytes(2)
-                        if req:
-                            code = req[1]
-                            if code == 0x28: # SS.ComSt -> 26 more bytes!
-                                await self.read_bytes(26)
-
-                    elif opcode in (OP_NAMEOBJ_MOUNT, OP_NAMEOBJ_CREATE):
-                        # OP_NAMEOBJ_MOUNT ($01) / CREATE ($02) + Len(1) + Name(Len)
-                        # Response: DriveNum(1) or 0 on fail.
-                        ln_b = await self.read_bytes(1)
-                        if ln_b:
-                            ln = ln_b[0]
-                            name_b = await self.read_bytes(ln)
-                            if name_b:
-                                try:
-                                    name = name_b.decode('ascii', 'ignore')
-                                    # Try to mount it.
-                                    # Find free drive slot
-                                    free_drive = -1
-                                    for i in range(NUM_DRIVES):
-                                        if self.drives[i] is None:
-                                            free_drive = i
-                                            break
-                                    
-                                    if free_drive >= 0:
-                                        # Validate: restrict to .dsk files without path traversal
-                                        if '..' in name or not name.endswith('.dsk'):
-                                            self.uart.write(bytes([0]))
-                                            resilience.log(f"NamedObj denied: {name}", level=2)
-                                        else:
-                                            # Try to mount
-                                            try:
-                                                vd = VirtualDrive(name)
-                                                if vd.file:
-                                                    self.drives[free_drive] = vd
-                                                    self.uart.write(bytes([free_drive]))
-                                                    resilience.log(f"Mounted {name} to Drive {free_drive}")
-                                                else:
-                                                    self.uart.write(bytes([0]))
-                                            except Exception:
-                                                self.uart.write(bytes([0]))
-                                    else:
-                                        self.uart.write(bytes([0])) # No free drives
-                                except Exception as e:
-                                    resilience.log(f"NamedObj error: {e}", level=3)
-                                    self.uart.write(bytes([0]))
-
-                    elif opcode == OP_WIREBUG:
-                        # OP_WIREBUG ($42) + CoCoType(1) + CPUType(1) + Reserved(21)??
-                        # Param 3 says 3-23 reserved, so 21 bytes. Total 23 bytes payload.
-                        wb_data = await self.read_bytes(23)
-                        if wb_data:
-                            resilience.log("Entered WireBug Mode")
-                        else:
-                            resilience.log("WireBug handshake timeout", level=2)
-                        # We just stay silent now, as we are the server and we initiate commands.
-                        # If we don't send commands, CoCo just waits. 
-                        # To exit, we could send OP_WIREBUG_GO ($47) but usually we wait for user input.
-
-                    elif opcode == OP_RFM:
-                        # OP_RFM ($D6) + SubOp(1)
-                        sub_op_bytes = await self.read_bytes(1)
-                        if sub_op_bytes:
-                            sub_op = sub_op_bytes[0]
-                            
-                            if sub_op == OP_RFM_OPEN:
-                                # OPEN: ProcessID(1) + PathNum(1) + PathAddr(2) + Mode(1) + PathLen(2) + PathStr(PathLen)
-                                hdr = await self.read_bytes(7)
-                                if hdr:
-                                    path_addr = (hdr[2] << 8) | hdr[3]
-                                    mode = hdr[4]
-                                    path_len = (hdr[5] << 8) | hdr[6]
-                                    path_bytes = await self.read_bytes(path_len)
-                                    
-                                    err_code = 216 # Default error
-                                    lsn0 = lsn1 = lsn2 = 0
-                                    
-                                    if path_bytes:
-                                        path_str = path_bytes.decode('ascii', 'ignore')
-                                        safe_path = self._sanitize_rfm_path(path_str)
-                                        if safe_path is None:
-                                            resilience.log(f"RFM OPEN denied: {path_str}", level=2)
-                                            err_code = 216
-                                        else:
-                                            try:
-                                                file_mode = 'rb' if not (mode & 0x02) else 'r+b'
-                                                f = open(safe_path, file_mode)
-                                                self.rfm_paths[path_addr] = {'handle': f, 'mode': mode}
-                                                err_code = 0
-                                                lsn0, lsn1, lsn2 = 3, 2, 1
-                                                activity_led.blink()
-                                                resilience.log(f"RFM OPEN: {safe_path} (mode {mode}) -> Addr: {path_addr}")
-                                            except Exception as e:
-                                                resilience.log(f"RFM OPEN error: {e}", level=3)
-                                                err_code = 216
-                                    
-                                    self.uart.write(bytes([err_code, lsn0, lsn1, lsn2]))
-
-                            elif sub_op == OP_RFM_CHGDIR:
-                                # CHGDIR: ProcessID(1) + PathNum(1) + PathAddr(2) + Mode(1) + PathLen(2) + PathStr(PathLen)
-                                hdr = await self.read_bytes(7)
-                                if hdr:
-                                    mode = hdr[4]
-                                    path_len = (hdr[5] << 8) | hdr[6]
-                                    path_bytes = await self.read_bytes(path_len)
-                                    
-                                    err_code = 0 # Assume success for now, or validate directory exists
-                                    if path_bytes:
-                                        path_str = path_bytes.decode('ascii', 'ignore')
-                                        safe_path = self._sanitize_rfm_path(path_str)
-                                        if safe_path is None:
-                                            resilience.log(f"RFM CHGDIR denied: {path_str}", level=2)
-                                            err_code = 216
-                                        else:
-                                            try:
-                                                os.stat(safe_path)
-                                                err_code = 0
-                                            except OSError:
-                                                err_code = 216
-                                            
-                                    self.uart.write(bytes([err_code, 3, 2, 1]))
-
-                            elif sub_op == OP_RFM_SEEK:
-                                # SEEK: PathAddr(2) + PathNum(1) + Pos(4)
-                                hdr = await self.read_bytes(7)
-                                if hdr:
-                                    path_addr = (hdr[0] << 8) | hdr[1]
-                                    pos = (hdr[3] << 24) | (hdr[4] << 16) | (hdr[5] << 8) | hdr[6]
-                                    
-                                    err_code = 207 # Bad path
-                                    if path_addr in self.rfm_paths:
-                                        try:
-                                            self.rfm_paths[path_addr]['handle'].seek(pos)
-                                            err_code = 0
-                                            activity_led.blink()
-                                        except Exception as e:
-                                            resilience.log(f"RFM SEEK error: {e}", level=3)
-                                            err_code = 211 # Read error/EOF
-                                    
-                                    self.uart.write(bytes([err_code]))
-
-                            elif sub_op == OP_RFM_READ:
-                                # READ: PathAddr(2) + PathNum(1) + BytesToRead(2)
-                                hdr = await self.read_bytes(5)
-                                if hdr:
-                                    path_addr = (hdr[0] << 8) | hdr[1]
-                                    bytes_to_read = (hdr[3] << 8) | hdr[4]
-                                    
-                                    err_code = 207 # Bad path
-                                    data_chunk = b""
-                                    
-                                    if path_addr in self.rfm_paths:
-                                        try:
-                                            data_chunk = self.rfm_paths[path_addr]['handle'].read(bytes_to_read)
-                                            if data_chunk is None:
-                                                 data_chunk = b""
-                                            if len(data_chunk) > 0:
-                                                 err_code = 0
-                                                 activity_led.blink()
-                                            else:
-                                                 err_code = 211 # EOF
-                                        except Exception as e:
-                                            print(f"RFM READ error: {e}")
-                                            err_code = 211
-                                            
-                                    valid_len = len(data_chunk)
-                                    # Phase 1 response: ErrorCode(1) + ValidLen(2)
-                                    self.uart.write(bytes([err_code, (valid_len >> 8) & 0xFF, valid_len & 0xFF]))
-                                    
-                                    if err_code == 0:
-                                        # Phase 2: Wait for ACK (1 byte = 0), then send data
-                                        ack = await self.read_bytes(1)
-                                        if ack and ack[0] == 0:
-                                            self.uart.write(data_chunk)
-                            
-                            elif sub_op == OP_RFM_READLN:
-                                # READLN: PathAddr(2) + PathNum(1) + BytesToRead(2)
-                                hdr = await self.read_bytes(5)
-                                if hdr:
-                                    path_addr = (hdr[0] << 8) | hdr[1]
-                                    max_bytes = (hdr[3] << 8) | hdr[4]
-                                    
-                                    err_code = 207 
-                                    data_chunk = bytearray()
-                                    
-                                    if path_addr in self.rfm_paths:
-                                        f = self.rfm_paths[path_addr]['handle']
-                                        try:
-                                            for _ in range(max_bytes):
-                                                char = f.read(1)
-                                                if not char:
-                                                    if len(data_chunk) == 0: err_code = 211 # EOF
-                                                    break
-                                                if char[0] == 0x0A:
-                                                    char = b'\x0D'
-                                                data_chunk.extend(char)
-                                                err_code = 0
-                                                if char[0] == 0x0D:
-                                                    break
-                                            if err_code == 0:
-                                                activity_led.blink()
-                                        except Exception as e:
-                                            print(f"RFM READLN error: {e}")
-                                            err_code = 211
-
-                                    valid_len = len(data_chunk)
-                                    self.uart.write(bytes([err_code, (valid_len >> 8) & 0xFF, valid_len & 0xFF]))
-                                    
-                                    if err_code == 0:
-                                        ack = await self.read_bytes(1)
-                                        if ack and ack[0] == 0:
-                                            self.uart.write(data_chunk)
-
-                            elif sub_op == OP_RFM_GETSTT:
-                                # GETSTT: PathAddr(2) + PathNum(1) + StatCode(1)
-                                hdr = await self.read_bytes(4)
-                                if hdr:
-                                    path_addr = (hdr[0] << 8) | hdr[1]
-                                    stat_code = hdr[3]
-                                    
-                                    err_code = 207 
-                                    if path_addr in self.rfm_paths:
-                                        err_code = 0
-                                        if stat_code == 2: # Get File Size
-                                            try:
-                                                f = self.rfm_paths[path_addr]['handle']
-                                                current_pos = f.tell()
-                                                f.seek(0, 2) # end
-                                                size = f.tell()
-                                                f.seek(current_pos)
-                                                
-                                                self.uart.write(bytes([
-                                                    err_code, 
-                                                    (size >> 24) & 0xFF, 
-                                                    (size >> 16) & 0xFF, 
-                                                    (size >> 8) & 0xFF, 
-                                                    size & 0xFF
-                                                ]))
-                                            except Exception:
-                                                self.uart.write(bytes([211, 0, 0, 0, 0])) # Error getting size
-                                        else:
-                                            # Other stat codes not fully supported, return error 0
-                                            self.uart.write(bytes([0]))
-                                    else:
-                                        self.uart.write(bytes([err_code]))
+                                    if remote_cs == local_cs:
+                                        # Write to disk cache
+                                        success = False
+                                        if drive_num < NUM_DRIVES and self.drives[drive_num]:
+                                            start_t = utime.ticks_us()
+                                            success = await self.drives[drive_num].write_sector(lsn, data)
+                                            self.drives[drive_num].stats['latency_us'] = utime.ticks_diff(utime.ticks_us(), start_t)
                                         
-                            elif sub_op == OP_RFM_SETSTT:
-                                # SETSTT: PathAddr(2) + PathNum(1) + StatCode(1)
-                                hdr = await self.read_bytes(4)
-                                if hdr:
-                                    # Stubbed success, Swift does the same
-                                    self.uart.write(bytes([0]))
-
-                            elif sub_op == OP_RFM_CLOSE:
-                                # CLOSE: ProcessID(1) + PathNum(1) + PathAddr(2)
-                                hdr = await self.read_bytes(4)
-                                if hdr:
-                                    path_addr = (hdr[2] << 8) | hdr[3]
-                                    err_code = 0
-                                    
-                                    if path_addr in self.rfm_paths:
-                                        try:
-                                            self.rfm_paths[path_addr]['handle'].close()
-                                            del self.rfm_paths[path_addr]
-                                            activity_led.blink()
-                                            resilience.log(f"RFM CLOSE: Addr {path_addr}")
-                                        except Exception:
-                                            err_code = 214
+                                        if success:
+                                            # Record turnaround time
+                                            proc_done_t = utime.ticks_us()
+                                            self.stats['latency']['turnaround_us'] = utime.ticks_diff(proc_done_t, req_start_t)
+                                            
+                                            self.uart.write(bytes([E_NONE]))  # ACK
+                                            
+                                            # Total request time
+                                            self.stats['latency']['total_request_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
+                                        else:
+                                            # Use drive-specific error (E_WP for remote, E_UNIT for missing)
+                                            err = getattr(self.drives[drive_num], 'last_error', E_UNIT) or E_UNIT
+                                            self.uart.write(bytes([err]))
                                     else:
-                                        err_code = 207
+                                        self.uart.write(bytes([E_CRC]))
 
-                                    self.uart.write(bytes([err_code]))
-                            
-                            elif sub_op in (OP_RFM_CREATE, OP_RFM_MAKDIR, OP_RFM_DELETE, OP_RFM_WRITE, OP_RFM_WRITLN):
-                                # Unsupported/stub operations
-                                # Usually they return success or error, but determining exact packet length to discard
-                                # requires complex state. Swift stubs these by just returning 1 (meaning it reads 1 byte and drops it).
-                                # To avoid sync loss, we must fail gracefully if we don't know the exact length expected from Guest.
-                                print(f"RFM SubOp {sub_op} unsupported")
+                        elif opcode == OP_TIME:
+                            # OP_TIME ($23)
+                            # Bi-directional.
+                            # Server response: Year(0-255, yr-1900), Month(1-12), Day(1-31), Hour(0-23), Minute(0-59), Second(0-59)
+                            try:
+                                import time_sync
+                                t = time_sync.get_local_time()
+                                if not t or len(t) < 6:
+                                    raise ValueError("Invalid time tuple")
+                                # t is (year, month, day, hour, minute, second, wday, yday)
+                                year = t[0] - 1900
+                                if year < 0: year = 0
+                                if year > 255: year = 255
+                                resp = bytes([year, t[1], t[2], t[3], t[4], t[5]])
+                            except Exception as e:
+                                print(f"OP_TIME Error: {e}")
+                                resp = bytes([0, 1, 1, 0, 0, 0])  # Fallback: 1900-01-01 00:00:00
+                            self.uart.write(resp)
 
-                    elif opcode == OP_INIT:
-                         pass # No response needed
-                    
-                    elif opcode == OP_TERM:
-                         pass # No response needed
-
-                    # Feed WDT after each completed transaction to prevent
-                    # resets during sustained I/O bursts (e.g., OS-9 boot)
-                    resilience.feed_wdt()
+                        elif opcode == OP_PRINT:
+                            # OP_PRINT ($50) + 1 byte
+                            b = await self.read_bytes(1)
+                            if b:
+                                self.print_buffer.extend(b)
                         
-                else:
-                    # If UART buffer is empty, it's safe to do background tasks (flush, GC)
-                    loop_counter += 1
-                    if loop_counter >= 10: # approx every 10 idle ticks
-                        import gc
-                        gc.collect()
-                        loop_counter = 0
-                    await asyncio.sleep(0.01)  # Yield to other tasks (reduced CPU usage when idle)
-                    
-            except Exception as e:
-                resilience.log(f"DW protocol error: {e}", level=3)
-                resilience.feed_wdt()
-                await asyncio.sleep(1)
+                        elif opcode == OP_PRINTFLUSH:
+                            # OP_PRINTFLUSH ($46)
+                            # Flush buffer to stdout (log)
+                            try:
+                                # Try decoding as text, fallback to hex if needed
+                                msg = self.print_buffer.decode('utf-8', 'ignore')
+                                print(f"[PRINTER] {msg}")
+                            except Exception:
+                                resilience.log(f"[PRINTER HEX] {self.print_buffer.hex()}")
+                            self.print_buffer = bytearray()
+                            
+                        elif opcode == OP_GETSTAT:
+                            # OP_GETSTAT ($47) + Drive(1) + Code(1)
+                            # Server just logs it/updates stats? Spec says "informational purposes only".
+                            req = await self.read_bytes(2)
+                            if req:
+                                self.stats['last_drive'] = req[0]
+                                self.stats['last_stat'] = req[1]
+                                # print(f"GETSTAT Drv:{req[0]} Code:{req[1]}")
+                                
+                        elif opcode == OP_SETSTAT:
+                            # OP_SETSTAT ($53) + Drive(1) + Code(1)
+                            req = await self.read_bytes(2)
+                            if req:
+                                self.stats['last_drive'] = req[0]
+                                self.stats['last_stat'] = req[1]
+                                # print(f"SETSTAT Drv:{req[0]} Code:{req[1]}")
+
+                        elif opcode == OP_SERREAD:
+                            # OP_SERREAD ($43) - Polling
+                            # Response: Byte 1 (Status/Data Avail), Byte 2 (Data or Count)
+                            # Byte1 1-15: single byte for channel (byte1-1), byte2=data
+                            # Byte1 17-31: bulk count for channel (byte1-1-16), byte2=count
+                            found_channel = -1
+                            for i in range(NUM_CHANNELS):
+                                if len(self.channels[i]) > 0:
+                                    found_channel = i
+                                    break
+                                    
+                            if found_channel >= 0 and len(self.channels[found_channel]) > 0:
+                                ch_idx = found_channel
+                                buf_len = len(self.channels[ch_idx])
+                                
+                                if buf_len == 1:
+                                    # Single byte mode: byte1 = channel + 1, byte2 = data
+                                    response_byte_1 = ch_idx + 1
+                                    data_byte = self.channels[ch_idx].pop(0)
+                                    self.uart.write(bytes([response_byte_1, data_byte]))
+                                    self.snoop_serial(ch_idx, data_byte)
+                                else:
+                                    # Bulk mode: byte1 = channel + 1 + 16, byte2 = count
+                                    count = min(buf_len, 255)
+                                    response_byte_1 = ch_idx + 1 + 16
+                                    self.uart.write(bytes([response_byte_1, count]))
+                                
+                                # Record turnaround time (just before final TX or end of op)
+                                self.stats['latency']['turnaround_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
+                                # For SERREAD, the last write happened above, so total time is similar
+                                self.stats['latency']['total_request_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
+
+                                # Stats
+                                if ch_idx not in self.stats['serial']: self.stats['serial'][ch_idx] = {'tx':0, 'rx':0}
+                                self.stats['serial'][ch_idx]['rx'] += 1
+                            else:
+                                self.uart.write(bytes([0, 0]))
+
+                        elif opcode == OP_SERWRITE:
+                            # OP_SERWRITE ($C3) + Channel(1) + Data(1)
+                            req = await self.read_bytes(2)
+                            if req:
+                                chan = req[0]
+                                val = req[1]
+                                # Handle Write. 
+                                if chan in self.tcp_connections:
+                                    try:
+                                        _, writer, _ = self.tcp_connections[chan]
+                                        writer.write(bytes([val]))
+                                        await writer.drain()
+                                        
+                                        # Stats
+                                        if chan not in self.stats['serial']: self.stats['serial'][chan] = {'tx':0, 'rx':0}
+                                        self.stats['serial'][chan]['tx'] += 1
+                                        
+                                        # Snoop
+                                        self.snoop_serial(chan, val)
+                                        
+                                    except Exception as e:
+                                        resilience.log(f"TCP Write Error Ch{chan}: {e}", level=2)
+                                        # Clean up dead connection
+                                        self.log_msg(f"TCP Ch{chan} write failed, closing")
+                                        await self.close_tcp(chan)
+                                else:
+                                    pass # No connection, discard
+
+                        elif opcode == OP_SERREADM:
+                            # OP_SERREADM ($63) - Bulk read
+                            # CoCo sends: Channel(1) + Count(1)
+                            # Server responds: Count bytes from channel queue
+                            req = await self.read_bytes(2)
+                            if req:
+                                chan = req[0]
+                                count = req[1]
+                                if chan < NUM_CHANNELS and len(self.channels[chan]) >= count:
+                                    data = bytes(self.channels[chan][:count])
+                                    self.channels[chan] = self.channels[chan][count:]
+                                    self.uart.write(data)
+                                    self.snoop_serial(chan, data)
+                                    if chan not in self.stats['serial']: self.stats['serial'][chan] = {'tx':0, 'rx':0}
+                                    self.stats['serial'][chan]['rx'] += count
+                                # If not enough data, spec says server doesn't respond (CoCo times out)
+
+                        elif opcode == OP_SERWRITEM:
+                            # OP_SERWRITEM ($64) - Bulk write
+                            # CoCo sends: Channel(1) + Count(1) + Data(Count)
+                            hdr = await self.read_bytes(2)
+                            if hdr:
+                                chan = hdr[0]
+                                count = hdr[1]
+                                data = await self.read_bytes(count)
+                                if data and chan in self.tcp_connections:
+                                    try:
+                                        _, writer, _ = self.tcp_connections[chan]
+                                        writer.write(data)
+                                        await writer.drain()
+                                        if chan not in self.stats['serial']: self.stats['serial'][chan] = {'tx':0, 'rx':0}
+                                        self.stats['serial'][chan]['tx'] += count
+                                        self.snoop_serial(chan, data)
+                                    except Exception as e:
+                                        resilience.log(f"SERWRITEM TCP Error Ch{chan}: {e}", level=2)
+                                        await self.close_tcp(chan)
+
+                        elif opcode == OP_SERGETSTAT:
+                            # OP_SERGETSTAT ($44) + Channel(1) + Code(1)
+                            # Uni-directional, for logging only (per spec)
+                            await self.read_bytes(2)
+
+                        elif (opcode & 0xF0) == 0x80:
+                            # FASTWRITE ($8x) + Data(1)
+                            # Channel is opcode & 0x0F
+                            chan = opcode & 0x0F
+                            val = await self.read_bytes(1)
+                            if val:
+                                if chan in self.tcp_connections:
+                                    try:
+                                        _, writer, _ = self.tcp_connections[chan]
+                                        writer.write(val)
+                                        await writer.drain()
+                                        if chan not in self.stats['serial']: self.stats['serial'][chan] = {'tx':0, 'rx':0}
+                                        self.stats['serial'][chan]['tx'] += 1
+                                        self.snoop_serial(chan, val[0])
+                                    except Exception as e:
+                                        resilience.log(f"FASTWRITE TCP Error Ch{chan}: {e}", level=2)
+                                        await self.close_tcp(chan)
+
+                        elif opcode == OP_SERINIT:
+                             # 1 byte channel
+                             ch_byte = await self.read_bytes(1)
+                             if ch_byte:
+                                 chan = ch_byte[0]
+                                 # Check config for mapping
+                                 smap = self.config.get("serial_map")
+                                 # Keys are strings in json
+                                 if smap and str(chan) in smap:
+                                     mapping = smap[str(chan)]
+                                     host = mapping['host']
+                                     port = mapping['port']
+                                     mode = mapping.get('mode', 'client') # client or server
+                                     
+                                     resilience.log(f"Initialize VSerial Ch{chan} ({mode}) -> {host}:{port}")
+                                     try:
+                                         # Close existing if needed
+                                         if chan in self.tcp_connections:
+                                             await self.close_tcp(chan)
+                                         
+                                         if mode == 'server':
+                                             # Start a server
+                                             # We use a helper to capture chan in closure
+                                             def make_accept_handler(c):
+                                                 return lambda r, w: self.tcp_accept_handler(c, r, w)
+                                                 
+                                             server = await asyncio.start_server(make_accept_handler(chan), host, port)
+                                             # Store server object so we can close it?
+                                             # Actually asyncio.start_server returns a Server object.
+                                             # But we also need to store the active client connection if one is made.
+                                             # tcp_connections currently stores (reader, writer, task).
+                                             # For server mode, we might need to store (server_obj, current_client_tuple).
+                                             # To keep it simple: tcp_connections will ONLY store the active data connection (reader, writer, task).
+                                             # We will need a separate dict for "servers" so we can close the listening port.
+                                             if not hasattr(self, 'tcp_servers'): self.tcp_servers = {}
+                                             self.tcp_servers[chan] = server
+                                             resilience.log(f"Listening on {host}:{port} for Ch{chan}")
+                                         else:
+                                             # Client mode
+                                             reader, writer = await asyncio.open_connection(host, port)
+                                             # Start background reader
+                                             task = asyncio.create_task(self.tcp_reader_task(chan, reader))
+                                             self.tcp_connections[chan] = (reader, writer, task)
+
+                                     except Exception as e:
+                                         print(f"Failed to connect/listen VSerial Ch{chan}: {e}")
+
+                        
+                        elif opcode == OP_SERTERM:
+                             # 1 byte channel
+                             ch_byte = await self.read_bytes(1)
+                             if ch_byte:
+                                 chan = ch_byte[0]
+                                 await self.close_tcp(chan)
+                                 # Also close server if any
+                                 if hasattr(self, 'tcp_servers') and chan in self.tcp_servers:
+                                     self.tcp_servers[chan].close()
+                                     # await self.tcp_servers[chan].wait_closed() # Optional in recent MP?
+                                     del self.tcp_servers[chan]
+                                     print(f"Stopped Listening on Ch{chan}")
+                             
+                        elif opcode == OP_SERSETSTAT:
+                            # Channel(1) + Code(1) + Optional...
+                            req = await self.read_bytes(2)
+                            if req:
+                                code = req[1]
+                                if code == 0x28: # SS.ComSt -> 26 more bytes!
+                                    await self.read_bytes(26)
+
+                        elif opcode in (OP_NAMEOBJ_MOUNT, OP_NAMEOBJ_CREATE):
+                            # OP_NAMEOBJ_MOUNT ($01) / CREATE ($02) + Len(1) + Name(Len)
+                            # Response: DriveNum(1) or 0 on fail.
+                            ln_b = await self.read_bytes(1)
+                            if ln_b:
+                                ln = ln_b[0]
+                                name_b = await self.read_bytes(ln)
+                                if name_b:
+                                    try:
+                                        name = name_b.decode('ascii', 'ignore')
+                                        # Try to mount it.
+                                        # Find free drive slot
+                                        free_drive = -1
+                                        for i in range(NUM_DRIVES):
+                                            if self.drives[i] is None:
+                                                free_drive = i
+                                                break
+                                        
+                                        if free_drive >= 0:
+                                            # Validate: restrict to .dsk files without path traversal
+                                            if '..' in name or not name.endswith('.dsk'):
+                                                self.uart.write(bytes([0]))
+                                                resilience.log(f"NamedObj denied: {name}", level=2)
+                                            else:
+                                                # Try to mount
+                                                try:
+                                                    vd = VirtualDrive(name)
+                                                    if vd.file:
+                                                        self.drives[free_drive] = vd
+                                                        self.uart.write(bytes([free_drive]))
+                                                        resilience.log(f"Mounted {name} to Drive {free_drive}")
+                                                    else:
+                                                        self.uart.write(bytes([0]))
+                                                except Exception:
+                                                    self.uart.write(bytes([0]))
+                                        else:
+                                            self.uart.write(bytes([0])) # No free drives
+                                    except Exception as e:
+                                        resilience.log(f"NamedObj error: {e}", level=3)
+                                        self.uart.write(bytes([0]))
+
+                        elif opcode == OP_WIREBUG:
+                            # OP_WIREBUG ($42) + CoCoType(1) + CPUType(1) + Reserved(21)??
+                            # Param 3 says 3-23 reserved, so 21 bytes. Total 23 bytes payload.
+                            wb_data = await self.read_bytes(23)
+                            if wb_data:
+                                resilience.log("Entered WireBug Mode")
+                            else:
+                                resilience.log("WireBug handshake timeout", level=2)
+                            # We just stay silent now, as we are the server and we initiate commands.
+                            # If we don't send commands, CoCo just waits. 
+                            # To exit, we could send OP_WIREBUG_GO ($47) but usually we wait for user input.
+
+                        elif opcode == OP_RFM:
+                            # OP_RFM ($D6) + SubOp(1)
+                            sub_op_bytes = await self.read_bytes(1)
+                            if sub_op_bytes:
+                                sub_op = sub_op_bytes[0]
+                                
+                                if sub_op == OP_RFM_OPEN:
+                                    # OPEN: ProcessID(1) + PathNum(1) + PathAddr(2) + Mode(1) + PathLen(2) + PathStr(PathLen)
+                                    hdr = await self.read_bytes(7)
+                                    if hdr:
+                                        path_addr = (hdr[2] << 8) | hdr[3]
+                                        mode = hdr[4]
+                                        path_len = (hdr[5] << 8) | hdr[6]
+                                        path_bytes = await self.read_bytes(path_len)
+                                        
+                                        err_code = 216 # Default error
+                                        lsn0 = lsn1 = lsn2 = 0
+                                        
+                                        if path_bytes:
+                                            path_str = path_bytes.decode('ascii', 'ignore')
+                                            safe_path = self._sanitize_rfm_path(path_str)
+                                            if safe_path is None:
+                                                resilience.log(f"RFM OPEN denied: {path_str}", level=2)
+                                                err_code = 216
+                                            else:
+                                                try:
+                                                    file_mode = 'rb' if not (mode & 0x02) else 'r+b'
+                                                    f = open(safe_path, file_mode)
+                                                    self.rfm_paths[path_addr] = {'handle': f, 'mode': mode}
+                                                    err_code = 0
+                                                    lsn0, lsn1, lsn2 = 3, 2, 1
+                                                    activity_led.blink()
+                                                    resilience.log(f"RFM OPEN: {safe_path} (mode {mode}) -> Addr: {path_addr}")
+                                                except Exception as e:
+                                                    resilience.log(f"RFM OPEN error: {e}", level=3)
+                                                    err_code = 216
+                                        
+                                        self.uart.write(bytes([err_code, lsn0, lsn1, lsn2]))
+
+                                elif sub_op == OP_RFM_CHGDIR:
+                                    # CHGDIR: ProcessID(1) + PathNum(1) + PathAddr(2) + Mode(1) + PathLen(2) + PathStr(PathLen)
+                                    hdr = await self.read_bytes(7)
+                                    if hdr:
+                                        mode = hdr[4]
+                                        path_len = (hdr[5] << 8) | hdr[6]
+                                        path_bytes = await self.read_bytes(path_len)
+                                        
+                                        err_code = 0 # Assume success for now, or validate directory exists
+                                        if path_bytes:
+                                            path_str = path_bytes.decode('ascii', 'ignore')
+                                            safe_path = self._sanitize_rfm_path(path_str)
+                                            if safe_path is None:
+                                                resilience.log(f"RFM CHGDIR denied: {path_str}", level=2)
+                                                err_code = 216
+                                            else:
+                                                try:
+                                                    os.stat(safe_path)
+                                                    err_code = 0
+                                                except OSError:
+                                                    err_code = 216
+                                                
+                                        self.uart.write(bytes([err_code, 3, 2, 1]))
+
+                                elif sub_op == OP_RFM_SEEK:
+                                    # SEEK: PathAddr(2) + PathNum(1) + Pos(4)
+                                    hdr = await self.read_bytes(7)
+                                    if hdr:
+                                        path_addr = (hdr[0] << 8) | hdr[1]
+                                        pos = (hdr[3] << 24) | (hdr[4] << 16) | (hdr[5] << 8) | hdr[6]
+                                        
+                                        err_code = 207 # Bad path
+                                        if path_addr in self.rfm_paths:
+                                            try:
+                                                self.rfm_paths[path_addr]['handle'].seek(pos)
+                                                err_code = 0
+                                                activity_led.blink()
+                                            except Exception as e:
+                                                resilience.log(f"RFM SEEK error: {e}", level=3)
+                                                err_code = 211 # Read error/EOF
+                                        
+                                        self.uart.write(bytes([err_code]))
+
+                                elif sub_op == OP_RFM_READ:
+                                    # READ: PathAddr(2) + PathNum(1) + BytesToRead(2)
+                                    hdr = await self.read_bytes(5)
+                                    if hdr:
+                                        path_addr = (hdr[0] << 8) | hdr[1]
+                                        bytes_to_read = (hdr[3] << 8) | hdr[4]
+                                        
+                                        err_code = 207 # Bad path
+                                        data_chunk = b""
+                                        
+                                        if path_addr in self.rfm_paths:
+                                            try:
+                                                data_chunk = self.rfm_paths[path_addr]['handle'].read(bytes_to_read)
+                                                if data_chunk is None:
+                                                     data_chunk = b""
+                                                if len(data_chunk) > 0:
+                                                     err_code = 0
+                                                     activity_led.blink()
+                                                else:
+                                                     err_code = 211 # EOF
+                                            except Exception as e:
+                                                print(f"RFM READ error: {e}")
+                                                err_code = 211
+                                                
+                                        valid_len = len(data_chunk)
+                                        # Phase 1 response: ErrorCode(1) + ValidLen(2)
+                                        self.uart.write(bytes([err_code, (valid_len >> 8) & 0xFF, valid_len & 0xFF]))
+                                        
+                                        if err_code == 0:
+                                            # Phase 2: Wait for ACK (1 byte = 0), then send data
+                                            ack = await self.read_bytes(1)
+                                            if ack and ack[0] == 0:
+                                                self.uart.write(data_chunk)
+                                
+                                elif sub_op == OP_RFM_READLN:
+                                    # READLN: PathAddr(2) + PathNum(1) + BytesToRead(2)
+                                    hdr = await self.read_bytes(5)
+                                    if hdr:
+                                        path_addr = (hdr[0] << 8) | hdr[1]
+                                        max_bytes = (hdr[3] << 8) | hdr[4]
+                                        
+                                        err_code = 207 
+                                        data_chunk = bytearray()
+                                        
+                                        if path_addr in self.rfm_paths:
+                                            f = self.rfm_paths[path_addr]['handle']
+                                            try:
+                                                for _ in range(max_bytes):
+                                                    char = f.read(1)
+                                                    if not char:
+                                                        if len(data_chunk) == 0: err_code = 211 # EOF
+                                                        break
+                                                    if char[0] == 0x0A:
+                                                        char = b'\x0D'
+                                                    data_chunk.extend(char)
+                                                    err_code = 0
+                                                    if char[0] == 0x0D:
+                                                        break
+                                                if err_code == 0:
+                                                    activity_led.blink()
+                                            except Exception as e:
+                                                print(f"RFM READLN error: {e}")
+                                                err_code = 211
+
+                                        valid_len = len(data_chunk)
+                                        self.uart.write(bytes([err_code, (valid_len >> 8) & 0xFF, valid_len & 0xFF]))
+                                        
+                                        if err_code == 0:
+                                            ack = await self.read_bytes(1)
+                                            if ack and ack[0] == 0:
+                                                self.uart.write(data_chunk)
+
+                                elif sub_op == OP_RFM_GETSTT:
+                                    # GETSTT: PathAddr(2) + PathNum(1) + StatCode(1)
+                                    hdr = await self.read_bytes(4)
+                                    if hdr:
+                                        path_addr = (hdr[0] << 8) | hdr[1]
+                                        stat_code = hdr[3]
+                                        
+                                        err_code = 207 
+                                        if path_addr in self.rfm_paths:
+                                            err_code = 0
+                                            if stat_code == 2: # Get File Size
+                                                try:
+                                                    f = self.rfm_paths[path_addr]['handle']
+                                                    current_pos = f.tell()
+                                                    f.seek(0, 2) # end
+                                                    size = f.tell()
+                                                    f.seek(current_pos)
+                                                    
+                                                    self.uart.write(bytes([
+                                                        err_code, 
+                                                        (size >> 24) & 0xFF, 
+                                                        (size >> 16) & 0xFF, 
+                                                        (size >> 8) & 0xFF, 
+                                                        size & 0xFF
+                                                    ]))
+                                                except Exception:
+                                                    self.uart.write(bytes([211, 0, 0, 0, 0])) # Error getting size
+                                            else:
+                                                # Other stat codes not fully supported, return error 0
+                                                self.uart.write(bytes([0]))
+                                        else:
+                                            self.uart.write(bytes([err_code]))
+                                            
+                                elif sub_op == OP_RFM_SETSTT:
+                                    # SETSTT: PathAddr(2) + PathNum(1) + StatCode(1)
+                                    hdr = await self.read_bytes(4)
+                                    if hdr:
+                                        # Stubbed success, Swift does the same
+                                        self.uart.write(bytes([0]))
+
+                                elif sub_op == OP_RFM_CLOSE:
+                                    # CLOSE: ProcessID(1) + PathNum(1) + PathAddr(2)
+                                    hdr = await self.read_bytes(4)
+                                    if hdr:
+                                        path_addr = (hdr[2] << 8) | hdr[3]
+                                        err_code = 0
+                                        
+                                        if path_addr in self.rfm_paths:
+                                            try:
+                                                self.rfm_paths[path_addr]['handle'].close()
+                                                del self.rfm_paths[path_addr]
+                                                activity_led.blink()
+                                                resilience.log(f"RFM CLOSE: Addr {path_addr}")
+                                            except Exception:
+                                                err_code = 214
+                                        else:
+                                            err_code = 207
+
+                                        self.uart.write(bytes([err_code]))
+                                
+                                elif sub_op in (OP_RFM_CREATE, OP_RFM_MAKDIR, OP_RFM_DELETE, OP_RFM_WRITE, OP_RFM_WRITLN):
+                                    # Unsupported/stub operations
+                                    # Usually they return success or error, but determining exact packet length to discard
+                                    # requires complex state. Swift stubs these by just returning 1 (meaning it reads 1 byte and drops it).
+                                    # To avoid sync loss, we must fail gracefully if we don't know the exact length expected from Guest.
+                                    print(f"RFM SubOp {sub_op} unsupported")
+
+                        elif opcode == OP_INIT:
+                             pass # No response needed
+                        
+                        elif opcode == OP_TERM:
+                             pass # No response needed
+
+                        # Feed WDT after each completed transaction to prevent
+                        # resets during sustained I/O bursts (e.g., OS-9 boot)
+                        resilience.feed_wdt()
+                            
+                    else:
+                        # If UART buffer is empty, it's safe to do background tasks (flush, GC)
+                        loop_counter += 1
+                        if loop_counter >= 10: # approx every 10 idle ticks
+                            import gc
+                            gc.collect()
+                            loop_counter = 0
+                        await asyncio.sleep(0.01)  # Yield to other tasks (reduced CPU usage when idle)
+                        
+                except Exception as e:
+                    resilience.log(f"DW protocol error: {e}", level=3)
+                    resilience.feed_wdt()
+                    await asyncio.sleep(1)
+        finally:
+            self.running = False
+            # Ensure all drives are flushed and closed on exit
+            for d in self.drives:
+                if d:
+                    try:
+                        await d.close()
+                    except Exception:
+                        pass
+            resilience.log("DriveWire Server Stopped")
 
     async def tcp_accept_handler(self, chan, reader, writer):
         try:

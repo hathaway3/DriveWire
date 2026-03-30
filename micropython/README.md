@@ -8,6 +8,7 @@ A full-featured DriveWire 4 server implementation in MicroPython, optimized for 
 
 1. **Upload Files**: Copy all files from the `micropython` folder to your Pico W/2 W root directory.
 2. **Configure WiFi**: Edit `config.json` on the device:
+
    ```json
    {
      "wifi_ssid": "YourNetworkName",
@@ -15,6 +16,7 @@ A full-featured DriveWire 4 server implementation in MicroPython, optimized for 
      "baud_rate": 115200
    }
    ```
+
 3. **Power On**: Device will auto-connect to WiFi and install dependencies (`microdot`) if missing.
 4. **Access Dashboard**: Open browser to the IP address shown in the serial terminal.
 5. **Connect CoCo**: Attach serial cable and start DriveWire on your CoCo (e.g., `DRIVEWIRE` in Disk BASIC 2.0).
@@ -24,7 +26,7 @@ A full-featured DriveWire 4 server implementation in MicroPython, optimized for 
 ## 📚 Documentation Index
 
 | Section | Description |
-|---------|-------------|
+| :--- | :--- |
 | [🔌 Wiring Guide](docs/wiring.md) | How to connect your Pico to the CoCo and SD card. |
 | [🌐 Remote Drives](docs/remote_drives.md) | Using remote disk images and Clone & Hot-Swap. |
 | [🛠️ REST API](docs/api.md) | Documentation for the server's internal API endpoints. |
@@ -38,7 +40,8 @@ A full-featured DriveWire 4 server implementation in MicroPython, optimized for 
 - **Remote Disk Images**: Mount read-only disk images from a remote HTTP sector server over WiFi.
 - **Activity LED**: Onboard LED blinks during disk ops and glows during flash flushes.
 - **Robust Error Handling**: Comprehensive exception handling across all I/O operations with graceful fallbacks.
-- **Memory Optimized**: Reduced cache sizes and `const()` declarations minimize RAM usage (~80-120KB typical).
+- **Memory Optimized**: Pre-allocated internal buffers and generator-based streaming minimize RAM spikes.
+- **Deep Directory Scanning**: Supports up to 3 levels of nested folders on the SD card.
 - **Retro Web Dashboard**: Tandy/CoCo-inspired dark mode interface for configuration and monitoring.
 - **Virtual Serial TCP/IP**: Map CoCo virtual serial ports to external network services.
 - **Remote File Manager (RFM)**: Full DriveWire 4 RFM support natively from the CoCo.
@@ -51,7 +54,7 @@ A full-featured DriveWire 4 server implementation in MicroPython, optimized for 
 The server maintains a circular log buffer for the Web Dashboard and an optional persistent `system.log` file on the flash.
 
 | Level | Name | Description | Flash Wear |
-|-------|------|-------------|------------|
+| :--- | :--- | :--- | :--- |
 | 0 | DEBUG | Verbosely log every packet and internal state change. | **HIGH** |
 | 1 | INFO | Log system startups, drive mounts, and major events. | LOW |
 | 2 | WARN | Log timeouts, retries, and non-fatal network issues. | MINIMAL |
@@ -66,21 +69,24 @@ The server maintains a circular log buffer for the Web Dashboard and an optional
 ## 📊 Performance & Memory
 
 **Typical Memory Usage:**
+
 - **Base system**: ~60-80KB
 - **Web server**: ~20-30KB
 - **Per mounted drive**: ~14-16KB total
-    - **Directory Cache**: 8KB (32 entries)
-    - **Read Cache**: 2KB (8 entries)
-    - **Write Cache**: 4KB (16 entries)
+  - **Directory Cache**: 8KB (32 entries)
+  - **Read Cache**: 2KB (8 entries)
+  - **Write Cache**: 4KB (16 entries)
 - **Total typical usage**: 100-180KB (depending on drive count)
 
 **Optimizations:**
+
 - **RBF-Aware Caching**: Dedicated 32-entry directory cache (8KB) for LSN 0 and OS-9 directory structures dramatically speeds up file operations.
 - **Micro-Read Cache**: 8-entry LRU cache (2KB) for general data sectors.
-- **Write-Back Cache**: 16-sector (4KB) buffer protects flash memory from redundant writes.
+- **Pre-allocated Internal Buffers**: Critical protocol buffers (`_resp_buf`, `_header_buf`) are pre-allocated at startup to prevent heap fragmentation.
+- **Generator-based Pipelines**: Scanning and API metadata are streamed piece-by-piece to minimize peak memory footprint.
+- **Throttled Logging**: Log file size checks are throttled to every 20 calls to reduce SD card latency.
 - `micropython.const()` for all opcodes/constants saves RAM.
 - Limited channel buffers to 256 bytes max.
-- Efficient timeout handling reduces latency.
 
 ---
 
@@ -99,7 +105,7 @@ See the [Wiring Guide](docs/wiring.md) for detailed hardware troubleshooting.
 ## 📁 File Structure
 
 | File | Purpose |
-|------|---------|
+| :--- | :--- |
 | `tests/` | Host-side simulation tests and utilities |
 
 ---
@@ -109,18 +115,29 @@ See the [Wiring Guide](docs/wiring.md) for detailed hardware troubleshooting.
 The DriveWire server includes host-side simulation tests to verify protocol correctness and RBF (OS-9) disk handling without needing physical hardware.
 
 ### Running Tests
+
 To run the full suite of simulation tests:
+
 ```bash
 python3 tests/test_drivewire.py
+```
+
+```bash
 python3 tests/test_resilience.py
+```
+
+```bash
 python3 tests/test_os9_disk.py
 ```
 
 ### Generating Test Disks
+
 You can create a minimal valid OS-9 RBF disk image for testing purposes using the utility:
+
 ```bash
 python3 tests/os9_disk_util.py
 ```
+
 This will create `test_os9.dsk` with a valid LSN 0 and root directory.
 
 ---

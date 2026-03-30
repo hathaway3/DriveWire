@@ -1,3 +1,7 @@
+---
+trigger: always_on
+---
+
 # MicroPython Code Quality Standards
 
 To ensure the DriveWire project remains performant and reliable on the RP2040 and RP2350, all code must adhere to these MicroPython-specific quality standards.

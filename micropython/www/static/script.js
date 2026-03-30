@@ -423,7 +423,7 @@ async function customConfirm(message) {
         const btnYes = document.getElementById('confirm-yes');
         const btnNo = document.getElementById('confirm-no');
 
-        msgEl.innerText = message;
+        msgEl.textContent = message;
         overlay.style.display = 'flex';
         _dialogOpen = true; // Still keeps background polling tidy
 
@@ -445,7 +445,7 @@ async function customAlert(message) {
         const msgEl = document.getElementById('alert-msg');
         const btnOk = document.getElementById('alert-ok');
 
-        msgEl.innerText = message;
+        msgEl.textContent = message;
         overlay.style.display = 'flex';
         _dialogOpen = true;
 
@@ -519,9 +519,19 @@ async function handleFileUpload(files) {
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
         if (!file.name.toLowerCase().endsWith('.dsk')) {
-            statusEl.innerText = `SKIPPING ${file.name}: ONLY .DSK ALLOWED`;
+            statusEl.textContent = `SKIPPING ${file.name}: ONLY .DSK ALLOWED`;
             statusEl.classList.add('error');
             continue;
+        }
+
+        // Check if file is currently "In Use" (regression protection)
+        const isMounted = mountedFiles.some(f => f.split('/').pop() === file.name);
+        if (isMounted) {
+            const confirmed = await customConfirm(`WARNING: ${file.name} IS CURRENTLY [IN USE].\nOVERWRITING MAY CRASH THE COCO.\n\nPROCEED ANYWAY?`);
+            if (!confirmed) {
+                statusEl.textContent = `SKIPPED ${file.name} (IN USE)`;
+                continue;
+            }
         }
 
         try {
@@ -598,10 +608,10 @@ async function handleFileUpload(files) {
             xhr.send(file);
 
             await promise;
-            statusEl.innerText = `SAVED ${file.name} OK`;
+            statusEl.textContent = `SAVED ${file.name} OK`;
             statusEl.className = 'status success';
         } catch (e) {
-            statusEl.innerText = `UPLOAD FAILED FOR ${file.name}: ${e}`;
+            statusEl.textContent = `UPLOAD FAILED FOR ${file.name}: ${e}`;
             statusEl.className = 'status error';
             console.error("Upload error", e);
             break;
@@ -659,14 +669,14 @@ async function pollStatus() {
         if (!data || _dialogOpen) return;
 
         if (data.server_time) {
-            document.getElementById('stat-time').innerText = data.server_time;
+            document.getElementById('stat-time').textContent = data.server_time;
         }
 
         if (data.stats) {
             const opcode = data.stats.last_opcode;
-            document.getElementById('stat-opcode').innerText =
+            document.getElementById('stat-opcode').textContent =
                 opcode != null ? '0x' + opcode.toString(16).toUpperCase() : '--';
-            document.getElementById('stat-drive').innerText =
+            document.getElementById('stat-drive').textContent =
                 data.stats.last_drive != null ? data.stats.last_drive : '--';
 
             // Serial activity (null-safe)
