@@ -28,6 +28,7 @@ Before starting any work on the DriveWire MicroPython server, **read the knowled
 1. **Relative Links**: All internal documentation links **MUST** use relative paths. This ensures they work both in the Git repo and on the GitHub Pages site (`hathaway3.github.io/DriveWire/`).
 2. **Link Verification**: Run `python verify_links.py` before committing any documentation changes.
 3. **MkDocs Sync**: Ensure new documentation files are added to `mkdocs.yml` navigation.
+4. **Static Compression**: Run `python micropython/tools/compress_static.py` after any changes to `index.html` or `script.js`.
 
 ## DriveWire Protocol Specification
 

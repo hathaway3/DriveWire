@@ -515,7 +515,9 @@ class DriveWireServer:
             }
         }
         self.log_buffer = []
-        self.terminal_buffer = []
+        self.log_counter = 0      # Total logs ever added
+        self.terminal_buffer = [] 
+        self.terminal_counter = 0 # Total terminal bytes ever added
         self.monitor_channel = -1 # -1 = all, 0-31 = specific channel
         
         # Connect centralized logging to our dashboard buffer
@@ -612,9 +614,9 @@ class DriveWireServer:
 
     def log_msg(self, msg):
         """Add a message to the log buffer (limited size for memory efficiency)."""
-        # Trim any trailing newlines if it came from resilience.log
         clean_msg = msg.strip()
         self.log_buffer.append(clean_msg)
+        self.log_counter += 1
         if len(self.log_buffer) > MAX_LOG_ENTRIES:
             self.log_buffer.pop(0)
 
@@ -638,8 +640,10 @@ class DriveWireServer:
             # Add to terminal buffer
             if isinstance(data, int):
                 self.terminal_buffer.append(data)
+                self.terminal_counter += 1
             else:
                 self.terminal_buffer.extend(data)
+                self.terminal_counter += len(data)
             # Keep last N bytes for memory efficiency
             if len(self.terminal_buffer) > MAX_TERMINAL_BUFFER_SIZE:
                 self.terminal_buffer = self.terminal_buffer[-MAX_TERMINAL_BUFFER_SIZE:]

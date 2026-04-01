@@ -37,6 +37,9 @@ _disk_creation_progress = {'state': 'idle', 'written': 0, 'total': 0, 'filename'
 @app.route('/')
 async def index(request):
     try:
+        # Check if client supports Gzip and the .gz file exists
+        if 'gzip' in request.headers.get('Accept-Encoding', '') and resilience.file_exists('www/index.html.gz'):
+            return send_file('www/index.html.gz', content_type='text/html', headers={'Content-Encoding': 'gzip', 'Vary': 'Accept-Encoding'})
         return send_file('www/index.html')
     except OSError:
         return 'Not found', 404
@@ -46,6 +49,13 @@ async def static(request, path):
     if '..' in path:
         return 'Not found', 404
     try:
+        # Check if client supports Gzip and the .gz file exists
+        gz_path = 'www/static/' + path + '.gz'
+        if 'gzip' in request.headers.get('Accept-Encoding', '') and resilience.file_exists(gz_path):
+            # Map extension to content type
+            ext = path.split('.')[-1].lower() if '.' in path else ''
+            ctype = 'text/javascript' if ext == 'js' else 'text/css' if ext == 'css' else 'application/octet-stream'
+            return send_file(gz_path, content_type=ctype, headers={'Content-Encoding': 'gzip', 'Vary': 'Accept-Encoding'})
         return send_file('www/static/' + path)
     except OSError:
         return 'Not found', 404
@@ -232,9 +242,105 @@ async def sd_status_endpoint(request):
     except Exception as e:
         return {'mounted': False, 'error': str(e)}
 
+@app.route('/api/status/heartbeat')
+async def heartbeat_endpoint(request):
+    """Extremely lightweight heartbeat for live time and connectivity check."""
+    try:
+        try:
+            t = time_sync.get_local_time()
+            server_time = f"{t[0]:04d}-{t[1]:02d}-{t[2]:02d} {t[3]:02d}:{t[4]:02d}:{t[5]:02d}"
+        except Exception:
+            server_time = "--:--:--"
+            
+        if hasattr(app, 'dw_server'):
+            return {
+                'server_time': server_time,
+                'last_opcode': app.dw_server.stats['last_opcode'],
+                'activity': activity_led.is_on()
+            }
+        return {'server_time': server_time, 'error': 'DriveWire Server not attached'}
+    except Exception as e:
+        return {'error': str(e)}, 500
+
+@app.route('/api/status/stats')
+async def stats_endpoint(request):
+    """Return drive and serial activity statistics (medium weight)."""
+    if not hasattr(app, 'dw_server'):
+        return {'error': 'DriveWire Server not attached'}, 500
+        
+    drive_stats = []
+    for d in app.dw_server.drives:
+        if d:
+            ds = d.stats.copy()
+            ds['filename'] = d.filename.split('/')[-1]
+            ds['full_path'] = d.filename
+            ds['dirty_count'] = len(d.dirty_sectors)
+            ds['is_remote'] = getattr(d, 'is_remote', False)
+            if not ds['is_remote']:
+                ds['mtime'] = _get_file_mtime(d.filename)
+            drive_stats.append(ds)
+        else:
+            drive_stats.append(None)
+            
+    return {
+        'drive_stats': drive_stats,
+        'serial': app.dw_server.stats['serial'],
+        'protocol_stats': app.dw_server.stats # includes last_opcode, etc.
+    }
+
+@app.route('/api/status/terminal')
+async def terminal_endpoint(request):
+    """Return new terminal buffer data since the last offset."""
+    if not hasattr(app, 'dw_server'):
+        return {'error': 'DriveWire Server not attached'}, 500
+        
+    ds = app.dw_server
+    buf = ds.terminal_buffer
+    total = ds.terminal_counter
+    
+    # Calculate how many bytes are currently in the buffer
+    current_len = len(buf)
+    # The absolute offset of the first byte in the current buffer
+    start_offset = total - current_len
+    
+    if since < start_offset:
+        # Client is too far behind or brand new, give them the full current buffer
+        return {'offset': total, 'data': list(buf), 'monitor_chan': ds.monitor_channel}
+        
+    # Calculate index into current buffer
+    idx = since - start_offset
+    return {
+        'offset': total,
+        'data': list(buf[idx:]),
+        'monitor_chan': ds.monitor_channel
+    }
+
+@app.route('/api/status/logs')
+async def logs_endpoint(request):
+    """Return system logs since the last offset."""
+    if not hasattr(app, 'dw_server'):
+        return {'error': 'DriveWire Server not attached'}, 500
+        
+    ds = app.dw_server
+    logs = ds.log_buffer
+    total = ds.log_counter
+    
+    current_len = len(logs)
+    start_offset = total - current_len
+    
+    if since < start_offset:
+        return {'offset': total, 'logs': list(logs)}
+        
+    idx = since - start_offset
+    return {
+        'offset': total,
+        'logs': list(logs[idx:])
+    }
+
 @app.route('/api/status')
 async def status_endpoint(request):
-    resilience.log_mem_info("Status Poll")
+    """Original status endpoint (maintained for compatibility, but deprecated)."""
+    resilience.log_mem_info("Status Poll (Legacy)")
     try:
         # Always include server time (lightweight)
         try:
@@ -270,6 +376,8 @@ async def status_endpoint(request):
         return {'server_time': server_time, 'error': 'DriveWire Server not attached'}
     except Exception as e:
         return {'error': f'Status error: {e}'}, 500
+    finally:
+        gc.collect() # Periodically clean up during status polls
 
 @app.route('/api/files/delete', methods=['POST'])
 async def delete_file_endpoint(request):

@@ -139,9 +139,10 @@ async function init() {
         await new Promise(r => setTimeout(r, 200)); // GC breathing room
     }
 
-    // Start Polling (staggered to avoid concurrent bursts)
-    setInterval(pollStatus, 3000);  // 3 seconds for live time + heartbeat
-    setInterval(pollSdStatus, 15000);  // SD status every 15s
+    // Start Polling (Adaptive & Optimized)
+    setInterval(pollHeartbeat, 1000); // 1s heartbeat for live time + connectivity
+    setInterval(pollAdaptive, 3000);  // 3s for tab-specific data (stats, terminal, logs)
+    setInterval(pollSdStatus, 15000); // 15s for SD status
 
     // Attach listeners for dirty state tracking on the config form
     const configTab = document.getElementById('tab-config');
@@ -203,6 +204,12 @@ let _dialogOpen = false;
 let _remoteFiles = [];    // Cached remote file list
 let _cloneServerUrl = ''; // For clone modal
 let _cloneDiskName = '';  // For clone modal
+let terminalOffset = 0;   // Track incremental terminal data
+let logOffset = 0;        // Track incremental logs
+let _heartbeatInFlight = false;
+let _statsInFlight = false;
+let _termInFlight = false;
+let _logsInFlight = false;
 
 function switchTab(tabName, updateHash = true) {
     if (!VALID_TABS.includes(tabName)) return;
@@ -651,91 +658,111 @@ async function updateMonitorChannel() {
     }
 }
 
-async function pollStatus() {
-    if (isUploading || _dialogOpen || _pollInFlight) {
-        return;
-    }
-    // Only poll if tab is visible
-    const statusIdx = document.getElementById('tab-status').classList.contains('active');
-    const termIdx = document.getElementById('tab-terminal').classList.contains('active');
-    const driveIdx = document.getElementById('tab-drives').classList.contains('active');
-    if (!statusIdx && !termIdx && !driveIdx) return;
-    _pollInFlight = true;
-
+async function pollHeartbeat() {
+    if (isUploading || _dialogOpen || _heartbeatInFlight) return;
+    _heartbeatInFlight = true;
     try {
-        const response = await fetch('/api/status');
-        if (!response.ok || _dialogOpen) return;
+        const response = await fetch('/api/status/heartbeat');
+        if (!response.ok) return;
         const data = await response.json();
-        if (!data || _dialogOpen) return;
-
         if (data.server_time) {
             document.getElementById('stat-time').textContent = data.server_time;
         }
-
-        if (data.stats) {
-            const opcode = data.stats.last_opcode;
-            document.getElementById('stat-opcode').textContent =
-                opcode != null ? '0x' + opcode.toString(16).toUpperCase() : '--';
-            document.getElementById('stat-drive').textContent =
-                data.stats.last_drive != null ? data.stats.last_drive : '--';
-
-            // Serial activity (null-safe)
-            const serContainer = document.getElementById('serial-activity-list');
-            let serHtml = '';
-            const serial = data.stats.serial || {};
-            for (const [chan, stats] of Object.entries(serial)) {
-                const tx = stats && stats.tx != null ? stats.tx : 0;
-                const rx = stats && stats.rx != null ? stats.rx : 0;
-                serHtml += `<div class="serial-stat-row">CH ${escHtml(chan)}: TX ${tx} | RX ${rx}</div>`;
-            }
-            if (!serHtml) serHtml = '<p>No activity.</p>';
-            serContainer.innerHTML = serHtml;
+        if (data.last_opcode != null) {
+            document.getElementById('stat-opcode').textContent = '0x' + data.last_opcode.toString(16).toUpperCase();
         }
-
-        if (data.logs && statusIdx) {
-            const logBox = document.getElementById('system-log');
-            // Use textContent-based approach to prevent XSS from log messages
-            logBox.innerHTML = '';
-            data.logs.forEach(l => {
-                const line = document.createElement('div');
-                line.textContent = '> ' + l;
-                logBox.appendChild(line);
-            });
-            logBox.scrollTop = logBox.scrollHeight;
-        }
-
-        if (data.term_buf && termIdx) {
-            const termBox = document.getElementById('terminal-output');
-            if (data.term_buf.length > 0) {
-                const text = bytesToString(data.term_buf);
-                termBox.innerText = text;
-                termBox.scrollTop = termBox.scrollHeight;
-            }
-        }
-
-        if (data.monitor_chan !== undefined && termIdx) {
-            const sel = document.getElementById('terminal-chan');
-            if (sel.value != data.monitor_chan) sel.value = data.monitor_chan;
-        }
-
-        if (data.drive_stats) {
-            // Track full paths of mounted files for the Files tab delete protection
-            mountedFiles = data.drive_stats
-                .filter(s => s && s.full_path)
-                .map(s => s.full_path);
-            // Keep a drive-indexed version for the clone modal
-            _driveAssignments = data.drive_stats.map(s => s && s.full_path ? s.full_path : null);
-
-            if (driveIdx) renderDriveStats(data.drive_stats);
-            // If we are currently on the files tab, we should refresh to update delete buttons
-            // but maybe only if mountedFiles changed? For simplicity, we can refresh
-            // if the list is visible and something changed.
-        }
-
+        // Small visual activity indicator could go here
     } catch (e) {
-        console.log("Status poll failed", e);
     } finally {
-        _pollInFlight = false;
+        _heartbeatInFlight = false;
+    }
+}
+
+async function pollAdaptive() {
+    if (isUploading || _dialogOpen) return;
+
+    const statusActive = document.getElementById('tab-status').classList.contains('active');
+    const termActive = document.getElementById('tab-terminal').classList.contains('active');
+    const driveActive = document.getElementById('tab-drives').classList.contains('active');
+
+    // 1. Stats Polling (Status or Drives tab)
+    if ((statusActive || driveActive) && !_statsInFlight) {
+        _statsInFlight = true;
+        try {
+            const res = await fetch('/api/status/stats');
+            if (res.ok) {
+                const data = await res.json();
+                if (data.protocol_stats) {
+                    document.getElementById('stat-opcode').textContent = 
+                        data.protocol_stats.last_opcode != null ? '0x' + data.protocol_stats.last_opcode.toString(16).toUpperCase() : '--';
+                    document.getElementById('stat-drive').textContent = 
+                        data.protocol_stats.last_drive != null ? data.protocol_stats.last_drive : '--';
+                        
+                    const serContainer = document.getElementById('serial-activity-list');
+                    let serHtml = '';
+                    for (const [chan, stats] of Object.entries(data.serial || {})) {
+                        serHtml += `<div class="serial-stat-row">CH ${escHtml(chan)}: TX ${stats.tx} | RX ${stats.rx}</div>`;
+                    }
+                    serContainer.innerHTML = serHtml || '<p>No activity.</p>';
+                }
+                if (data.drive_stats) {
+                    mountedFiles = data.drive_stats.filter(s => s && s.full_path).map(s => s.full_path);
+                    _driveAssignments = data.drive_stats.map(s => s && s.full_path ? s.full_path : null);
+                    if (driveActive) renderDriveStats(data.drive_stats);
+                }
+            }
+        } finally { _statsInFlight = false; }
+    }
+
+    // 2. Terminal Polling (Delta)
+    if (termActive && !_termInFlight) {
+        _termInFlight = true;
+        try {
+            const res = await fetch(`/api/status/terminal?offset=${terminalOffset}`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.data && data.data.length > 0) {
+                    const termBox = document.getElementById('terminal-output');
+                    const text = bytesToString(data.data);
+                    // Append for incremental, though based on bytesToString logic we might need refinement
+                    // If bytesToString is simple printable check, we should append to innerText
+                    termBox.innerText += text;
+                    // Limit total characters in DOM
+                    if (termBox.innerText.length > 10000) {
+                        termBox.innerText = termBox.innerText.slice(-5000);
+                    }
+                    termBox.scrollTop = termBox.scrollHeight;
+                }
+                terminalOffset = data.offset;
+                if (data.monitor_chan !== undefined) {
+                    const sel = document.getElementById('terminal-chan');
+                    if (sel.value != data.monitor_chan) sel.value = data.monitor_chan;
+                }
+            }
+        } finally { _termInFlight = false; }
+    }
+
+    // 3. Logs Polling (Delta)
+    if (statusActive && !_logsInFlight) {
+        _logsInFlight = true;
+        try {
+            const res = await fetch(`/api/status/logs?offset=${logOffset}`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.logs && data.logs.length > 0) {
+                    const logBox = document.getElementById('system-log');
+                    data.logs.forEach(l => {
+                        const line = document.createElement('div');
+                        line.textContent = '> ' + l;
+                        logBox.appendChild(line);
+                    });
+                    logBox.scrollTop = logBox.scrollHeight;
+                    // Keep DOM small
+                    while (logBox.children.length > 50) logBox.removeChild(logBox.firstChild);
+                }
+                logOffset = data.offset;
+            }
+        } finally { _logsInFlight = false; }
     }
 }
 

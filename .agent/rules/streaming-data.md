@@ -8,7 +8,8 @@ On the Pico W (~192KB RAM), buffering entire network payloads causes memory exha
 ## 📏 When to Stream vs. Buffer
 
 1. **Stream Required**: Any network data exceeding **4KB** total (uploads, downloads, API responses, remote file lists).
-2. **Buffer Acceptable**: Small, predictable responses under 4KB (e.g., JSON config, status polls). Must be short-lived.
+2. **Pre-Compressed Assets**: Use pre-compressed Gzip (`.gz`) versions of large static files (HTML/JS/CSS) to reduce memory pressure during transmission.
+3. **Buffer Acceptable**: Small, predictable responses under 4KB (e.g., JSON config, status polls). Must be short-lived.
 
 ## 📦 Chunk Size Guidelines
 
