@@ -25,6 +25,14 @@ class MockUART:
         self.input_buffer = self.input_buffer[n:]
         return res
 
+    def readinto(self, buf):
+        n = min(len(buf), len(self.input_buffer))
+        if n == 0:
+            return 0
+        buf[:n] = self.input_buffer[:n]
+        self.input_buffer = self.input_buffer[n:]
+        return n
+
     def any(self):
         return len(self.input_buffer) > 0
 
@@ -34,6 +42,7 @@ class MockUART:
 # Mock micropython
 mock_micropython = MagicMock()
 mock_micropython.const = lambda x: x
+mock_micropython.native = lambda f: f  # @micropython.native is a no-op in tests
 sys.modules['micropython'] = mock_micropython
 
 # Setup mocks before importing drivewire
@@ -58,6 +67,7 @@ sys.modules['ntptime'] = MagicMock()
 # Mock resilience.open_remote_stream for RemoteDrive tests
 sys.modules['resilience'] = MagicMock()
 mock_resilience = sys.modules['resilience']
+mock_resilience.MIN_LOG_LEVEL = 1  # Required by read_bytes() level guard
 sys.modules['activity_led'] = MagicMock()
 
 # Mock os.sync

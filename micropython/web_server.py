@@ -249,8 +249,8 @@ async def status_endpoint(request):
             return {
                 'server_time': server_time,
                 'stats': app.dw_server.stats,
-                'logs': list(app.dw_server.log_buffer),
-                'term_buf': list(app.dw_server.terminal_buffer),
+                'logs': app.dw_server.log_buffer,
+                'term_buf': app.dw_server.terminal_buffer,
                 'monitor_chan': app.dw_server.monitor_channel,
                 'drive_stats': drive_stats
             }

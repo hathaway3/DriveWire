@@ -2,6 +2,7 @@ import uasyncio as asyncio
 import utime
 import struct
 import os
+import gc
 from machine import UART
 from config import shared_config
 import micropython
@@ -73,6 +74,7 @@ MAX_TERMINAL_BUFFER_SIZE = micropython.const(512)
 SECTOR_SIZE = micropython.const(256)
 NUM_DRIVES = micropython.const(4)
 NUM_CHANNELS = micropython.const(32)
+MAX_DIR_LSNS = micropython.const(256)  # ~7KB cap on dir_lsns set
 RFM_BASE_DIR = '/sd'  # Sandbox for RFM file operations
 
 # OS-9 / DriveWire error codes sent to CoCo
@@ -82,6 +84,15 @@ E_CRC = micropython.const(243)     # E$CRC  - Checksum error
 E_WP = micropython.const(242)      # E$WP   - Write protect error
 E_READ = micropython.const(244)    # E$Read - Read error
 E_NOTRDY = micropython.const(246)  # E$NotRdy - Device not ready (network down)
+
+# Pre-allocated response constants (zero-allocation hot path)
+_RESP_OK = bytes([0])
+_RESP_CRC = bytes([E_CRC])
+_RESP_UNIT = bytes([E_UNIT])
+_RESP_NOTRDY = bytes([E_NOTRDY])
+_RESP_WP = bytes([E_WP])
+_RESP_2ZERO = bytes([0, 0])
+_PAD_256 = bytes(256)
 
 
 class RbfParser:
@@ -142,8 +153,9 @@ class VirtualDrive:
             'write_count': 0,
             'latency_us': 0
         }
+        # Pre-allocated sector read buffer
+        self._sector_buf = bytearray(SECTOR_SIZE)
         # Predictive GC before memory allocation
-        import gc
         gc.collect()
         try:
             self.file = open(filename, "r+b")
@@ -205,7 +217,10 @@ class VirtualDrive:
                 segments = RbfParser.get_segments(data)
                 for start, size in segments:
                     for i in range(size):
-                        self.dir_lsns.add(start + i)
+                        if len(self.dir_lsns) < MAX_DIR_LSNS:
+                            self.dir_lsns.add(start + i)
+                        else:
+                            break
             # Future expansion: Scan directory bodies for sub-directory FD LSNs?
             # For now, OS-9 reading the sub-directory FD will trigger the check above.
 
@@ -243,10 +258,13 @@ class VirtualDrive:
             
         try:
             self.file.seek(lsn * SECTOR_SIZE)
-            data = self.file.read(SECTOR_SIZE)
+            n = self.file.readinto(self._sector_buf)
             activity_led.blink()
-            if len(data) < SECTOR_SIZE:
-                data = data + bytes(SECTOR_SIZE - len(data))
+            if n is None:
+                n = 0
+            if n < SECTOR_SIZE:
+                self._sector_buf[n:] = bytes(SECTOR_SIZE - n)
+            data = bytes(self._sector_buf)
             
             # Analyze for directory awareness
             self._update_dir_awareness(lsn, data)
@@ -283,10 +301,8 @@ class VirtualDrive:
         self.stats['write_count'] += 1
         self.dirty_sectors[lsn] = data
         activity_led.blink()
-        # Keep read cache consistent
-        self.read_cache[lsn] = data
-        if len(self.read_cache) > MAX_READ_CACHE_ENTRIES:
-            self.read_cache.pop(next(iter(self.read_cache)))
+        # Skip read_cache update — dirty_sectors is checked first on reads
+        # and evicting read_cache entries for dirty data is wasted work
         
         # Auto-flush if dirty cache is full to prevent OOM
         if len(self.dirty_sectors) >= MAX_DIRTY_CACHE_ENTRIES:
@@ -318,7 +334,6 @@ class RemoteDrive:
         }
         self.last_error = E_NONE  # Last error code for opcode handler
         # Predictive GC before memory stress
-        import gc
         gc.collect()
         # Verify server is reachable
         try:
@@ -468,10 +483,11 @@ class RemoteDrive:
                 segments = RbfParser.get_segments(data)
                 for start, size in segments:
                     for i in range(size):
-                        self.dir_lsns.add(start + i)
+                        if len(self.dir_lsns) < MAX_DIR_LSNS:
+                            self.dir_lsns.add(start + i)
+                        else:
+                            break
 
-        self.last_error = E_NOTRDY
-        return None
 
     async def write_sector(self, lsn, data):
         """Remote drives are read-only. Returns error code E_WP."""
@@ -521,6 +537,16 @@ class DriveWireServer:
         self.channels = [bytearray() for _ in range(NUM_CHANNELS)]
         self.tcp_connections = {}  # Key: Channel (int), Value: (reader, writer, task)
         self.rfm_paths = {}        # Key: path_addr (int), Value: {'handle': file, 'mode': int}
+        
+        # Pre-allocated UART receive buffer (max 260 bytes: SECTOR_SIZE + 4)
+        self._rx_buf = bytearray(260)
+        self._rx_view = memoryview(self._rx_buf)
+        # Pre-allocated standard READ response buffer (1 + 2 + 256 = 259)
+        self._read_resp = bytearray(259)
+        # Pre-allocated 2-byte serial response buffer
+        self._ser_resp = bytearray(2)
+        # Pre-allocated 1-byte error response buffer
+        self._err_resp = bytearray(1)
         
         # Initial UART initialization (synchronous for test compatibility)
         self.init_uart()
@@ -603,8 +629,11 @@ class DriveWireServer:
         resilience.log(f"Drive {drive_num}: swapped to {new_drive.filename if new_drive else 'None'}")
         return True
 
+    @micropython.native
     def checksum(self, data):
-        s = sum(data)
+        s = 0
+        for b in data:
+            s += b
         return s & 0xFFFF
 
     def log_msg(self, msg):
@@ -686,7 +715,7 @@ class DriveWireServer:
                          cap = await self.read_bytes(1)
                          if cap:
                              # Send our capability (0)
-                             self.uart.write(bytes([0]))
+                             self.uart.write(_RESP_OK)
                              print("DWINIT Handshake")
 
                     elif opcode in (OP_READ, OP_READEX, OP_REREAD, OP_REREADEX):
@@ -720,43 +749,44 @@ class DriveWireServer:
                                             self.stats['latency']['turnaround_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
                                             
                                             if coco_cs == cs:
-                                                self.uart.write(bytes([0])) # No Error
+                                                self.uart.write(_RESP_OK) # No Error
                                             else:
-                                                self.uart.write(bytes([243])) # E_CRC
+                                                self.uart.write(_RESP_CRC) # E_CRC
                                                 
                                             # Total request time (including CoCo checksum wait)
                                             self.stats['latency']['total_request_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
                                     else:
                                         # Standard Read: 0x00 + Checksum(2) + Data(256)
-                                        resp = bytearray([0])
-                                        resp += struct.pack(">H", cs)
-                                        resp += data
+                                        self._read_resp[0] = 0
+                                        struct.pack_into(">H", self._read_resp, 1, cs)
+                                        self._read_resp[3:259] = data
                                         
                                         # Record turnaround time (just before final TX)
                                         proc_done_t = utime.ticks_us()
                                         self.stats['latency']['turnaround_us'] = utime.ticks_diff(proc_done_t, req_start_t)
                                         
-                                        self.uart.write(resp)
+                                        self.uart.write(self._read_resp)
                                         
                                         # Total request time
                                         self.stats['latency']['total_request_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
                                 else:
                                     # Read Failure — use drive-specific error if available
                                     err = getattr(self.drives[drive_num], 'last_error', E_UNIT) or E_UNIT
+                                    self._err_resp[0] = err
                                     if is_extended:
-                                        self.uart.write(bytes([0] * 256))
+                                        self.uart.write(_PAD_256)
                                         await self.read_bytes(2) 
-                                        self.uart.write(bytes([err]))
+                                        self.uart.write(self._err_resp)
                                     else:
-                                        self.uart.write(bytes([err]))
+                                        self.uart.write(self._err_resp)
                             else:
                                 # Unit error
                                 if is_extended:
-                                     self.uart.write(bytes([0] * 256))
+                                     self.uart.write(_PAD_256)
                                      await self.read_bytes(2) 
-                                     self.uart.write(bytes([E_UNIT]))
+                                     self.uart.write(_RESP_UNIT)
                                 else:
-                                     self.uart.write(bytes([E_UNIT]))
+                                     self.uart.write(_RESP_UNIT)
 
                     elif opcode in (OP_WRITE, OP_REWRITE):
                         # Write / ReWrite
@@ -789,16 +819,17 @@ class DriveWireServer:
                                         proc_done_t = utime.ticks_us()
                                         self.stats['latency']['turnaround_us'] = utime.ticks_diff(proc_done_t, req_start_t)
                                         
-                                        self.uart.write(bytes([E_NONE]))  # ACK
+                                        self.uart.write(_RESP_OK)  # ACK
                                         
                                         # Total request time
                                         self.stats['latency']['total_request_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
                                     else:
                                         # Use drive-specific error (E_WP for remote, E_UNIT for missing)
                                         err = getattr(self.drives[drive_num], 'last_error', E_UNIT) or E_UNIT
-                                        self.uart.write(bytes([err]))
+                                        self._err_resp[0] = err
+                                        self.uart.write(self._err_resp)
                                 else:
-                                    self.uart.write(bytes([243]))  # E_CRC
+                                    self.uart.write(_RESP_CRC)  # E_CRC
 
                     elif opcode == OP_TIME:
                         # OP_TIME ($23)
@@ -870,15 +901,17 @@ class DriveWireServer:
                             
                             if buf_len == 1:
                                 # Single byte mode: byte1 = channel + 1, byte2 = data
-                                response_byte_1 = ch_idx + 1
                                 data_byte = self.channels[ch_idx].pop(0)
-                                self.uart.write(bytes([response_byte_1, data_byte]))
+                                self._ser_resp[0] = ch_idx + 1
+                                self._ser_resp[1] = data_byte
+                                self.uart.write(self._ser_resp)
                                 self.snoop_serial(ch_idx, data_byte)
                             else:
                                 # Bulk mode: byte1 = channel + 1 + 16, byte2 = count
                                 count = min(buf_len, 255)
-                                response_byte_1 = ch_idx + 1 + 16
-                                self.uart.write(bytes([response_byte_1, count]))
+                                self._ser_resp[0] = ch_idx + 1 + 16
+                                self._ser_resp[1] = count
+                                self.uart.write(self._ser_resp)
                             
                             # Record turnaround time (just before final TX or end of op)
                             self.stats['latency']['turnaround_us'] = utime.ticks_diff(utime.ticks_us(), req_start_t)
@@ -889,7 +922,7 @@ class DriveWireServer:
                             if ch_idx not in self.stats['serial']: self.stats['serial'][ch_idx] = {'tx':0, 'rx':0}
                             self.stats['serial'][ch_idx]['rx'] += 1
                         else:
-                            self.uart.write(bytes([0, 0]))
+                            self.uart.write(_RESP_2ZERO)
 
                     elif opcode == OP_SERWRITE:
                         # OP_SERWRITE ($C3) + Channel(1) + Data(1)
@@ -1336,7 +1369,6 @@ class DriveWireServer:
                     # If UART buffer is empty, it's safe to do background tasks (flush, GC)
                     loop_counter += 1
                     if loop_counter >= 10: # approx every 10 idle ticks
-                        import gc
                         gc.collect()
                         loop_counter = 0
                     await asyncio.sleep(0.01)  # Yield to other tasks (reduced CPU usage when idle)
@@ -1394,16 +1426,21 @@ class DriveWireServer:
             resilience.log(f"Closed VSerial Ch{chan}")
 
     async def read_bytes(self, count):
-        """Read exact number of bytes from UART with timeout."""
-        data = bytearray()
+        """Read exact number of bytes from UART with timeout.
+        
+        Uses pre-allocated receive buffer with readinto() to avoid
+        per-call heap allocations. Returns bytes() copy (safe across
+        multiple read_bytes calls) or None on timeout.
+        """
+        pos = 0
         attempts = 0
         max_attempts = 1000  # ~1 second timeout
         
-        while len(data) < count and attempts < max_attempts:
+        while pos < count and attempts < max_attempts:
             if self.uart.any():
-                chunk = self.uart.read(count - len(data))
-                if chunk:
-                    data.extend(chunk)
+                n = self.uart.readinto(self._rx_view[pos:count])
+                if n:
+                    pos += n
                     attempts = 0  # Reset on successful read
             else:
                 wait_start = utime.ticks_us()
@@ -1414,9 +1451,11 @@ class DriveWireServer:
                 if attempts % 500 == 0:
                     resilience.feed_wdt()
 
-        if len(data) != count:
-            resilience.log(f"read_bytes timeout: got {len(data)}/{count}", level=2)
-        return data if len(data) == count else None
+        if pos != count:
+            if resilience.MIN_LOG_LEVEL <= 2:
+                resilience.log(f"read_bytes timeout: got {pos}/{count}", level=2)
+            return None
+        return bytes(self._rx_view[:count])
 
     async def stop(self):
         self.running = False

@@ -17,6 +17,8 @@ MAX_LOG_SIZE = 4096  # 4KB circular buffer style
 MIN_LOG_LEVEL = 1  # 0=Debug, 1=Info, 2=Warn, 3=Error, 4=Crit
 _log_callback = None
 _timezone_offset = 0 # Hours from UTC
+_log_write_buf = []  # Batched log lines pending file write
+_LOG_BATCH_SIZE = 10 # Flush to file every N log lines
 
 def set_log_callback(callback):
     """Set a callback function to receive every log line (e.g. for Web UI dashboard)."""
@@ -27,6 +29,26 @@ def set_timezone_offset(offset: int):
     """Set the timezone offset in hours from UTC."""
     global _timezone_offset
     _timezone_offset = offset
+
+def flush_log_buf() -> None:
+    """Flush batched log lines to the persistent log file."""
+    global _log_write_buf
+    if not _log_write_buf:
+        return
+    try:
+        stats = os.stat(LOG_FILE)
+        if stats[6] > MAX_LOG_SIZE:
+            os.rename(LOG_FILE, LOG_FILE + ".old")
+    except (OSError, KeyboardInterrupt):
+        pass
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write(''.join(_log_write_buf))
+            # Sync if any line was level >= 2 (already guaranteed by caller)
+            os.sync()
+    except (OSError, KeyboardInterrupt):
+        pass
+    _log_write_buf = []
 
 def get_reset_cause() -> str:
     """Return a human-readable string for the last reset cause."""
@@ -76,23 +98,10 @@ def log(message: str, level: int = 1, _from_syslog: bool = False) -> None:
 
     log_line += "\n"
     
-    # Persistent logging with circular buffer logic
-    try:
-        stats = os.stat(LOG_FILE)
-        if stats[6] > MAX_LOG_SIZE:
-            # Simple "clear if full" strategy for flash safety
-            os.rename(LOG_FILE, LOG_FILE + ".old")
-    except (OSError, KeyboardInterrupt):
-        pass
-    
-    try:
-        with open(LOG_FILE, "a") as f:
-            f.write(log_line)
-            # Sync on warnings and errors to ensure persistence
-            if level >= 2:
-                os.sync()
-    except (OSError, KeyboardInterrupt):
-        pass
+    # Batch persistent log writes to reduce file I/O syscalls
+    _log_write_buf.append(log_line)
+    if level >= 2 or len(_log_write_buf) >= _LOG_BATCH_SIZE:
+        flush_log_buf()
 
     # Forward to Syslog Remote Server
     if not _from_syslog:

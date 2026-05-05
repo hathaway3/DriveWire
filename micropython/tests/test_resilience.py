@@ -21,7 +21,8 @@ import resilience
 
 class TestResilience(unittest.TestCase):
     def setUp(self):
-        # Clear log file before each test
+        # Clear log file and write buffer before each test
+        resilience._log_write_buf = []
         try:
             os.remove('system.log')
         except OSError:
@@ -37,6 +38,8 @@ class TestResilience(unittest.TestCase):
             resilience.log("Warn message", level=2)
             resilience.log("Error message", level=3)
             
+            # Flush any remaining batched writes
+            resilience.flush_log_buf()
             with open('system.log', 'r') as f:
                 content = f.read()
                 self.assertIn("[DEBUG] Debug message", content)
@@ -52,6 +55,7 @@ class TestResilience(unittest.TestCase):
             f.write("A" * 5000)
             
         resilience.log("Trigger rotation", level=1)
+        resilience.flush_log_buf()  # Flush batched writes before checking file
         
         # In our implementation, if stats[6] > MAX_LOG_SIZE, it renames to .old
         # and starts a new LOG_FILE.
