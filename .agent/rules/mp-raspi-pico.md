@@ -89,7 +89,7 @@ utime.sleep(2)
 | `main.py` | Async task, every 2s | Primary feeder during normal operation |
 | `main.py` | `machine.Timer` on KeyboardInterrupt | Keeps device alive in REPL after Ctrl+C |
 | `drivewire.py` | After every opcode transaction | Prevents starvation during sustained I/O |
-| `drivewire.py` | Inside `read_bytes()` every 500ms | Prevents starvation during long UART timeouts |
+| `drivewire.py` | Inside `read_bytes()` every 100ms | Prevents starvation during long UART timeouts |
 | `boot.py` | Between WiFi/SD/lib steps | Prevents starvation during slow boot sequence |
 | `web_server.py`| During upload/clones | Prevents starvation during long SD/Network I/O |
 | `drivewire.py` | Inside `flush_loop()` | Prevents starvation during multi-drive flush |

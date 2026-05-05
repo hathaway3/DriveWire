@@ -8,21 +8,33 @@ To ensure the DriveWire management interface remains usable across both desktop 
 ## 📱 Mobile-First Principles
 
 1. **Viewport Setup**: Every page MUST include the standard viewport meta tag:
+
    ```html
    <meta name="viewport" content="width=device-width, initial-scale=1.0">
    ```
-2. **Touch Targets**: All interactive elements (buttons, links, form inputs) should have a minimum touch target size of **44x44px** on mobile.
-3. **No Hover Reliance**: Do not hide critical information or actions behind hover states, as these are inaccessible on mobile devices.
+
+2. **Pre-Compressed Assets (Gzip)**: Large static files (`index.html`, `script.js`) MUST be pre-compressed using Gzip for MicroPython deployment to minimize RAM usage and transmission time.
+   - **Build Tool**: Use `python micropython/tools/compress_static.py` to generate `.gz` files before syncing to the Pico.
+   - **Server Fallback**: The web server SHOULD be configured to serve `.gz` files if available and supported by the browser, but must fall back to the uncompressed source if necessary.
+
+3. **Adaptive & Incremental Polling**: Avoid monolithic polling of large status objects.
+   - **Heartbeat**: Use a lightweight `/api/status/heartbeat` (1s interval) for basic time/connectivity.
+   - **Incremental**: Use monotonic offsets (since/offset) for logs and terminal data to fetch only new content.
+   - **Tab-Based**: Only poll for heavy stats or terminal data if the corresponding UI tab is active.
+
+4. **Touch Targets**: All interactive elements (buttons, links, form inputs) should have a minimum touch target size of **44x44px** on mobile.
 
 ## 📐 Layout & CSS
 
 1. **Fluid Grids**: Use `display: grid` with `grid-template-columns: 1fr 1fr` for desktop, and override to `1fr` for mobile.
 2. **Media Queries**: Use the project-standard **600px** breakpoint for mobile overrides:
+
    ```css
    @media (max-width: 600px) {
        /* mobile-specific styles here */
    }
    ```
+
 3. **Typography**: Use relative units (`em`, `rem`) for font sizes where possible, though the pixel-art `VT323` font may require fixed pixel sizes at small scales for readability.
 4. **Scrolling**: Ensure that large tables or log boxes have `overflow-x: auto` or `overflow-y: auto` to prevent breaking the layout on narrow screens.
 

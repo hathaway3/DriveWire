@@ -19,6 +19,7 @@ _log_callback = None
 _timezone_offset = 0 # Hours from UTC
 _log_write_buf = []  # Batched log lines pending file write
 _LOG_BATCH_SIZE = 10 # Flush to file every N log lines
+_log_calls = 0 # Throttling counter
 
 def set_log_callback(callback):
     """Set a callback function to receive every log line (e.g. for Web UI dashboard)."""
@@ -31,20 +32,28 @@ def set_timezone_offset(offset: int):
     _timezone_offset = offset
 
 def flush_log_buf() -> None:
-    """Flush batched log lines to the persistent log file."""
+    """Flush batched log lines to the persistent log file with rotation."""
     global _log_write_buf
     if not _log_write_buf:
         return
+    
+    # Persistent logging with rotation logic
     try:
         stats = os.stat(LOG_FILE)
         if stats[6] > MAX_LOG_SIZE:
+            # Rename the file to .old to preserve recent history without unbounded growth
+            try:
+                os.remove(LOG_FILE + ".old") # Delete stale backup if it exists
+            except OSError:
+                pass
             os.rename(LOG_FILE, LOG_FILE + ".old")
     except (OSError, KeyboardInterrupt):
         pass
+        
     try:
         with open(LOG_FILE, "a") as f:
             f.write(''.join(_log_write_buf))
-            # Sync if any line was level >= 2 (already guaranteed by caller)
+            # Sync to flash
             os.sync()
     except (OSError, KeyboardInterrupt):
         pass
@@ -72,10 +81,12 @@ def log(message: str, level: int = 1, _from_syslog: bool = False) -> None:
     Centralized logging function.
     Level: 0=Debug, 1=Info, 2=Warning, 3=Error, 4=Critical
     """
-    global MIN_LOG_LEVEL, _log_callback
+    global MIN_LOG_LEVEL, _log_callback, _log_calls
     
     if level < MIN_LOG_LEVEL:
         return
+
+    _log_calls += 1
 
     levels = ["DEBUG", "INFO", "WARN", "ERROR", "CRIT"]
     lvl_str = levels[level] if 0 <= level < len(levels) else "LOG"
@@ -83,8 +94,8 @@ def log(message: str, level: int = 1, _from_syslog: bool = False) -> None:
     # Calculate local time using timezone offset
     utc_timestamp = time.time()
     local_timestamp = utc_timestamp + (_timezone_offset * 3600)
-    timestamp = time.localtime(local_timestamp)
-    ts_str = "{:04}-{:02}-{:02} {:02}:{:02}:{:02}".format(*timestamp[:6])
+    t = time.localtime(local_timestamp)
+    ts_str = f"{t[0]:04d}-{t[1]:02d}-{t[2]:02d} {t[3]:02d}:{t[4]:02d}:{t[5]:02d}"
     
     log_line = f"[{ts_str}] [{lvl_str}] {message}"
     print(log_line) # MicroPython print automatically adds newline
@@ -98,7 +109,7 @@ def log(message: str, level: int = 1, _from_syslog: bool = False) -> None:
 
     log_line += "\n"
     
-    # Batch persistent log writes to reduce file I/O syscalls
+    # Persistent logging with batching to reduce flash wear
     _log_write_buf.append(log_line)
     if level >= 2 or len(_log_write_buf) >= _LOG_BATCH_SIZE:
         flush_log_buf()

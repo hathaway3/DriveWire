@@ -9,6 +9,10 @@ trigger: always_on
 3. **Checksum**: READEX/WRITE must use 16-bit sum (sum of bytes).
 4. **WDT Safety**: Loops waiting for UART/Network **MUST** feed watchdog. Use `self.read_bytes()`.
 5. **Errors**: Use `E_NOTRDY`, `E_WP`, etc. Log via `resilience.log()` (Level 2/3).
+6. **OP_SERREAD (Polling)**: Must handle dual response modes:
+   - **Mode 1 (1-15)**: Single byte (Byte 1 = channel+1, Byte 2 = data).
+   - **Mode 2 (17-31)**: Bulk count (Byte 1 = channel+1+16, Byte 2 = bytes waiting).
+7. **OP_NAMEOBJ**: Mount and Create share a handler; both Mount the existing file. Lease management is not fully implemented; returns Drive Number or 0 on fail.
 
 ## 🌐 Remote Sector Server Protocol
 1. **GET `/info`**: Returns Json `{disk_count, disks:[{name, size, total_sectors}]}`.

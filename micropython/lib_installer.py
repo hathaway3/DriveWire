@@ -86,33 +86,37 @@ def install_dependencies():
                 except (AttributeError, ImportError, Exception) as e:
                     resilience.log(f"mip install failed for {pip_name}: {e}. Trying github fallback...", level=2)
 
-                # Fallback to manual download using urequests
+                # Fallback to manual download using raw sockets (memory-safe streaming)
                 try:
-                    import urequests
-                    
                     resilience.log(f"Attempting manual install for {github_info['name']}...")
                     success = True
                     for file in github_info['files']:
                         resilience.log(f"Downloading {file}...")
                         url = f"{github_info['base']}/{file}"
-                        try:
-                            r = urequests.get(url)
-                            resilience.feed_wdt()
-                            try:
-                                if r.status_code == 200:
-                                    with open(file, "w") as f:
-                                        f.write(r.text)
-                                    resilience.log(f"Saved {file}")
-                                else:
-                                    resilience.log(f"Failed to download {file} (Status {r.status_code})", level=2)
-                                    success = False
-                            finally:
-                                r.close()
-                        except Exception as e:
-                            resilience.log(f"Download error: {e}", level=3)
-                            success = False
                         
-                        if not success:
+                        try:
+                            # Use memory-safe stream instead of urequests
+                            sock = resilience.open_remote_stream(url)
+                            if not sock:
+                                resilience.log(f"Failed to open stream for {file}", level=2)
+                                success = False
+                                break
+                                
+                            try:
+                                with open(file, "w") as f:
+                                    while True:
+                                        chunk = sock.recv(512)
+                                        if not chunk:
+                                            break
+                                        f.write(chunk.decode('utf-8', 'ignore'))
+                                        resilience.feed_wdt()
+                                resilience.log(f"Saved {file}")
+                            finally:
+                                sock.close()
+                                
+                        except Exception as e:
+                            resilience.log(f"Download error for {file}: {e}", level=3)
+                            success = False
                             break
                     
                     if success:
