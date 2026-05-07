@@ -35,12 +35,37 @@ _uploading = False  # Flag to prevent SD polling during uploads
 _creating_disk = False
 _disk_creation_progress = {'state': 'idle', 'written': 0, 'total': 0, 'filename': '', 'error': None}
 
+# Microdot 1.3.4 async bug workaround: Response.write() passes str bodies
+# and generator str chunks to MicroPython's StreamWriter which only accepts bytes.
+# Monkey-patch Response.write to encode str bodies and wrap str-yielding generators.
+_orig_resp_write = Response.write
+async def _patched_resp_write(self, *args, **kwargs):
+    if isinstance(self.body, str):
+        self.body = self.body.encode('utf-8')
+    elif hasattr(self.body, '__next__'):
+        orig = self.body
+        def _bwrap():
+            for c in orig:
+                yield c.encode('utf-8') if isinstance(c, str) else c
+        self.body = _bwrap()
+    elif hasattr(self.body, '__aiter__'):
+        # Microdot 1.3.4 cannot iterate async generators — materialize to bytes
+        buf = bytearray()
+        async for c in self.body:
+            buf.extend(c.encode('utf-8') if isinstance(c, str) else c)
+        self.body = bytes(buf)
+    await _orig_resp_write(self, *args, **kwargs)
+Response.write = _patched_resp_write
+
 @app.route('/')
 async def index(request):
     try:
         # Check if client supports Gzip and the .gz file exists
         if 'gzip' in request.headers.get('Accept-Encoding', '') and resilience.file_exists('www/index.html.gz'):
-            return send_file('www/index.html.gz', content_type='text/html', headers={'Content-Encoding': 'gzip', 'Vary': 'Accept-Encoding'})
+            res = send_file('www/index.html.gz', content_type='text/html')
+            res.headers['Content-Encoding'] = 'gzip'
+            res.headers['Vary'] = 'Accept-Encoding'
+            return res
         return send_file('www/index.html')
     except OSError:
         return 'Not found', 404
@@ -56,7 +81,10 @@ async def static(request, path):
             # Map extension to content type
             ext = path.split('.')[-1].lower() if '.' in path else ''
             ctype = 'text/javascript' if ext == 'js' else 'text/css' if ext == 'css' else 'application/octet-stream'
-            return send_file(gz_path, content_type=ctype, headers={'Content-Encoding': 'gzip', 'Vary': 'Accept-Encoding'})
+            res = send_file(gz_path, content_type=ctype)
+            res.headers['Content-Encoding'] = 'gzip'
+            res.headers['Vary'] = 'Accept-Encoding'
+            return res
         return send_file('www/static/' + path)
     except OSError:
         return 'Not found', 404
@@ -164,8 +192,8 @@ def _sanitize_path(path):
     """Validate and normalize file paths. Returns sanitized path or None."""
     if not path or not isinstance(path, str):
         return None
-    # Reject any path containing '..' to prevent traversal attacks
-    if '..' in path:
+    # Reject path traversal: '..' as a path segment (not substring in filename)
+    if any(seg == '..' for seg in path.split('/')):
         return None
     # Must be under /sd/ or be a .dsk file directly in root
     if path.startswith('/sd/'):
@@ -198,30 +226,19 @@ async def files_endpoint(request):
 
 @app.route('/api/files/info')
 async def files_info_endpoint(request):
-    """Return metadata (size, modification time) for all .dsk files (streamed)."""
+    """Return metadata (size, modification time) for all .dsk files."""
     resilience.log_mem_info("Files Info Start")
     files = get_dsk_files()
     
-    async def generate_info():
-        yield '{'
-        first = True
-        for f in files:
-            try:
-                st = os.stat(f)
-                size = st[6]
-                mtime_str = _get_file_mtime(f)
-                if not first:
-                    yield ','
-                first = False
-                yield json.dumps(f) + ':' + json.dumps({'size': size, 'mtime': mtime_str})
-                # Yield to serial protocol loop
-                await asyncio.sleep(0)
-            except OSError:
-                pass
-        yield '}'
-        gc.collect()
-
-    return Response(generate_info(), headers={'Content-Type': 'application/json'})
+    result = {}
+    for f in files:
+        try:
+            st = os.stat(f)
+            result[f] = {'size': st[6], 'mtime': _get_file_mtime(f)}
+        except OSError:
+            pass
+    gc.collect()
+    return result
 
 
 @app.route('/api/sd/status')
@@ -251,10 +268,14 @@ async def heartbeat_endpoint(request):
             server_time = "--:--:--"
             
         if hasattr(app, 'dw_server'):
+            try:
+                led_on = activity_led.is_on()
+            except Exception:
+                led_on = False
             return {
                 'server_time': server_time,
-                'last_opcode': app.dw_server.stats['last_opcode'],
-                'activity': activity_led.is_on()
+                'last_opcode': app.dw_server.stats.get('last_opcode'),
+                'activity': led_on
             }
         return {'server_time': server_time, 'error': 'DriveWire Server not attached'}
     except Exception as e:
@@ -286,6 +307,19 @@ async def stats_endpoint(request):
         'protocol_stats': app.dw_server.stats # includes last_opcode, etc.
     }
 
+def _deque_to_list(dq, skip=0):
+    """Convert a deque to a list, optionally skipping the first N items.
+    
+    MicroPython's deque does not support slicing, so we iterate manually.
+    """
+    result = []
+    i = 0
+    for item in dq:
+        if i >= skip:
+            result.append(item)
+        i += 1
+    return result
+
 @app.route('/api/status/terminal')
 async def terminal_endpoint(request):
     """Return new terminal buffer data since the last offset."""
@@ -310,7 +344,7 @@ async def terminal_endpoint(request):
     idx = since - start_offset
     return {
         'offset': total,
-        'data': list(buf[idx:]),
+        'data': _deque_to_list(buf, skip=idx),
         'monitor_chan': ds.monitor_channel
     }
 
@@ -334,7 +368,7 @@ async def logs_endpoint(request):
     idx = since - start_offset
     return {
         'offset': total,
-        'logs': list(logs[idx:])
+        'logs': _deque_to_list(logs, skip=idx)
     }
 
 @app.route('/api/status')
@@ -368,8 +402,8 @@ async def status_endpoint(request):
             return {
                 'server_time': server_time,
                 'stats': app.dw_server.stats,
-                'logs': app.dw_server.log_buffer,
-                'term_buf': app.dw_server.terminal_buffer,
+                'logs': list(app.dw_server.log_buffer),
+                'term_buf': list(app.dw_server.terminal_buffer),
                 'monitor_chan': app.dw_server.monitor_channel,
                 'drive_stats': drive_stats
             }
@@ -743,7 +777,9 @@ async def monitor_chan_endpoint(request):
             if chan < -1 or chan >= 32:
                 return {'error': 'Channel must be -1 (off) to 31'}, 400
             app.dw_server.monitor_channel = chan
-            app.dw_server.terminal_buffer = bytearray() # Clear on change
+            from collections import deque
+            from drivewire import MAX_TERMINAL_BUFFER_SIZE
+            app.dw_server.terminal_buffer = deque((), MAX_TERMINAL_BUFFER_SIZE) # Clear on change
             return {'status': 'ok'}
         except (ValueError, TypeError) as e:
             return {'error': f'Invalid channel: {e}'}, 400
@@ -905,7 +941,9 @@ async def remote_files_endpoint(request):
             
         yield ']}'
 
-    return Response(generate(), headers={'Content-Type': 'application/json'})
+    res = Response(generate())
+    res.headers['Content-Type'] = 'application/json'
+    return res
 
 @app.route('/api/remote/test', methods=['POST'])
 async def remote_test_endpoint(request):
@@ -928,14 +966,16 @@ async def remote_test_endpoint(request):
                 while True:
                     chunk = sock.recv(512)
                     if not chunk: break
-                    yield chunk
+                    yield chunk.decode('utf-8', 'replace')
                     resilience.feed_wdt()
             finally:
                 sock.close()
                 gc.collect()
             yield '}'
 
-        return Response(generate(), headers={'Content-Type': 'application/json'})
+        res = Response(generate())
+        res.headers['Content-Type'] = 'application/json'
+        return res
     except Exception as e:
         return {'status': 'error', 'message': str(e)}, 502
     finally:

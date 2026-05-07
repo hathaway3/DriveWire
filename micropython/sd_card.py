@@ -6,7 +6,7 @@ for FAT/FAT32 filesystem access. Configurable SPI pins via config.json.
 """
 
 import os
-import asyncio
+import uasyncio as asyncio
 from config import shared_config
 import resilience
 import activity_led

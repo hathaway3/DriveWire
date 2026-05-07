@@ -21,6 +21,7 @@ trigger: always_on
 4. **Initialization Guards**: Patch side-effect methods like `DriveWireServer.init_drives()` or `init_uart()` in the test `asyncSetUp`. These methods often overwrite test-injected mocks with default hardware handles at runtime.
 5. **Decorator Preservation**: Mocked decorators (like `@app.post` in Microdot) MUST return the original function they decorate. Returning a `MagicMock` breaks `await` calls and results in `TypeError` or unawaited coroutine warnings.
 6. **Object Structure Alignment**: Ensure mocked objects (like `config.shared_config`) match the expected runtime attribute structure (e.g., providing a `.config` dictionary instead of being a plain dictionary).
+7. **MockMicrodot Decorator Coverage**: The `MockMicrodot` class in `shim.py` must include all decorators used by `web_server.py` at import time (e.g., `route`, `errorhandler`, `after_request`). Missing decorators cause `AttributeError` during test module loading.
 
 ## 🍓 On-Device Testing
 

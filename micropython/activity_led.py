@@ -70,6 +70,16 @@ def off() -> None:
         except Exception:
             pass
 
+def is_on() -> bool:
+    """Return True if the LED is currently on."""
+    _init()
+    if not _available:
+        return False
+    try:
+        return bool(_led.value())
+    except Exception:
+        return False
+
 def toggle() -> None:
     """Toggle LED state."""
     _init()

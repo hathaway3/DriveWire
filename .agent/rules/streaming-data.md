@@ -37,11 +37,14 @@ On the Pico W (~192KB RAM), buffering entire network payloads causes memory exha
 3. **`request.json` on large POST bodies**: Parses entire body into a dict. For file uploads, use `request.stream.read(chunk_size)` with the `X-Filename` header convention.
 4. **Unbounded lists or bytearrays**: Any buffer that grows without a cap will eventually exhaust RAM. Always enforce a maximum size.
 5. **Blocking I/O without WDT feeding**: Any loop that waits for network or SD I/O must feed the watchdog timer.
+6. **Async generators (`async def` + `yield`) as Microdot Response bodies**: Microdot 1.3.4 only supports sync generators (`__next__`). Async generators silently crash. Use sync generators for streaming or return a dict for small responses.
 
 ## 📐 Reference Implementations
 
 | Pattern | File | Lines | Use Case |
 |---------|------|-------|----------|
 | Async Upload Pipeline | `web_server.py` | `upload_file_endpoint` | Browser → Pico file upload with backpressure |
-| Raw Socket Streaming | `web_server.py` | `_raw_http_get_stream`, `stream_remote_files`, `stream_remote_info` | Parsing large JSON lists or objects from remote servers |
+| Raw Socket Streaming | `web_server.py` | `stream_remote_files`, `stream_remote_info` | Parsing large JSON from remote servers |
 | Chunked Clone Download | `web_server.py` | `remote_clone_endpoint` | Sector-by-sector disk image cloning |
+| Dict Return (small JSON) | `web_server.py` | `files_info_endpoint`, `heartbeat_endpoint` | Safe for responses under 4KB |
+

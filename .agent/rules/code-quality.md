@@ -41,3 +41,30 @@ To ensure the DriveWire project remains performant and reliable on the RP2040 an
 1. **Type Hints**: Use standard Python type hints. Use the `try...except ImportError` pattern for `typing` to ensure compatibility and save memory on the device.
 2. **Docstrings**: Provide concise docstrings for all public classes and methods.
 3. **No Dead Code**: Remove all commented-out code or unused debug prints before merging.
+
+## 🌐 Microdot 1.3.4 Compatibility
+
+The web server uses Microdot 1.3.4 (`microdot_asyncio.py`). Its async `Response.write()` passes `str` bodies directly to MicroPython's `StreamWriter.write()`, which **only accepts `bytes`**. A monkey-patch in `web_server.py` handles this globally, but follow these rules to avoid edge cases:
+
+1. **Never use `Response(body, headers={...})`**: Microdot 1.x does not support the `headers` keyword argument on `Response()` or `send_file()`. Create the Response first, then set headers:
+   ```python
+   res = Response(body)
+   res.headers['Content-Type'] = 'application/json'
+   return res
+   ```
+2. **Never use async generators for Response bodies**: Microdot 1.3.4 only iterates sync generators (`__next__`). Async generators (`async def` with `yield`) silently fall through to the `else` write branch and crash. For small responses (<4KB), return a dict or build the JSON in memory. For large responses, use a sync generator.
+3. **Prefer returning dicts**: Let Microdot handle `json.dumps()` automatically. The monkey-patch encodes the resulting `str` body to `bytes`.
+4. **`collections.deque` has no slicing**: MicroPython's `deque` does not support `deque[idx:]`. Use manual iteration (see `_deque_to_list()` helper in `web_server.py`).
+5. **No `os.path` module**: Use `os.stat()` for existence checks, manual `.split('/')` for path manipulation.
+6. **`import asyncio` → `import uasyncio as asyncio`**: MicroPython uses `uasyncio`, not `asyncio`.
+
+## 📐 Microdot Compatibility Reference
+
+| Pattern | Status | Alternative |
+|---------|--------|-------------|
+| `Response(body, headers={})` | ❌ Forbidden | `res = Response(body); res.headers[k] = v` |
+| `send_file(path, headers={})` | ❌ Forbidden | `res = send_file(path); res.headers[k] = v` |
+| `async def gen(): yield ...` as Response body | ❌ Forbidden | Use sync generator or return dict |
+| `deque[idx:]` | ❌ Forbidden | `_deque_to_list(dq, skip=idx)` |
+| `os.path.exists()` / `os.path.basename()` | ❌ Forbidden | `resilience.file_exists()` / `.split('/')[-1]` |
+| `import asyncio` | ❌ Forbidden | `import uasyncio as asyncio` |

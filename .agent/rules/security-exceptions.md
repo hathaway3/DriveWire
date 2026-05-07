@@ -8,7 +8,7 @@ The DriveWire server is an **unauthenticated, LAN-only** embedded device. Securi
 ## 🔒 Path Traversal Prevention
 
 1. **Sanitize All User Paths**: Every user-supplied file path (web API, RFM protocol) **MUST** pass through `_sanitize_path()` (web) or `_sanitize_rfm_path()` (protocol) before use. Direct path concatenation with user input is forbidden.
-2. **Reject `..` Segments**: Any path containing `..` must be rejected immediately.
+2. **Reject `..` Path Segments**: Any path where `..` appears as a complete path segment (between `/` delimiters) must be rejected. **Do NOT** use a naive `'..' in path` substring check — this blocks legitimate filenames containing `..` (e.g., version strings like `v3.3.0`). Use `any(seg == '..' for seg in path.split('/'))`.
 3. **RFM Sandbox**: Remote File Management is restricted to `/sd/` (`RFM_BASE_DIR`). Paths must start with this prefix after normalization.
 4. **Static File Serving**: The `/static/<path>` route must reject `..` in path segments before calling `send_file()`.
 5. **Filename Cleaning**: For uploads and disk creation, strip directory components with `.split('/')[-1].split('\\')[-1]` and enforce the `.dsk` extension.

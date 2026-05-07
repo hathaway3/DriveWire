@@ -207,6 +207,14 @@ def log_mem_info(label: str = "Status"):
     except Exception:
         pass
 
+def file_exists(path: str) -> bool:
+    """Check if a file exists (MicroPython-safe, no os.path)."""
+    try:
+        os.stat(path)
+        return True
+    except OSError:
+        return False
+
 def open_remote_stream(url: str, addr=None):
     """Open a raw socket HTTP GET and return the socket after consuming headers.
     

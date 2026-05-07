@@ -291,9 +291,11 @@
             background: var(--coco-black);
             border: 2px solid var(--coco-alert);
             padding: 30px;
-            max-width: 500px;
+            max-width: min(500px, 90vw);
             text-align: center;
             box-shadow: 0 0 20px var(--coco-alert);
+            word-break: break-word;
+            overflow-wrap: break-word;
         }
 
         .modal-buttons {

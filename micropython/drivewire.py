@@ -286,7 +286,8 @@ class RemoteDrive:
             self.stats['cache_hits'] += 1
             data = self.read_cache.pop(lsn); self.read_cache[lsn] = data; return data
         fetch_count = 8
-        url = f"{self.url}/sectors/{os.path.basename(self.filename.split(':')[-1])}/{lsn}?count={fetch_count}"
+        base_name = self.filename.split(':')[-1].split('/')[-1]
+        url = f"{self.url}/sectors/{base_name}/{lsn}?count={fetch_count}"
         sock = resilience.open_remote_stream(url)
         if not sock: self.stats['errors'] += 1; self.last_error = E_NOTRDY; return None
         try:
@@ -624,7 +625,7 @@ class DriveWireServer:
         self.tcp_connections[chan] = (reader, writer, asyncio.create_task(self.tcp_reader_task(chan, reader)))
 
     def _sanitize_rfm_path(self, path: str) -> Optional[str]:
-        if '..' in path: return None
+        if any(seg == '..' for seg in path.split('/')): return None
         path = path.lstrip('/')
         if not path.startswith('sd/'): path = 'sd/' + path
         return '/' + path

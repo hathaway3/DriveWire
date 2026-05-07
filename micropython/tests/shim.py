@@ -84,6 +84,7 @@ def setup_all_mocks():
                         self.delete = mock_decorator
                         self.route = mock_decorator
                         self.errorhandler = mock_decorator
+                        self.after_request = mock_decorator
                         self.dw_server = MagicMock()
                 mock.Microdot = MockMicrodot
                 
