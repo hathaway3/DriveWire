@@ -37,19 +37,6 @@ To ensure absolute data integrity, the server must query layers in this strict o
 - **Cache Eviction**: If a dirty sector is evicted from the `read_cache` (due to a large read-ahead batch filling the LRU slots), it **remains safely in the `dirty_sectors` list** and continues to be the "source of truth" for that LSN.
 - **Consistency**: When a write occurs, the entry is updated in **both** `dirty_sectors` and `read_cache` to ensure the next sequential read reflects the modification.
 
-## 🚀 Read-Ahead Strategy
-
-1. **Bulk Remote Fetch**: 
-   - When a cache miss occurs on a `RemoteDrive`, fetch up to 8 sequential sectors in a single HTTP request (`?count=8`).
-   - Populating the cache with sequential sectors dramatically improves OS-9 multi-sector read performance.
-2. **Adaptive Read-Ahead (Planned)**: 
-   - Future implementations should consider the CoCo's access pattern (e.g., sequential vs. random).
-
-### 🔄 Read-Ahead vs. Dirty Interaction
-- **Non-Blocking Logic**: A read-ahead operation never flushes dirty sectors, and dirty sectors never block a read-ahead fetch.
-- **Cache Eviction**: If a dirty sector is evicted from the `read_cache` (due to a large read-ahead batch filling the LRU slots), it **remains safely in the `dirty_sectors` list** and continues to be the "source of truth" for that LSN.
-- **Consistency**: When a write occurs, the entry is updated in **both** `dirty_sectors` and `read_cache` to ensure the next sequential read reflects the modification.
-
 ## 🚰 Memory Efficiency
 
 1. **Pre-allocate Buffers**: Use a single `bytearray(256)` for sector transfers where possible instead of creating new ones.
@@ -61,12 +48,14 @@ To ensure absolute data integrity, the server must query layers in this strict o
 1. **Dirty Consistency**: When a sector is written, update the `read_cache` immediately so subsequent reads are consistent before the next flush.
 2. **WDT Feeding**: Loops processing bulk read-ahead or flushing large dirty buffers **MUST** feed the watchdog timer.
 3. **Hot-Swap**: When swapping a drive, the new drive object should ideally inherit the `read_cache` of the old one if it's the same file (seamless transition).
+4. **Partial Flush Recovery**: `VirtualDrive.flush()` uses a copy-and-pop pattern — iterate a copy of the keys, write each sector, then delete successfully flushed entries individually. If an `OSError` occurs mid-flush, un-flushed sectors remain in `dirty_sectors` for automatic retry on the next cycle. This prevents both data loss and redundant re-writes.
 
 ## 🚫 Anti-Patterns
 
 1. **Unbounded Caches**: Never let a cache grow without a fixed entry limit.
 2. **Immediate Sync on Every Write**: Avoid calling `os.sync()` after every 256-byte write; use the write-back cache instead.
 3. **Ignoring Read-Ahead**: Fetching only one sector at a time from a remote server is too slow for the CoCo's expectations.
+4. **`dirty_sectors.clear()` after flush**: Never clear the entire dict after a flush loop — if a write error occurred mid-loop, un-flushed sectors would be silently discarded. Always use per-key deletion on success.
 
 ## 🧠 RBF Caching & RbfParser (OS-9 Specific)
 

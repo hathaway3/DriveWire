@@ -8,6 +8,7 @@ except ImportError:
     pass
 
 CONFIG_FILE = 'config.json'
+_CONFIG_TMP = 'config.tmp'
 
 # Valid baud rates for UART
 VALID_BAUD_RATES = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]
@@ -42,25 +43,59 @@ class Config:
         self.load()
 
     def load(self) -> None:
-        """Load configuration from file, merging with defaults."""
+        """Load configuration from file, merging with defaults.
+        
+        Recovery: If config.json is corrupt but config.tmp exists and is valid,
+        promote the temp file (it was a complete write that didn't get renamed).
+        """
+        # Try primary config file first
+        loaded = self._try_load_file(CONFIG_FILE)
+        if not loaded:
+            # Primary is missing or corrupt — try recovering from temp
+            loaded = self._try_load_file(_CONFIG_TMP)
+            if loaded:
+                resilience.log("Recovered config from temp file after crash", level=2)
+                # Promote temp to primary
+                try:
+                    os.rename(_CONFIG_TMP, CONFIG_FILE)
+                except OSError:
+                    pass
+            else:
+                # Both missing or corrupt — save defaults
+                resilience.log("No valid config found, saving defaults", level=2)
+                self.save()
+
+    def _try_load_file(self, filepath: str) -> bool:
+        """Attempt to load and merge config from a specific file. Returns True on success."""
         try:
-            if CONFIG_FILE in os.listdir('/'):
-                with open(CONFIG_FILE, 'r') as f:
-                    stored_config = json.load(f)
-                    # Update default config with stored values
-                    for key, value in stored_config.items():
-                        self.config[key] = value
-                    # Validate after loading
-                    self.validate()
+            if filepath.split('/')[-1] not in os.listdir('/'):
+                return False
+            with open(filepath, 'r') as f:
+                stored_config = json.load(f)
+                for key, value in stored_config.items():
+                    self.config[key] = value
+                self.validate()
+                return True
         except (OSError, ValueError) as e:
-            resilience.log(f"Config file error: {e}. Using defaults.", level=2)
-            self.save()
+            resilience.log(f"Config file error ({filepath}): {e}", level=2)
+            return False
 
     def save(self) -> bool:
-        """Save configuration to flash and sync filesystem."""
+        """Save configuration to flash using atomic write (temp + rename)."""
         try:
-            with open(CONFIG_FILE, 'w') as f:
+            # Write to temp file first
+            with open(_CONFIG_TMP, 'w') as f:
                 json.dump(self.config, f)
+            try:
+                os.sync()
+            except AttributeError:
+                pass
+            # Atomic rename: if this succeeds, config is guaranteed consistent
+            try:
+                os.remove(CONFIG_FILE)
+            except OSError:
+                pass  # File may not exist yet (first save)
+            os.rename(_CONFIG_TMP, CONFIG_FILE)
             try:
                 os.sync()
             except AttributeError:

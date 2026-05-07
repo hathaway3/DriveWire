@@ -13,6 +13,7 @@ def sync_time(max_retries: int = 3) -> bool:
     """
     Synchronizes the system time with the configured NTP server.
     Returns True on success, False on failure.
+    Feeds WDT between retries to prevent starvation.
     """
     ntp_server = shared_config.get("ntp_server")
     if not ntp_server:
@@ -31,6 +32,7 @@ def sync_time(max_retries: int = 3) -> bool:
             if attempt < max_retries - 1:
                 resilience.feed_wdt()
                 time.sleep(1)  # Wait before retry
+                resilience.feed_wdt()  # Feed again after sleep
     
     resilience.log("Time sync failed after all retries", level=3)
     return False

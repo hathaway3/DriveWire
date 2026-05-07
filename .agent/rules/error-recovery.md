@@ -22,5 +22,9 @@ To ensure high reliability in a networked embedded environment, DriveWire MUST h
 
 ## 💾 Filesystem Resilience
 
-1. **Atomic Config Saves**: Configuration updates MUST use a temporary file or be written in a single `json.dump` followed by `os.sync()`.
+1. **Atomic Config Saves**: Configuration updates MUST use the write-to-temp-then-rename pattern implemented in `config.py`:
+   - Write to `config.tmp` first, then `os.sync()`, then `os.rename()` to `config.json`.
+   - This ensures `config.json` is never in a partially-written state. If power is lost mid-write, only `config.tmp` is corrupted.
+   - On load, if `config.json` is corrupt or missing, `Config._try_load_file()` automatically recovers from a valid `config.tmp`.
 2. **Ghost Directory Cleanup**: The `fs_repair.scrub_root()` utility MUST run at boot to resolve flash filesystem collisions (e.g., `/sd` folder vs `/sd` mount).
+3. **Flush Partial Failure**: `VirtualDrive.flush()` uses a copy-and-pop pattern — successfully written sectors are removed individually from `dirty_sectors`. If an `OSError` occurs mid-flush, un-flushed sectors persist for automatic retry on the next flush cycle.

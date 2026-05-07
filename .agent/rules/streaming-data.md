@@ -38,6 +38,7 @@ On the Pico W (~192KB RAM), buffering entire network payloads causes memory exha
 4. **Unbounded lists or bytearrays**: Any buffer that grows without a cap will eventually exhaust RAM. Always enforce a maximum size.
 5. **Blocking I/O without WDT feeding**: Any loop that waits for network or SD I/O must feed the watchdog timer.
 6. **Async generators (`async def` + `yield`) as Microdot Response bodies**: Microdot 1.3.4 only supports sync generators (`__next__`). Async generators silently crash. Use sync generators for streaming or return a dict for small responses.
+7. **Unbounded HTTP header parsing**: `open_remote_stream()` enforces a 2048-byte safety limit on header consumption. Without this guard, a malformed server response (missing `\r\n\r\n` terminator) would spin in a tight `recv(1)` loop, burning CPU and starving the async event loop.
 
 ## 📐 Reference Implementations
 
@@ -47,4 +48,4 @@ On the Pico W (~192KB RAM), buffering entire network payloads causes memory exha
 | Raw Socket Streaming | `web_server.py` | `stream_remote_files`, `stream_remote_info` | Parsing large JSON from remote servers |
 | Chunked Clone Download | `web_server.py` | `remote_clone_endpoint` | Sector-by-sector disk image cloning |
 | Dict Return (small JSON) | `web_server.py` | `files_info_endpoint`, `heartbeat_endpoint` | Safe for responses under 4KB |
-
+| Header byte limit guard | `resilience.py` | `open_remote_stream()` | 2KB cap on HTTP header parsing |

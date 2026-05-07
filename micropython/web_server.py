@@ -72,7 +72,7 @@ async def index(request):
 
 @app.route('/static/<path:path>')
 async def static(request, path):
-    if '..' in path:
+    if any(seg == '..' for seg in path.split('/')):
         return 'Not found', 404
     try:
         # Check if client supports Gzip and the .gz file exists
@@ -281,12 +281,8 @@ async def heartbeat_endpoint(request):
     except Exception as e:
         return {'error': str(e)}, 500
 
-@app.route('/api/status/stats')
-async def stats_endpoint(request):
-    """Return drive and serial activity statistics (medium weight)."""
-    if not hasattr(app, 'dw_server'):
-        return {'error': 'DriveWire Server not attached'}, 500
-        
+def _build_drive_stats():
+    """Build drive statistics list. Shared by stats_endpoint and status_endpoint."""
     drive_stats = []
     for d in app.dw_server.drives:
         if d:
@@ -300,9 +296,16 @@ async def stats_endpoint(request):
             drive_stats.append(ds)
         else:
             drive_stats.append(None)
+    return drive_stats
+
+@app.route('/api/status/stats')
+async def stats_endpoint(request):
+    """Return drive and serial activity statistics (medium weight)."""
+    if not hasattr(app, 'dw_server'):
+        return {'error': 'DriveWire Server not attached'}, 500
             
     return {
-        'drive_stats': drive_stats,
+        'drive_stats': _build_drive_stats(),
         'serial': app.dw_server.stats['serial'],
         'protocol_stats': app.dw_server.stats # includes last_opcode, etc.
     }
@@ -384,28 +387,13 @@ async def status_endpoint(request):
             server_time = "--:--:--"
 
         if hasattr(app, 'dw_server'):
-            drive_stats = []
-            for d in app.dw_server.drives:
-                if d:
-                    ds = d.stats.copy()
-                    ds['filename'] = d.filename.split('/')[-1]
-                    ds['full_path'] = d.filename
-                    ds['dirty_count'] = len(d.dirty_sectors)
-                    ds['is_remote'] = getattr(d, 'is_remote', False)
-                    # Add file modification time for local files
-                    if not ds['is_remote']:
-                        ds['mtime'] = _get_file_mtime(d.filename)
-                    drive_stats.append(ds)
-                else:
-                    drive_stats.append(None)
-                    
             return {
                 'server_time': server_time,
                 'stats': app.dw_server.stats,
                 'logs': list(app.dw_server.log_buffer),
                 'term_buf': list(app.dw_server.terminal_buffer),
                 'monitor_chan': app.dw_server.monitor_channel,
-                'drive_stats': drive_stats
+                'drive_stats': _build_drive_stats()
             }
         return {'server_time': server_time, 'error': 'DriveWire Server not attached'}
     except Exception as e:
@@ -750,12 +738,15 @@ async def upload_file_endpoint(request):
         if bytes_written != total_size:
             resilience.log(f"Warning: size mismatch! Expected {total_size}, got {bytes_written}", level=2)
         
+        _dsk_files_cache = None  # Invalidate file list cache
         return {'status': 'ok', 'path': target_path, 'size': bytes_written}
     except Exception as e:
         _uploading = False
         _dsk_files_cache = None  # Invalidate cache
         resilience.log(f"General upload error: {e}", level=3)
         return {'error': f'Upload failed: {e}'}, 500
+    finally:
+        _uploading = False
 
 @app.route('/api/files/upload_status', methods=['GET'])
 async def upload_status_endpoint(request):

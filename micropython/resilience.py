@@ -47,7 +47,7 @@ def flush_log_buf() -> None:
             except OSError:
                 pass
             os.rename(LOG_FILE, LOG_FILE + ".old")
-    except (OSError, KeyboardInterrupt):
+    except OSError:
         pass
         
     try:
@@ -55,7 +55,7 @@ def flush_log_buf() -> None:
             f.write(''.join(_log_write_buf))
             # Sync to flash
             os.sync()
-    except (OSError, KeyboardInterrupt):
+    except OSError:
         pass
     _log_write_buf = []
 
@@ -76,20 +76,26 @@ def get_reset_cause() -> str:
         return "Soft Reset"
     return f"Unknown ({cause})"
 
+# Module-level constants for log() hot path
+_LOG_LEVELS = ("DEBUG", "INFO", "WARN", "ERROR", "CRIT")
+
+# Lazy-init syslog reference to avoid circular import at module load
+_syslog_mod = None
+_syslog_checked = False
+
 def log(message: str, level: int = 1, _from_syslog: bool = False) -> None:
     """
     Centralized logging function.
     Level: 0=Debug, 1=Info, 2=Warning, 3=Error, 4=Critical
     """
-    global MIN_LOG_LEVEL, _log_callback, _log_calls
+    global MIN_LOG_LEVEL, _log_callback, _log_calls, _syslog_mod, _syslog_checked
     
     if level < MIN_LOG_LEVEL:
         return
 
     _log_calls += 1
 
-    levels = ["DEBUG", "INFO", "WARN", "ERROR", "CRIT"]
-    lvl_str = levels[level] if 0 <= level < len(levels) else "LOG"
+    lvl_str = _LOG_LEVELS[level] if 0 <= level < len(_LOG_LEVELS) else "LOG"
     
     # Calculate local time using timezone offset
     utc_timestamp = time.time()
@@ -116,13 +122,19 @@ def log(message: str, level: int = 1, _from_syslog: bool = False) -> None:
 
     # Forward to Syslog Remote Server
     if not _from_syslog:
-        try:
-            import syslog
-            # Map resilience levels to syslog severities
-            sev = [7, 6, 4, 3, 2][level] if 0 <= level <= 4 else 6
-            syslog.logger.log(message, severity=sev)
-        except (Exception, KeyboardInterrupt):
-            pass
+        if not _syslog_checked:
+            try:
+                import syslog as _sm
+                _syslog_mod = _sm
+            except (ImportError, Exception):
+                pass
+            _syslog_checked = True
+        if _syslog_mod:
+            try:
+                sev = (7, 6, 4, 3, 2)[level] if 0 <= level <= 4 else 6
+                _syslog_mod.logger.log(message, severity=sev)
+            except Exception:
+                pass
 
 def is_rp2350() -> bool:
     """Detect if running on RP2350 (Pico 2) based on default CPU frequency."""
@@ -284,12 +296,15 @@ def open_remote_stream(url: str, addr=None):
         hdr_end = bytearray(4)
         status_line = bytearray(16)  # First few bytes to check status
         status_pos = 0
+        hdr_bytes_read = 0
+        _MAX_HDR_BYTES = 2048  # Safety limit to prevent CPU burn on malformed responses
         
-        while True:
+        while hdr_bytes_read < _MAX_HDR_BYTES:
             b = sock.recv(1)
             if not b:
                 sock.close()
                 return None
+            hdr_bytes_read += 1
             
             # Capture first 16 bytes for status code check
             if status_pos < 16:
@@ -304,6 +319,11 @@ def open_remote_stream(url: str, addr=None):
             
             if hdr_end == b'\r\n\r\n':
                 break
+        else:
+            # Exceeded _MAX_HDR_BYTES without finding header end
+            sock.close()
+            log(f"Remote stream: headers exceeded {_MAX_HDR_BYTES} bytes", level=2)
+            return None
         
         feed_wdt()
         

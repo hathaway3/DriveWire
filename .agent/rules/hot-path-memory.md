@@ -54,7 +54,7 @@ These patterns **MUST NOT** appear inside `DriveWireServer.run()`, `read_bytes()
 | `dirty_sectors` | VirtualDrive | `MAX_DIRTY_CACHE_ENTRIES` (8) | Auto-flush at limit |
 | `log_buffer` | DriveWireServer | `MAX_LOG_ENTRIES` (20) | Use deque with maxlen |
 | `terminal_buffer` | DriveWireServer | `MAX_TERMINAL_BUFFER_SIZE` (512) | Use deque with maxlen |
-| `channels[n]` | DriveWireServer | `MAX_CHANNEL_BUFFER_SIZE` (256) | Truncate on overflow |
+| `channels[n]` | DriveWireServer | `MAX_CHANNEL_BUFFER_SIZE` (256) | In-place `del [:excess]` on overflow |
 
 ## ⚠️ Known Pitfalls
 
@@ -72,3 +72,5 @@ These patterns **MUST NOT** appear inside `DriveWireServer.run()`, `read_bytes()
 | Checksum native | `drivewire.py` | `DriveWireServer.checksum()` |
 | Log batching | `resilience.py` | `log()` |
 | Deque buffers | `drivewire.py` | `DriveWireServer.__init__()` |
+| Syslog module cache | `resilience.py` | Module-level `_syslog_mod` (lazy-init) |
+| Log level constants | `resilience.py` | Module-level `_LOG_LEVELS` tuple |

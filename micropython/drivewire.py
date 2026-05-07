@@ -250,13 +250,28 @@ class VirtualDrive:
 
     async def flush(self):
         if not self.file or not self.dirty_sectors: return
+        flushed = []
         try:
-            for lsn, data in self.dirty_sectors.items():
-                self.file.seek(lsn * SECTOR_SIZE); self.file.write(data); resilience.feed_wdt()
+            for lsn in list(self.dirty_sectors.keys()):
+                try:
+                    self.file.seek(lsn * SECTOR_SIZE)
+                    self.file.write(self.dirty_sectors[lsn])
+                    flushed.append(lsn)
+                    resilience.feed_wdt()
+                except OSError as e:
+                    self.stats['errors'] += 1
+                    self.last_error = E_READ
+                    resilience.log(f"Flush error LSN {lsn}: {e}", level=3)
+                    break
             try: os.sync()
             except (AttributeError, OSError): pass
-            self.dirty_sectors.clear()
-        except OSError: self.stats['errors'] += 1; self.last_error = E_READ
+        except OSError as e:
+            self.stats['errors'] += 1
+            self.last_error = E_READ
+            resilience.log(f"Flush outer error: {e}", level=3)
+        finally:
+            for lsn in flushed:
+                del self.dirty_sectors[lsn]
 
     async def close(self):
         if self.file:
@@ -277,7 +292,10 @@ class RemoteDrive:
         self.is_remote = True
         self.last_error = 0
         self.dirty_sectors = {}  # Empty: remote drives are read-only
-        asyncio.create_task(self.read_sector(0))
+        async def _safe_prime():
+            try: await self.read_sector(0)
+            except Exception as e: resilience.log(f"RemoteDrive prime failed: {e}", level=2)
+        asyncio.create_task(_safe_prime())
 
     async def read_sector(self, lsn: int) -> Optional[Union[bytes, bytearray, memoryview]]:
         self.stats['reads'] += 1
@@ -355,7 +373,9 @@ class DriveWireServer:
         baud = self.config.get('baud_rate', 115200)
         try:
             self.uart = UART(0, baudrate=baud, tx=0, rx=1, timeout=10)
-        except Exception: pass
+        except Exception as e:
+            resilience.log(f"UART init failed (baud={baud}): {e}", level=4)
+            self.uart = None
 
     async def init_drives(self):
         drive_paths = self.config.get('drives', [])
@@ -402,9 +422,11 @@ class DriveWireServer:
                 if not data: break
                 self.channels[chan].extend(data)
                 if len(self.channels[chan]) > MAX_CHANNEL_BUFFER_SIZE:
-                    self.channels[chan] = self.channels[chan][-MAX_CHANNEL_BUFFER_SIZE:]
+                    excess = len(self.channels[chan]) - MAX_CHANNEL_BUFFER_SIZE
+                    del self.channels[chan][:excess]
                 await asyncio.sleep(0)
-        except Exception: pass
+        except Exception as e:
+            resilience.log(f"TCP reader ch{chan} error: {e}", level=2)
         finally: await self.close_tcp(chan)
 
     async def close_tcp(self, chan):
@@ -456,30 +478,40 @@ class DriveWireServer:
                                     err = getattr(self.drives[drive_num], 'last_error', E_UNIT) or E_UNIT
                                     self._err_resp[0] = err
                                     if is_extended:
-                                        self.uart.write(_PAD_256); await self.read_bytes(2); self.uart.write(self._err_resp)
+                                        self.uart.write(_PAD_256)
+                                        if await self.read_bytes(2) is not None:
+                                            self.uart.write(self._err_resp)
                                     else: self.uart.write(self._err_resp)
                             else:
-                                if is_extended: self.uart.write(_PAD_256); await self.read_bytes(2); self.uart.write(_RESP_UNIT)
+                                if is_extended:
+                                    self.uart.write(_PAD_256)
+                                    if await self.read_bytes(2) is not None:
+                                        self.uart.write(_RESP_UNIT)
                                 else: self.uart.write(_RESP_UNIT)
                     elif opcode in (OP_WRITE, OP_REWRITE):
                         header = await self.read_bytes(4)
                         if header:
                             drive_num, lsn = header[0], (header[1] << 16) | (header[2] << 8) | header[3]
                             data_view = await self.read_bytes(SECTOR_SIZE, offset=4) # Read after header
-                            if data_view:
-                                sector_copy = bytes(data_view)
-                                cs_bytes = await self.read_bytes(2, offset=0) # Reuse start of buffer for CS
-                                if cs_bytes:
-                                    remote_cs = (cs_bytes[0] << 8) | cs_bytes[1]
-                                    if remote_cs == self.checksum(sector_copy):
-                                        success = False
-                                        if drive_num < NUM_DRIVES and self.drives[drive_num]:
-                                            success = await self.drives[drive_num].write_sector(lsn, sector_copy)
-                                        if success: self.uart.write(_RESP_OK)
-                                        else:
-                                            err = getattr(self.drives[drive_num], 'last_error', E_UNIT) or E_UNIT
-                                            self._err_resp[0] = err; self.uart.write(self._err_resp)
-                                    else: self.uart.write(_RESP_CRC)
+                            if not data_view:
+                                continue  # UART timeout mid-transaction, CoCo already timed out
+                            sector_copy = bytes(data_view)
+                            cs_bytes = await self.read_bytes(2, offset=0) # Reuse start of buffer for CS
+                            if not cs_bytes:
+                                continue  # UART timeout reading checksum
+                            remote_cs = (cs_bytes[0] << 8) | cs_bytes[1]
+                            if remote_cs == self.checksum(sector_copy):
+                                success = False
+                                if drive_num < NUM_DRIVES and self.drives[drive_num]:
+                                    success = await self.drives[drive_num].write_sector(lsn, sector_copy)
+                                if success:
+                                    self.uart.write(_RESP_OK)
+                                elif drive_num < NUM_DRIVES and self.drives[drive_num]:
+                                    err = self.drives[drive_num].last_error or E_READ
+                                    self._err_resp[0] = err; self.uart.write(self._err_resp)
+                                else:
+                                    self.uart.write(_RESP_UNIT)
+                            else: self.uart.write(_RESP_CRC)
                     elif opcode == OP_TIME:
                         try:
                             t = time_sync.get_local_time(); year = max(0, min(255, t[0] - 1900))
@@ -597,11 +629,11 @@ class DriveWireServer:
                             if name_b:
                                 try:
                                     name = bytes(name_b).decode('ascii', 'ignore'); free_drive = -1
-                                    # print(f"DEBUG: MOUNT name='{name}' len={len(name)}")
                                     for i in range(NUM_DRIVES):
                                         if self.drives[i] is None: free_drive = i; break
                                     if free_drive >= 0:
-                                        if '..' in name or not name.endswith('.dsk'): self.uart.write(_RESP_0xFF)
+                                        if any(seg == '..' for seg in name.split('/')) or not name.endswith('.dsk'):
+                                            self.uart.write(_RESP_0xFF)
                                         else:
                                             try:
                                                 vd = VirtualDrive(name)
@@ -612,6 +644,7 @@ class DriveWireServer:
                                 except Exception: self.uart.write(_RESP_0xFF)
                     resilience.feed_wdt()
                 except Exception as e:
+                    resilience.log(f"Protocol error: {e}", level=3)
                     resilience.feed_wdt(); await asyncio.sleep(1)
         finally:
             self.running = False
@@ -619,6 +652,15 @@ class DriveWireServer:
                 if d:
                     try: await d.close()
                     except Exception: pass
+            # Clean up RFM file handles
+            for addr in list(self.rfm_paths.keys()):
+                try: self.rfm_paths[addr]['handle'].close()
+                except Exception: pass
+            self.rfm_paths.clear()
+            # Clean up TCP connections
+            for chan in list(self.tcp_connections.keys()):
+                try: await self.close_tcp(chan)
+                except Exception: pass
 
     async def tcp_accept_handler(self, chan, reader, writer):
         if chan in self.tcp_connections: await self.close_tcp(chan)

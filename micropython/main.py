@@ -80,4 +80,9 @@ except Exception as e:
     resilience.log("Rebooting in 10 seconds to recover...", level=4)
     time.sleep(10)
     machine.reset()
-
+finally:
+    # Ensure any buffered log lines are persisted to flash
+    try:
+        resilience.flush_log_buf()
+    except Exception:
+        pass
