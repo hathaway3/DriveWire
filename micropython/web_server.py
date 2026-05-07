@@ -992,9 +992,10 @@ async def remote_clone_endpoint(request):
         if not remote_url or not disk_name:
             return {'error': 'Missing remote_url or disk_name'}, 400
 
-        # Sanitize all user-provided paths to prevent reversal/injection
-        disk_name = _sanitize_path(disk_name.split('/')[-1].split('\\')[-1])
-        if not disk_name:
+        # Sanitize disk_name: strip directory components, reject traversal
+        # Note: disk_name is a remote identifier, NOT a local path — do not use _sanitize_path()
+        disk_name = disk_name.split('/')[-1].split('\\')[-1]
+        if not disk_name or any(seg == '..' for seg in disk_name.split('/')) or not disk_name.endswith('.dsk'):
              return {'error': 'Invalid disk name'}, 400
              
         if local_path:
