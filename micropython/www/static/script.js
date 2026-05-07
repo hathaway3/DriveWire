@@ -1154,6 +1154,10 @@ async function submitCreateDisk() {
                     clearInterval(pollInterval);
                     btn.textContent = 'COMPLETE!';
                     setTimeout(() => {
+                        // Reset button state for next use
+                        btn.disabled = false;
+                        btn.textContent = 'CREATE';
+                        btn.style.opacity = '1';
                         hideCreateDiskModal();
                         refreshFilesTab();
                     }, 1000);
