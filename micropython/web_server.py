@@ -286,12 +286,20 @@ def _build_drive_stats():
     drive_stats = []
     for d in app.dw_server.drives:
         if d:
-            ds = d.stats.copy()
-            ds['filename'] = d.filename.split('/')[-1]
-            ds['full_path'] = d.filename
-            ds['dirty_count'] = len(d.dirty_sectors)
-            ds['is_remote'] = getattr(d, 'is_remote', False)
-            if not ds['is_remote']:
+            is_remote = getattr(d, 'is_remote', False)
+            ds = {
+                'reads': d.stats['reads'],
+                'writes': d.stats['writes'],
+                'errors': d.stats['errors'],
+                'latency_us': d.stats['latency_us'],
+                'dir_cache_hits': d.stats.get('dir_cache_hits', 0),
+                'dir_cache_misses': d.stats.get('dir_cache_misses', 0),
+                'filename': d.filename.split('/')[-1],
+                'full_path': d.filename,
+                'dirty_count': len(d.dirty_sectors),
+                'is_remote': is_remote
+            }
+            if not is_remote:
                 ds['mtime'] = _get_file_mtime(d.filename)
             drive_stats.append(ds)
         else:

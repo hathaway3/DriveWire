@@ -205,36 +205,39 @@ class VirtualDrive:
             
         try:
             self.file.seek(lsn * SECTOR_SIZE)
-            data = self.file.read(SECTOR_SIZE)
-            if not data: return _PAD_256
-            if len(data) < SECTOR_SIZE:
-                data = data + bytes(SECTOR_SIZE - len(data))
+            buf = bytearray(SECTOR_SIZE)
+            n = self.file.readinto(buf)
+            if n is None or n == 0: return _PAD_256
+            if n < SECTOR_SIZE:
+                for i in range(n, SECTOR_SIZE):
+                    buf[i] = 0
             
             is_dir = False
             if lsn == 0:
                 is_dir = True
                 try:
-                    root_lsn = RbfParser.get_root_dir_lsn(data)
+                    root_lsn = RbfParser.get_root_dir_lsn(buf)
                     if root_lsn and len(self.dir_lsns) < MAX_DIR_LSNS:
                         self.dir_lsns.add(root_lsn)
                 except Exception: pass
             elif lsn in self.dir_lsns:
                 is_dir = True
-                if RbfParser.is_directory_fd(data):
-                    for seg_lsn, seg_size in RbfParser.get_segments(data):
+                if RbfParser.is_directory_fd(buf):
+                    for seg_lsn, seg_size in RbfParser.get_segments(buf):
                         for i in range(seg_size):
                             if len(self.dir_lsns) < MAX_DIR_LSNS: self.dir_lsns.add(seg_lsn + i)
             
             if is_dir:
                 self.stats['dir_cache_misses'] += 1
+                data = bytes(buf)
                 if len(self.directory_cache) < MAX_DIR_CACHE_ENTRIES:
-                    self.directory_cache[lsn] = bytes(data)
+                    self.directory_cache[lsn] = data
                 return data
 
             if len(self.read_cache) >= MAX_READ_CACHE_ENTRIES:
                 self.read_cache.pop(next(iter(self.read_cache)))
-            self.read_cache[lsn] = bytearray(data)
-            return data
+            self.read_cache[lsn] = buf
+            return buf
         except OSError:
             self.stats['errors'] += 1; self.last_error = E_READ; return None
 
@@ -243,7 +246,7 @@ class VirtualDrive:
         self.stats['writes'] += 1
         buf = bytearray(data)
         self.dirty_sectors[lsn] = buf
-        if lsn in self.read_cache: self.read_cache[lsn] = buf
+        self.read_cache.pop(lsn, None)
         if lsn in self.directory_cache: self.directory_cache[lsn] = bytes(data)
         if len(self.dirty_sectors) >= MAX_DIRTY_CACHE_ENTRIES: await self.flush()
         return True
@@ -311,18 +314,26 @@ class RemoteDrive:
         try:
             read_bytes = 0; expected = fetch_count * SECTOR_SIZE
             while read_bytes < expected:
-                sector_data = sock.read(SECTOR_SIZE)
-                if not sector_data: break
                 curr_lsn = lsn + (read_bytes // SECTOR_SIZE)
                 is_dir = curr_lsn in self.dir_lsns or curr_lsn == 0
+                
+                buf = bytearray(SECTOR_SIZE)
+                pos = 0
+                while pos < SECTOR_SIZE:
+                    n = sock.readinto(memoryview(buf)[pos:])
+                    if n == 0 or n is None: break
+                    pos += n
+                if pos < SECTOR_SIZE:
+                    break
+                
                 if is_dir:
                     if len(self.directory_cache) < MAX_DIR_CACHE_ENTRIES:
-                        self.directory_cache[curr_lsn] = bytes(sector_data)
+                        self.directory_cache[curr_lsn] = bytes(buf)
                 else:
                     if len(self.read_cache) >= MAX_READ_CACHE_ENTRIES:
                         self.read_cache.pop(next(iter(self.read_cache)))
-                    self.read_cache[curr_lsn] = bytearray(sector_data)
-                read_bytes += len(sector_data); resilience.feed_wdt()
+                    self.read_cache[curr_lsn] = buf
+                read_bytes += SECTOR_SIZE; resilience.feed_wdt()
             return self.directory_cache.get(lsn) or self.read_cache.get(lsn)
         except Exception: self.stats['errors'] += 1; self.last_error = E_NOTRDY; return None
         finally: sock.close()
@@ -387,8 +398,32 @@ class DriveWireServer:
 
     async def swap_drive(self, drive_num: int, new_drive):
         if 0 <= drive_num < NUM_DRIVES:
-            if self.drives[drive_num]: await self.drives[drive_num].close()
+            old_drive = self.drives[drive_num]
+            if old_drive:
+                if old_drive.filename == new_drive.filename:
+                    new_drive.read_cache = old_drive.read_cache
+                    new_drive.directory_cache = old_drive.directory_cache
+                    new_drive.dir_lsns = old_drive.dir_lsns
+                await old_drive.close()
             self.drives[drive_num] = new_drive
+
+    async def init_channel(self, chan: int):
+        if chan < len(self.channels):
+            self.channels[chan].clear()
+        serial_map = self.config.get('serial_map', {})
+        chan_str = str(chan)
+        if chan_str in serial_map:
+            mapping = serial_map[chan_str]
+            host = mapping.get('host')
+            port = mapping.get('port')
+            if host and port:
+                try:
+                    await self.close_tcp(chan)
+                    resilience.log(f"Opening outgoing TCP connection for ch{chan} to {host}:{port}", level=1)
+                    reader, writer = await asyncio.open_connection(host, port)
+                    self.tcp_connections[chan] = (reader, writer, asyncio.create_task(self.tcp_reader_task(chan, reader)))
+                except Exception as e:
+                    resilience.log(f"Failed to open TCP connection for ch{chan}: {e}", level=2)
 
     @micropython.native
     def checksum(self, data) -> int:
@@ -453,6 +488,8 @@ class DriveWireServer:
                     if opcode in (OP_RESET, OP_RESET2, OP_RESET3):
                         while self.uart.any(): self.uart.read()
                         continue
+                    elif opcode in (OP_INIT, OP_TERM, OP_NOP):
+                        continue
                     elif opcode == OP_DWINIT:
                         cap = await self.read_bytes(1)
                         if cap: self.uart.write(_RESP_OK)
@@ -495,15 +532,14 @@ class DriveWireServer:
                             data_view = await self.read_bytes(SECTOR_SIZE, offset=4) # Read after header
                             if not data_view:
                                 continue  # UART timeout mid-transaction, CoCo already timed out
-                            sector_copy = bytes(data_view)
                             cs_bytes = await self.read_bytes(2, offset=0) # Reuse start of buffer for CS
                             if not cs_bytes:
                                 continue  # UART timeout reading checksum
                             remote_cs = (cs_bytes[0] << 8) | cs_bytes[1]
-                            if remote_cs == self.checksum(sector_copy):
+                            if remote_cs == self.checksum(data_view):
                                 success = False
                                 if drive_num < NUM_DRIVES and self.drives[drive_num]:
-                                    success = await self.drives[drive_num].write_sector(lsn, sector_copy)
+                                    success = await self.drives[drive_num].write_sector(lsn, data_view)
                                 if success:
                                     self.uart.write(_RESP_OK)
                                 elif drive_num < NUM_DRIVES and self.drives[drive_num]:
@@ -523,7 +559,7 @@ class DriveWireServer:
                         b = await self.read_bytes(1)
                         if b: self.print_buffer.append(b[0])
                     elif opcode == OP_PRINTFLUSH:
-                        self.print_buffer = bytearray()
+                        self.print_buffer.clear()
                     elif opcode in (OP_GETSTAT, OP_SETSTAT):
                         req = await self.read_bytes(2)
                         if req: self.stats['last_drive'], self.stats['last_stat'] = req[0], req[1]
@@ -557,6 +593,71 @@ class DriveWireServer:
                                     self.stats['serial'][chan]['tx'] += 1
                                     self.snoop_serial(chan, val)
                                 except Exception: await self.close_tcp(chan)
+                    elif opcode == OP_SERREADM:
+                        req = await self.read_bytes(2)
+                        if req:
+                            chan, count = req[0], req[1]
+                            if len(self.channels[chan]) >= count:
+                                data = self.channels[chan][:count]
+                                del self.channels[chan][:count]
+                                self.uart.write(data)
+                                if chan not in self.stats['serial']: self.stats['serial'][chan] = {'tx':0, 'rx':0}
+                                self.stats['serial'][chan]['rx'] += count
+                            else:
+                                pass
+                    elif opcode == OP_SERWRITEM:
+                        req = await self.read_bytes(2)
+                        if req:
+                            chan, count = req[0], req[1]
+                            data = await self.read_bytes(count)
+                            if data:
+                                if chan in self.tcp_connections:
+                                    try:
+                                        _, writer, _ = self.tcp_connections[chan]
+                                        writer.write(data); await writer.drain()
+                                        if chan not in self.stats['serial']: self.stats['serial'][chan] = {'tx':0, 'rx':0}
+                                        self.stats['serial'][chan]['tx'] += count
+                                        for b in data:
+                                            self.snoop_serial(chan, b)
+                                    except Exception: await self.close_tcp(chan)
+                    elif 0x80 <= opcode <= 0x8F:
+                        b = await self.read_bytes(1)
+                        if b:
+                            chan = opcode & 0x0F
+                            val = b[0]
+                            if chan in self.tcp_connections:
+                                try:
+                                    _, writer, _ = self.tcp_connections[chan]
+                                    _SER_WRITE_BUF[0] = val
+                                    writer.write(_SER_WRITE_BUF); await writer.drain()
+                                    if chan not in self.stats['serial']: self.stats['serial'][chan] = {'tx':0, 'rx':0}
+                                    self.stats['serial'][chan]['tx'] += 1
+                                    self.snoop_serial(chan, val)
+                                except Exception: await self.close_tcp(chan)
+                    elif opcode == OP_SERINIT:
+                        req = await self.read_bytes(1)
+                        if req:
+                            chan = req[0]
+                            await self.init_channel(chan)
+                    elif opcode == OP_SERTERM:
+                        req = await self.read_bytes(1)
+                        if req:
+                            chan = req[0]
+                            await self.close_tcp(chan)
+                            if chan < len(self.channels):
+                                self.channels[chan].clear()
+                    elif opcode == OP_SERSETSTAT:
+                        req = await self.read_bytes(2)
+                        if req:
+                            chan, code = req[0], req[1]
+                            if code == 0x28:
+                                desc = await self.read_bytes(26)
+                            elif code == 0x29:
+                                await self.init_channel(chan)
+                            elif code == 0x2A:
+                                await self.close_tcp(chan)
+                                if chan < len(self.channels):
+                                    self.channels[chan].clear()
                     elif opcode == OP_RFM:
                         sub_op_b = await self.read_bytes(1)
                         if sub_op_b:

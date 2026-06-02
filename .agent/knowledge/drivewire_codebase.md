@@ -1,6 +1,6 @@
 # DriveWire MicroPython Server — Codebase Knowledge
 
-> Last updated: 2026-03-07 — Consolidated from 15+ agent sessions.
+> Last updated: 2026-06-02 — Consolidated from 16+ agent sessions.
 
 ## Project Overview
 

@@ -55,6 +55,7 @@ from drivewire import (
     DriveWireServer, OP_DWINIT, OP_READ, OP_READEX, OP_WRITE, OP_NAMEOBJ_MOUNT,
     OP_NAMEOBJ_CREATE, OP_TIME, E_NONE, E_UNIT, E_CRC, E_WP,
     OP_SERINIT, OP_SERTERM, OP_SERWRITE, OP_SERREAD, OP_PRINT, OP_PRINTFLUSH,
+    OP_SERREADM, OP_SERWRITEM, OP_FASTWRITE, OP_SERSETSTAT, OP_INIT, OP_TERM, OP_NOP,
     NUM_DRIVES
 )
 
@@ -228,6 +229,84 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
         await server_task
         output = list(self.uart_mock.output_buffer)
         self.assertEqual(output[0], 126) # 2026
+
+    async def test_legacy_nops(self):
+        self.uart_mock.input_buffer.extend([OP_NOP, OP_INIT, OP_TERM, OP_TIME])
+        server_task = asyncio.create_task(self.server.run())
+        await asyncio.sleep(0.05)
+        await self.server.stop()
+        await server_task
+        # Verify NOPs were ignored and OP_TIME was still processed correctly maintaining framing
+        output = list(self.uart_mock.output_buffer)
+        self.assertEqual(output[0], 126)
+
+    async def test_bulk_serial_read_write(self):
+        # Initialise TCP connection mock for channel 1
+        reader_mock = AsyncMock()
+        writer_mock = MagicMock()
+        self.server.tcp_connections[1] = (reader_mock, writer_mock, MagicMock())
+
+        # Test OP_SERWRITEM (bulk write to TCP)
+        self.uart_mock.input_buffer.extend([OP_SERWRITEM, 1, 5, 0x48, 0x65, 0x6C, 0x6C, 0x6F])
+        server_task = asyncio.create_task(self.server.run())
+        await asyncio.sleep(0.05)
+        writer_mock.write.assert_called_with(b'Hello')
+
+        # Test OP_SERREADM (bulk read from channel buffer)
+        self.server.channels[2].extend(b'World!')
+        self.uart_mock.input_buffer.extend([OP_SERREADM, 2, 6])
+        await asyncio.sleep(0.05)
+        await self.server.stop()
+        await server_task
+
+        # Output buffer should contain "World!"
+        self.assertEqual(bytes(self.uart_mock.output_buffer), b'World!')
+
+    async def test_fastwrite(self):
+        # Initialise TCP connection mock for channel 3
+        reader_mock = AsyncMock()
+        writer_mock = MagicMock()
+        self.server.tcp_connections[3] = (reader_mock, writer_mock, MagicMock())
+
+        # OP_FASTWRITE for channel 3 (0x83)
+        self.uart_mock.input_buffer.extend([OP_FASTWRITE + 3, 0x41])
+        server_task = asyncio.create_task(self.server.run())
+        await asyncio.sleep(0.05)
+        await self.server.stop()
+        await server_task
+
+        # Verify single byte b'A' was written to TCP socket
+        writer_mock.write.assert_called_with(b'\x41')
+
+    async def test_channel_lifecycle(self):
+        self.uart_mock.input_buffer.extend([OP_SERINIT, 4, OP_SERTERM, 4, OP_SERSETSTAT, 5, 0x29])
+        server_task = asyncio.create_task(self.server.run())
+        await asyncio.sleep(0.05)
+        await self.server.stop()
+        await server_task
+        # Verify no crash, and channel buffers cleared
+        self.assertEqual(len(self.server.channels[4]), 0)
+        self.assertEqual(len(self.server.channels[5]), 0)
+
+    async def test_swap_drive_cache_inheritance(self):
+        # Prepare old drive with caches
+        vd1 = drivewire.VirtualDrive(self.test_dsk)
+        vd1.read_cache[10] = bytearray([1] * 256)
+        vd1.directory_cache[20] = bytes([2] * 256)
+        vd1.dir_lsns.add(20)
+        self.server.drives[0] = vd1
+
+        # Swap to new drive with same filename
+        vd2 = drivewire.VirtualDrive(self.test_dsk)
+        await self.server.swap_drive(0, vd2)
+
+        # Verify caches inherited
+        self.assertEqual(vd2.read_cache[10], bytearray([1] * 256))
+        self.assertEqual(vd2.directory_cache[20], bytes([2] * 256))
+        self.assertIn(20, vd2.dir_lsns)
+
+        # Clean up
+        await vd2.close()
 
 if __name__ == '__main__':
     unittest.main()

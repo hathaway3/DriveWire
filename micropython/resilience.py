@@ -52,12 +52,13 @@ def flush_log_buf() -> None:
         
     try:
         with open(LOG_FILE, "a") as f:
-            f.write(''.join(_log_write_buf))
+            for line in _log_write_buf:
+                f.write(line)
             # Sync to flash
             os.sync()
     except OSError:
         pass
-    _log_write_buf = []
+    _log_write_buf.clear()
 
 def get_reset_cause() -> str:
     """Return a human-readable string for the last reset cause."""
@@ -202,15 +203,20 @@ def feed_wdt():
 def collect_garbage(reason: str = "general"):
     """Explicitly trigger GC and log status."""
     try:
-        before = gc.mem_free() if hasattr(gc, 'mem_free') else 0
-        gc.collect()
-        after = gc.mem_free() if hasattr(gc, 'mem_free') else 0
-        log(f"GC ({reason}): {before} -> {after} free", level=0)
+        if MIN_LOG_LEVEL <= 0:
+            before = gc.mem_free() if hasattr(gc, 'mem_free') else 0
+            gc.collect()
+            after = gc.mem_free() if hasattr(gc, 'mem_free') else 0
+            log(f"GC ({reason}): {before} -> {after} free", level=0)
+        else:
+            gc.collect()
     except Exception:
         pass
 
 def log_mem_info(label: str = "Status"):
     """Log current heap usage."""
+    if MIN_LOG_LEVEL > 0:
+        return
     try:
         free = gc.mem_free()
         alloc = gc.mem_alloc()
