@@ -10,6 +10,10 @@ except ImportError:
 
 def connect_wifi(ssid, password, max_retries=3):
     """Connect to WiFi with retry logic."""
+    try:
+        network.hostname("drivewire")
+    except Exception:
+        pass
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
     
@@ -23,6 +27,7 @@ def connect_wifi(ssid, password, max_retries=3):
         
         timeout = 10
         while not wlan.isconnected() and timeout > 0:
+            resilience.feed_wdt()
             time.sleep(1)
             timeout -= 1
         
@@ -62,8 +67,7 @@ def install_dependencies():
             
             # Load config for WiFi credentials if not already connected
             try:
-                from config import Config
-                cfg = Config()
+                from config import shared_config as cfg
             except ImportError:
                 resilience.log("Config not found, cannot connect to WiFi.", level=3)
                 return
@@ -102,15 +106,27 @@ def install_dependencies():
                                 success = False
                                 break
                                 
+                            tmp_file = file + ".tmp"
                             try:
-                                with open(file, "w") as f:
+                                with open(tmp_file, "w") as f:
                                     while True:
                                         chunk = sock.recv(512)
                                         if not chunk:
                                             break
                                         f.write(chunk.decode('utf-8', 'ignore'))
                                         resilience.feed_wdt()
+                                try:
+                                    os.remove(file)
+                                except OSError:
+                                    pass
+                                os.rename(tmp_file, file)
                                 resilience.log(f"Saved {file}")
+                            except Exception as e:
+                                try:
+                                    os.remove(tmp_file)
+                                except OSError:
+                                    pass
+                                raise e
                             finally:
                                 sock.close()
                                 

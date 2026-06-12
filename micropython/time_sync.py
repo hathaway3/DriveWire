@@ -51,6 +51,35 @@ def get_local_time() -> Tuple:
         resilience.log(f"get_local_time error: {e}", level=2)
         return (2000, 1, 1, 0, 0, 0, 0, 1)
 
+async def sync_time_async(max_retries: int = 3) -> bool:
+    """
+    Async-friendly synchronization of the system time with the configured NTP server.
+    Yields to the event loop between retries to avoid freezing other tasks.
+    """
+    ntp_server = shared_config.get("ntp_server")
+    if not ntp_server:
+        resilience.log("No NTP server configured.", level=2)
+        return False
+    
+    for attempt in range(max_retries):
+        try:
+            ntptime.host = ntp_server
+            resilience.log(f"Syncing time with {ntp_server} (attempt {attempt + 1}/{max_retries})...")
+            await asyncio.sleep(0)
+            ntptime.settime()  # Sets RTC to UTC
+            await asyncio.sleep(0)
+            resilience.log(f"Time synced: {time.localtime()}")
+            return True
+        except Exception as e:
+            resilience.log(f"Failed to sync time (attempt {attempt + 1}): {e}", level=2)
+            if attempt < max_retries - 1:
+                resilience.feed_wdt()
+                await asyncio.sleep(1)  # Async-friendly wait
+                resilience.feed_wdt()
+    
+    resilience.log("Time sync failed after all retries", level=3)
+    return False
+
 async def keep_time_synced(interval_hours: int = 12) -> None:
     """
     Background task that periodically resyncs the system clock via NTP.
@@ -59,5 +88,5 @@ async def keep_time_synced(interval_hours: int = 12) -> None:
     while True:
         await asyncio.sleep(interval_seconds)
         resilience.log(f"Periodic time sync ({interval_hours}h interval)...")
-        sync_time()
+        await sync_time_async()
         resilience.feed_wdt()

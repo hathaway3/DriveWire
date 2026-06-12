@@ -1,6 +1,9 @@
 import usocket
 import resilience
 from config import shared_config
+import utime
+import network
+import time_sync
 
 try:
     from typing import Optional, Tuple
@@ -35,13 +38,14 @@ class Syslog:
             
         self.facility = 1  # user-level messages
         self._suppressed_until = 0  # ticks_ms when to retry after failure
+        self._wlan = None
 
     def _is_network_ready(self) -> bool:
         """Check if WiFi is connected before attempting UDP sends."""
         try:
-            import network
-            wlan = network.WLAN(network.STA_IF)
-            return wlan.isconnected()
+            if self._wlan is None:
+                self._wlan = network.WLAN(network.STA_IF)
+            return self._wlan.isconnected()
         except Exception:
             return False
 
@@ -70,13 +74,11 @@ class Syslog:
             return
 
         # Skip if suppressed after recent failure (30s backoff)
-        import utime
         now = utime.ticks_ms()
         if utime.ticks_diff(now, self._suppressed_until) < 0:
             return
             
         try:
-            import time_sync
             current_time = self.format_time(time_sync.get_local_time())
         except Exception:
             current_time = "1970-01-01 00:00:00"

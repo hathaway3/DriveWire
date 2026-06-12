@@ -21,6 +21,7 @@ _sd = None
 _mounted = False
 _mount_point = '/sd'
 _lock = asyncio.Lock()
+_spi = None
 
 
 def get_lock() -> asyncio.Lock:
@@ -34,7 +35,7 @@ def init_sd() -> bool:
     Returns True on success, False on failure.
     Safe to call if no SD card is present — will not crash.
     """
-    global _sd, _mounted, _mount_point
+    global _sd, _mounted, _mount_point, _spi
 
     if _mounted:
         resilience.log("SD card already mounted")
@@ -58,7 +59,7 @@ def init_sd() -> bool:
 
         resilience.log(f"SD card: Init SPI{spi_id} SCK={sck_pin} MOSI={mosi_pin} MISO={miso_pin} CS={cs_pin} Speed={baudrate}")
 
-        spi = SPI(spi_id,
+        _spi = SPI(spi_id,
                    baudrate=baudrate,
                    polarity=0,
                    phase=0,
@@ -69,7 +70,7 @@ def init_sd() -> bool:
         cs = Pin(cs_pin, Pin.OUT, value=1)
         
         try:
-            _sd = sdcard.SDCard(spi, cs)
+            _sd = sdcard.SDCard(_spi, cs)
         except (OSError, RuntimeError) as e:
             resilience.log(f"SD card: Hardware initialization failed: {e}", level=2)
             return False
@@ -123,7 +124,13 @@ def deinit_sd() -> None:
 
 def _cleanup() -> None:
     """Reset module state."""
-    global _sd, _mounted
+    global _sd, _mounted, _spi
+    if _spi:
+        try:
+            _spi.deinit()
+        except Exception:
+            pass
+        _spi = None
     _sd = None
     _mounted = False
 
@@ -137,7 +144,7 @@ def is_mounted() -> bool:
 
     # Verify mount is still valid (card may have been removed)
     try:
-        os.listdir(_mount_point)
+        os.statvfs(_mount_point)
         activity_led.blink()
         return True
     except OSError:

@@ -117,6 +117,8 @@ def log(message: str, level: int = 1, _from_syslog: bool = False) -> None:
     log_line += "\n"
     
     # Persistent logging with batching to reduce flash wear
+    if len(_log_write_buf) >= 20:
+        _log_write_buf.pop(0)
     _log_write_buf.append(log_line)
     if level >= 2 or len(_log_write_buf) >= _LOG_BATCH_SIZE:
         flush_log_buf()

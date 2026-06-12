@@ -73,4 +73,3 @@ except Exception as fatal_e:
     resilience.log("Rebooting in 10 seconds...", level=4)
     time.sleep(10)
     machine.reset()
-

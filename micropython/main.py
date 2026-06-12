@@ -14,7 +14,6 @@ resilience.log(f"Reset cause: {resilience.get_reset_cause()}")
 
 async def main():
     resilience.log("Initializing DriveWire Server...")
-    resilience.blink_state('running')
     
     # Configure GC to run aggressively early
     gc.threshold(50000)
@@ -62,6 +61,7 @@ async def main():
 
 # Entry Point
 try:
+    resilience.blink_state('running')
     asyncio.run(main())
 except KeyboardInterrupt:
     resilience.log("Server stopped by user.")
@@ -78,6 +78,10 @@ except Exception as e:
     resilience.blink_state('error')
     resilience.log(f"Unexpected server crash: {e}", level=4)
     resilience.log("Rebooting in 10 seconds to recover...", level=4)
+    try:
+        resilience.flush_log_buf()
+    except Exception:
+        pass
     time.sleep(10)
     machine.reset()
 finally:

@@ -39,7 +39,7 @@ class Config:
     """Configuration manager with validation and persistence."""
     
     def __init__(self):
-        self.config = DEFAULT_CONFIG.copy()
+        self.config = {k: (v.copy() if isinstance(v, (list, dict)) else v) for k, v in DEFAULT_CONFIG.items()}
         self.load()
 
     def load(self) -> None:
@@ -68,7 +68,9 @@ class Config:
     def _try_load_file(self, filepath: str) -> bool:
         """Attempt to load and merge config from a specific file. Returns True on success."""
         try:
-            if filepath.split('/')[-1] not in os.listdir('/'):
+            try:
+                os.stat(filepath)
+            except OSError:
                 return False
             with open(filepath, 'r') as f:
                 stored_config = json.load(f)

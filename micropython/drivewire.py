@@ -116,9 +116,9 @@ class RbfParser:
     def is_lsn0(data: Union[bytes, bytearray, memoryview]) -> bool:
         """Check if 256-byte sector is an OS-9 Identification Sector (LSN 0)."""
         if len(data) < 32: return False
-        # Some OS-9 disks have a signature, but basic RBF often doesn't.
-        # Minimal verification: DD.DIR must be non-zero usually, but tests use specific offsets.
-        return True
+        # DD.TOT (offsets 0-2) is the total sectors count, which must be > 0.
+        dd_tot = (data[0] << 16) | (data[1] << 8) | data[2]
+        return dd_tot > 0
 
     @staticmethod
     def get_root_dir_lsn(data: Union[bytes, bytearray, memoryview]) -> int:
@@ -137,15 +137,13 @@ class RbfParser:
         return bool(data[0] & 0x80)
 
     @staticmethod
-    def get_segments(data: Union[bytes, bytearray, memoryview]) -> List[Tuple[int, int]]:
+    def get_segments(data: Union[bytes, bytearray, memoryview]):
         """Extract allocation segments from a File Descriptor."""
-        segments = []
         for i in range(16, 251, 5):
             lsn = (data[i] << 16) | (data[i+1] << 8) | data[i+2]
             size = (data[i+3] << 8) | data[i+4]
             if lsn == 0 and size == 0: break
-            segments.append((lsn, size))
-        return segments
+            yield (lsn, size)
 
 
 class VirtualDrive:
@@ -161,6 +159,7 @@ class VirtualDrive:
         self.directory_cache = {}
         self.dir_lsns = set()
         self.last_error = 0
+        self._read_buf = bytearray(SECTOR_SIZE)
         self._open()
 
     def _open(self):
@@ -169,13 +168,19 @@ class VirtualDrive:
             self.file = open(self.filename, "r+b")
             # Don't prime cache in test environment to keep stats deterministic
             if 'unittest' not in sys.modules:
-                asyncio.create_task(self._prime_cache())
+                try:
+                    asyncio.create_task(self._prime_cache())
+                except Exception:
+                    pass
         except OSError as e:
             resilience.log(f"VirtualDrive open fail '{self.filename}': {e}", level=2)
             try:
                 self.file = open(self.filename, "rb")
                 if 'unittest' not in sys.modules:
-                    asyncio.create_task(self._prime_cache())
+                    try:
+                        asyncio.create_task(self._prime_cache())
+                    except Exception:
+                        pass
             except OSError:
                 self.file = None
 
@@ -205,35 +210,35 @@ class VirtualDrive:
             
         try:
             self.file.seek(lsn * SECTOR_SIZE)
-            buf = bytearray(SECTOR_SIZE)
-            n = self.file.readinto(buf)
+            n = self.file.readinto(self._read_buf)
             if n is None or n == 0: return _PAD_256
             if n < SECTOR_SIZE:
                 for i in range(n, SECTOR_SIZE):
-                    buf[i] = 0
+                    self._read_buf[i] = 0
             
             is_dir = False
             if lsn == 0:
                 is_dir = True
                 try:
-                    root_lsn = RbfParser.get_root_dir_lsn(buf)
+                    root_lsn = RbfParser.get_root_dir_lsn(self._read_buf)
                     if root_lsn and len(self.dir_lsns) < MAX_DIR_LSNS:
                         self.dir_lsns.add(root_lsn)
                 except Exception: pass
             elif lsn in self.dir_lsns:
                 is_dir = True
-                if RbfParser.is_directory_fd(buf):
-                    for seg_lsn, seg_size in RbfParser.get_segments(buf):
+                if RbfParser.is_directory_fd(self._read_buf):
+                    for seg_lsn, seg_size in RbfParser.get_segments(self._read_buf):
                         for i in range(seg_size):
                             if len(self.dir_lsns) < MAX_DIR_LSNS: self.dir_lsns.add(seg_lsn + i)
             
             if is_dir:
                 self.stats['dir_cache_misses'] += 1
-                data = bytes(buf)
+                data = bytes(self._read_buf)
                 if len(self.directory_cache) < MAX_DIR_CACHE_ENTRIES:
                     self.directory_cache[lsn] = data
                 return data
 
+            buf = bytearray(self._read_buf)
             if len(self.read_cache) >= MAX_READ_CACHE_ENTRIES:
                 self.read_cache.pop(next(iter(self.read_cache)))
             self.read_cache[lsn] = buf
@@ -244,10 +249,12 @@ class VirtualDrive:
     async def write_sector(self, lsn: int, data: Union[bytes, bytearray, memoryview]) -> bool:
         if not self.file: self.last_error = E_NOTRDY; return False
         self.stats['writes'] += 1
+        # SAFETY: data may be an alias into _rx_buf which is reused by read_bytes().
+        # We MUST copy the data to avoid silent data corruption.
         buf = bytearray(data)
         self.dirty_sectors[lsn] = buf
         self.read_cache.pop(lsn, None)
-        if lsn in self.directory_cache: self.directory_cache[lsn] = bytes(data)
+        self.directory_cache.pop(lsn, None)
         if len(self.dirty_sectors) >= MAX_DIRTY_CACHE_ENTRIES: await self.flush()
         return True
 
@@ -295,10 +302,15 @@ class RemoteDrive:
         self.is_remote = True
         self.last_error = 0
         self.dirty_sectors = {}  # Empty: remote drives are read-only
+        self._fetch_buf = bytearray(SECTOR_SIZE)
+        self._fetch_view = memoryview(self._fetch_buf)
         async def _safe_prime():
             try: await self.read_sector(0)
             except Exception as e: resilience.log(f"RemoteDrive prime failed: {e}", level=2)
-        asyncio.create_task(_safe_prime())
+        try:
+            asyncio.create_task(_safe_prime())
+        except Exception:
+            pass
 
     async def read_sector(self, lsn: int) -> Optional[Union[bytes, bytearray, memoryview]]:
         self.stats['reads'] += 1
@@ -309,18 +321,29 @@ class RemoteDrive:
         fetch_count = 8
         base_name = self.filename.split(':')[-1].split('/')[-1]
         url = f"{self.url}/sectors/{base_name}/{lsn}?count={fetch_count}"
-        sock = resilience.open_remote_stream(url)
-        if not sock: self.stats['errors'] += 1; self.last_error = E_NOTRDY; return None
+        
+        sock = None
+        for attempt in range(3):
+            sock = resilience.open_remote_stream(url)
+            if sock:
+                break
+            if attempt < 2:
+                resilience.feed_wdt()
+                await asyncio.sleep(1 << attempt)  # 1s, 2s
+        if not sock:
+            self.stats['errors'] += 1
+            self.last_error = E_NOTRDY
+            return None
+            
         try:
             read_bytes = 0; expected = fetch_count * SECTOR_SIZE
             while read_bytes < expected:
                 curr_lsn = lsn + (read_bytes // SECTOR_SIZE)
                 is_dir = curr_lsn in self.dir_lsns or curr_lsn == 0
                 
-                buf = bytearray(SECTOR_SIZE)
                 pos = 0
                 while pos < SECTOR_SIZE:
-                    n = sock.readinto(memoryview(buf)[pos:])
+                    n = sock.readinto(self._fetch_view[pos:])
                     if n == 0 or n is None: break
                     pos += n
                 if pos < SECTOR_SIZE:
@@ -328,14 +351,21 @@ class RemoteDrive:
                 
                 if is_dir:
                     if len(self.directory_cache) < MAX_DIR_CACHE_ENTRIES:
-                        self.directory_cache[curr_lsn] = bytes(buf)
+                        self.directory_cache[curr_lsn] = bytes(self._fetch_buf)
                 else:
                     if len(self.read_cache) >= MAX_READ_CACHE_ENTRIES:
                         self.read_cache.pop(next(iter(self.read_cache)))
-                    self.read_cache[curr_lsn] = buf
+                    self.read_cache[curr_lsn] = bytearray(self._fetch_buf)
                 read_bytes += SECTOR_SIZE; resilience.feed_wdt()
-            return self.directory_cache.get(lsn) or self.read_cache.get(lsn)
-        except Exception: self.stats['errors'] += 1; self.last_error = E_NOTRDY; return None
+            
+            # Use explicit None checks to avoid short-circuit issues with empty but valid byte buffers
+            ret_data = self.directory_cache.get(lsn)
+            if ret_data is not None:
+                return ret_data
+            return self.read_cache.get(lsn)
+        except Exception as e:
+            resilience.log(f"RemoteDrive read error at LSN {lsn}: {e}", level=3)
+            self.stats['errors'] += 1; self.last_error = E_NOTRDY; return None
         finally: sock.close()
 
     async def write_sector(self, lsn, data): self.last_error = E_WP; return False
@@ -361,6 +391,7 @@ class DriveWireServer:
         self.monitor_channel = -1
         resilience.set_log_callback(self.log_msg)
         self.channels = [bytearray() for _ in range(NUM_CHANNELS)]
+        self._active_channels = set()
         self.tcp_connections = {}
         self.rfm_paths = {}
         self._rx_buf = bytearray(512)
@@ -410,6 +441,7 @@ class DriveWireServer:
     async def init_channel(self, chan: int):
         if chan < len(self.channels):
             self.channels[chan].clear()
+            self._active_channels.discard(chan)
         serial_map = self.config.get('serial_map', {})
         chan_str = str(chan)
         if chan_str in serial_map:
@@ -456,6 +488,8 @@ class DriveWireServer:
                 data = await reader.read(128)
                 if not data: break
                 self.channels[chan].extend(data)
+                if data:
+                    self._active_channels.add(chan)
                 if len(self.channels[chan]) > MAX_CHANNEL_BUFFER_SIZE:
                     excess = len(self.channels[chan]) - MAX_CHANNEL_BUFFER_SIZE
                     del self.channels[chan][:excess]
@@ -468,18 +502,31 @@ class DriveWireServer:
         if chan in self.tcp_connections:
             reader, writer, task = self.tcp_connections.pop(chan)
             try: task.cancel(); writer.close(); await writer.wait_closed()
-            except Exception: pass
+            except Exception as e: resilience.log(f"close_tcp error ch{chan}: {e}", level=0)
+
+    async def flush_loop(self):
+        while self.running:
+            await asyncio.sleep(60)
+            for d in self.drives:
+                if d and hasattr(d, 'dirty_sectors') and d.dirty_sectors:
+                    try:
+                        await d.flush()
+                    except Exception as e:
+                        resilience.log(f"Periodic flush error: {e}", level=3)
+                    resilience.feed_wdt()
 
     async def run(self):
         self.running = True
         await self.init_drives()
+        flush_task = asyncio.create_task(self.flush_loop())
         loop_counter = 0
         try:
             while self.running:
                 try:
                     if not self.uart.any():
                         await asyncio.sleep(0.01); loop_counter += 1
-                        if loop_counter >= 10: gc.collect(); loop_counter = 0
+                        if loop_counter >= 50: gc.collect(); loop_counter = 0
+                        consecutive_opcodes = 0
                         continue
                     req_start_t = utime.ticks_us()
                     op_data = await self.read_bytes(1)
@@ -554,10 +601,14 @@ class DriveWireServer:
                             _TIME_BUF[0] = year; _TIME_BUF[1] = t[1]; _TIME_BUF[2] = t[2]
                             _TIME_BUF[3] = t[3]; _TIME_BUF[4] = t[4]; _TIME_BUF[5] = t[5]
                             self.uart.write(_TIME_BUF)
-                        except Exception: self.uart.write(_TIME_FALLBACK)
+                        except Exception as e:
+                            resilience.log(f"OP_TIME error: {e}", level=2)
+                            self.uart.write(_TIME_FALLBACK)
                     elif opcode == OP_PRINT:
                         b = await self.read_bytes(1)
-                        if b: self.print_buffer.append(b[0])
+                        if b:
+                            if len(self.print_buffer) < 4096:
+                                self.print_buffer.append(b[0])
                     elif opcode == OP_PRINTFLUSH:
                         self.print_buffer.clear()
                     elif opcode in (OP_GETSTAT, OP_SETSTAT):
@@ -565,14 +616,15 @@ class DriveWireServer:
                         if req: self.stats['last_drive'], self.stats['last_stat'] = req[0], req[1]
                     elif opcode == OP_SERREAD:
                         found_channel = -1
-                        for i in range(NUM_CHANNELS):
-                            if len(self.channels[i]) > 0: found_channel = i; break
+                        if self._active_channels:
+                            found_channel = next(iter(self._active_channels))
                         if found_channel >= 0:
                             ch_idx = found_channel
                             if len(self.channels[ch_idx]) == 1:
                                 data_byte = self.channels[ch_idx].pop(0)
                                 self._ser_resp[0], self._ser_resp[1] = ch_idx + 1, data_byte
                                 self.uart.write(self._ser_resp)
+                                self._active_channels.discard(ch_idx)
                             else:
                                 count = min(len(self.channels[ch_idx]), 255)
                                 self._ser_resp[0], self._ser_resp[1] = ch_idx + 17, count
@@ -592,15 +644,18 @@ class DriveWireServer:
                                     if chan not in self.stats['serial']: self.stats['serial'][chan] = {'tx':0, 'rx':0}
                                     self.stats['serial'][chan]['tx'] += 1
                                     self.snoop_serial(chan, val)
-                                except Exception: await self.close_tcp(chan)
+                                except Exception as e:
+                                    resilience.log(f"OP_SERWRITE error on ch{chan}: {e}", level=2)
+                                    await self.close_tcp(chan)
                     elif opcode == OP_SERREADM:
                         req = await self.read_bytes(2)
                         if req:
                             chan, count = req[0], req[1]
                             if len(self.channels[chan]) >= count:
-                                data = self.channels[chan][:count]
+                                self.uart.write(memoryview(self.channels[chan])[:count])
                                 del self.channels[chan][:count]
-                                self.uart.write(data)
+                                if not self.channels[chan]:
+                                    self._active_channels.discard(chan)
                                 if chan not in self.stats['serial']: self.stats['serial'][chan] = {'tx':0, 'rx':0}
                                 self.stats['serial'][chan]['rx'] += count
                             else:
@@ -617,9 +672,10 @@ class DriveWireServer:
                                         writer.write(data); await writer.drain()
                                         if chan not in self.stats['serial']: self.stats['serial'][chan] = {'tx':0, 'rx':0}
                                         self.stats['serial'][chan]['tx'] += count
-                                        for b in data:
-                                            self.snoop_serial(chan, b)
-                                    except Exception: await self.close_tcp(chan)
+                                        self.snoop_serial(chan, data)
+                                    except Exception as e:
+                                        resilience.log(f"OP_SERWRITEM write error on ch{chan}: {e}", level=2)
+                                        await self.close_tcp(chan)
                     elif 0x80 <= opcode <= 0x8F:
                         b = await self.read_bytes(1)
                         if b:
@@ -633,7 +689,9 @@ class DriveWireServer:
                                     if chan not in self.stats['serial']: self.stats['serial'][chan] = {'tx':0, 'rx':0}
                                     self.stats['serial'][chan]['tx'] += 1
                                     self.snoop_serial(chan, val)
-                                except Exception: await self.close_tcp(chan)
+                                except Exception as e:
+                                    resilience.log(f"Fastwrite error on ch{chan}: {e}", level=2)
+                                    await self.close_tcp(chan)
                     elif opcode == OP_SERINIT:
                         req = await self.read_bytes(1)
                         if req:
@@ -646,6 +704,7 @@ class DriveWireServer:
                             await self.close_tcp(chan)
                             if chan < len(self.channels):
                                 self.channels[chan].clear()
+                                self._active_channels.discard(chan)
                     elif opcode == OP_SERSETSTAT:
                         req = await self.read_bytes(2)
                         if req:
@@ -658,6 +717,7 @@ class DriveWireServer:
                                 await self.close_tcp(chan)
                                 if chan < len(self.channels):
                                     self.channels[chan].clear()
+                                    self._active_channels.discard(chan)
                     elif opcode == OP_RFM:
                         sub_op_b = await self.read_bytes(1)
                         if sub_op_b:
@@ -671,10 +731,14 @@ class DriveWireServer:
                                     if pb:
                                         p = self._sanitize_rfm_path(bytes(pb).decode('ascii', 'ignore'))
                                         if p:
-                                            try:
-                                                self.rfm_paths[addr] = {'handle': open(p, 'rb' if not (mode & 2) else 'r+b'), 'mode': mode}
-                                                ec = 0; activity_led.blink()
-                                            except Exception: pass
+                                            if len(self.rfm_paths) >= 8:
+                                                ec = 207
+                                            else:
+                                                try:
+                                                    self.rfm_paths[addr] = {'handle': open(p, 'rb' if not (mode & 2) else 'r+b'), 'mode': mode}
+                                                    ec = 0; activity_led.blink()
+                                                except Exception as e:
+                                                    resilience.log(f"RFM open error: {e}", level=2)
                                     _RFM_RESP[0] = ec
                                     self.uart.write(_RFM_RESP)
                             elif sub == OP_RFM_CHGDIR:
@@ -684,7 +748,9 @@ class DriveWireServer:
                                     if pb:
                                         p = self._sanitize_rfm_path(bytes(pb).decode('ascii', 'ignore'))
                                         try: os.stat(p)
-                                        except OSError: ec = 216
+                                        except OSError as e:
+                                            resilience.log(f"RFM chgdir stat error: {e}", level=2)
+                                            ec = 216
                                     _RFM_RESP[0] = ec
                                     self.uart.write(_RFM_RESP)
                             elif sub == OP_RFM_SEEK:
@@ -693,8 +759,13 @@ class DriveWireServer:
                                     addr, pos = (h[0]<<8)|h[1], (h[3]<<24)|(h[4]<<16)|(h[5]<<8)|h[6]
                                     ec = 207
                                     if addr in self.rfm_paths:
-                                        try: self.rfm_paths[addr]['handle'].seek(pos); ec = 0; activity_led.blink()
-                                        except Exception: ec = 211
+                                        try:
+                                            self.rfm_paths[addr]['handle'].seek(pos)
+                                            ec = 0
+                                            activity_led.blink()
+                                        except Exception as e:
+                                            resilience.log(f"RFM seek error: {e}", level=2)
+                                            ec = 211
                                     _RFM_ERR_RESP[0] = ec
                                     self.uart.write(_RFM_ERR_RESP)
                             elif sub == OP_RFM_READ:
@@ -705,7 +776,9 @@ class DriveWireServer:
                                         try:
                                             data = self.rfm_paths[addr]['handle'].read(count) or b""
                                             ec = 0 if data else 211; activity_led.blink()
-                                        except Exception: ec = 211
+                                        except Exception as e:
+                                            resilience.log(f"RFM read error: {e}", level=2)
+                                            ec = 211
                                     _RFM_READ_RESP[0] = ec
                                     _RFM_READ_RESP[1] = (len(data)>>8)&0xFF
                                     _RFM_READ_RESP[2] = len(data)&0xFF
@@ -718,8 +791,13 @@ class DriveWireServer:
                                 if h:
                                     addr = (h[2]<<8)|h[3]; ec = 0
                                     if addr in self.rfm_paths:
-                                        try: self.rfm_paths[addr]['handle'].close(); del self.rfm_paths[addr]; activity_led.blink()
-                                        except Exception: ec = 214
+                                        try:
+                                            self.rfm_paths[addr]['handle'].close()
+                                            del self.rfm_paths[addr]
+                                            activity_led.blink()
+                                        except Exception as e:
+                                            resilience.log(f"RFM close error: {e}", level=2)
+                                            ec = 214
                                     else: ec = 207
                                     _RFM_ERR_RESP[0] = ec
                                     self.uart.write(_RFM_ERR_RESP)
@@ -738,17 +816,38 @@ class DriveWireServer:
                                         else:
                                             try:
                                                 vd = VirtualDrive(name)
-                                                if vd.file: self.drives[free_drive] = vd; self.uart.write(bytes([free_drive]))
-                                                else: self.uart.write(_RESP_0xFF)
-                                            except Exception: self.uart.write(_RESP_0xFF)
-                                    else: self.uart.write(_RESP_0xFF)
-                                except Exception: self.uart.write(_RESP_0xFF)
+                                                if vd.file:
+                                                    self.drives[free_drive] = vd
+                                                    self._err_resp[0] = free_drive
+                                                    self.uart.write(self._err_resp)
+                                                else:
+                                                    self.uart.write(_RESP_0xFF)
+                                            except Exception as e:
+                                                resilience.log(f"NAMEOBJ mount VirtualDrive error: {e}", level=2)
+                                                self.uart.write(_RESP_0xFF)
+                                    else:
+                                        self.uart.write(_RESP_0xFF)
+                                except Exception as e:
+                                    resilience.log(f"NAMEOBJ protocol error: {e}", level=2)
+                                    self.uart.write(_RESP_0xFF)
                     resilience.feed_wdt()
+                    consecutive_opcodes += 1
+                    if consecutive_opcodes >= 32:
+                        await asyncio.sleep(0)
+                        consecutive_opcodes = 0
                 except Exception as e:
                     resilience.log(f"Protocol error: {e}", level=3)
+                    consecutive_opcodes = 0
                     resilience.feed_wdt(); await asyncio.sleep(1)
         finally:
             self.running = False
+            flush_task.cancel()
+            try:
+                await flush_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
             for d in self.drives:
                 if d:
                     try: await d.close()

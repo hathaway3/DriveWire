@@ -59,7 +59,7 @@ class TestOS9Disk(unittest.IsolatedAsyncioTestCase):
         root_fd = await self.drive.read_sector(root_lsn)
         self.assertTrue(RbfParser.is_directory_fd(root_fd))
         
-        segments = RbfParser.get_segments(root_fd)
+        segments = list(RbfParser.get_segments(root_fd))
         self.assertEqual(len(segments), 1)
         self.assertEqual(segments[0][0], 3) # LSN 3 is directory body
 

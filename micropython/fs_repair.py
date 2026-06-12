@@ -32,7 +32,11 @@ def scrub_root():
         
         # MicroPython os.listdir might show duplicates, but accessing them 
         # by name usually hits the first one found.
-        while True:
+        max_iterations = 5
+        iteration = 0
+        while iteration < max_iterations:
+            resilience.feed_wdt()
+            iteration += 1
             root_content = os.listdir('/')
             ghosts = [x for x in root_content if x == 'sd']
             

@@ -20,6 +20,12 @@ import time_sync
 import activity_led
 import utime
 import resilience
+from collections import deque
+try:
+    import usocket
+except ImportError:
+    import socket as usocket
+from drivewire import VirtualDrive, MAX_TERMINAL_BUFFER_SIZE
 
 try:
     from typing import Optional, List, Dict, Any, Union
@@ -52,7 +58,10 @@ async def _patched_resp_write(self, *args, **kwargs):
         # Microdot 1.3.4 cannot iterate async generators — materialize to bytes
         buf = bytearray()
         async for c in self.body:
-            buf.extend(c.encode('utf-8') if isinstance(c, str) else c)
+            chunk = c.encode('utf-8') if isinstance(c, str) else c
+            if len(buf) + len(chunk) > 8192:
+                raise RuntimeError("Async generator response body exceeds 8KB limit")
+            buf.extend(chunk)
         self.body = bytes(buf)
     await _orig_resp_write(self, *args, **kwargs)
 Response.write = _patched_resp_write
@@ -102,9 +111,14 @@ async def config_endpoint(request):
             new_config = request.json
             
             update_data = {}
-            for key in ('baud_rate', 'wifi_ssid', 'wifi_password', 'ntp_server', 'timezone_offset', 'serial_map', 'syslog_server', 'syslog_port', 'wdt_enabled', 'log_level', 'remote_servers'):
+            for key in ('baud_rate', 'wifi_ssid', 'ntp_server', 'timezone_offset', 'serial_map', 'syslog_server', 'syslog_port', 'wdt_enabled', 'log_level', 'remote_servers'):
                 if key in new_config:
                     update_data[key] = new_config[key]
+                    
+            if 'wifi_password' in new_config:
+                pw = new_config['wifi_password']
+                if pw != '********':
+                    update_data['wifi_password'] = pw
                     
             if 'drives' in new_config:
                 drives = new_config['drives']
@@ -398,8 +412,6 @@ async def status_endpoint(request):
             return {
                 'server_time': server_time,
                 'stats': app.dw_server.stats,
-                'logs': list(app.dw_server.log_buffer),
-                'term_buf': list(app.dw_server.terminal_buffer),
                 'monitor_chan': app.dw_server.monitor_channel,
                 'drive_stats': _build_drive_stats()
             }
@@ -662,7 +674,7 @@ async def upload_file_endpoint(request):
         bytes_written = 0
         
         # Async writing pipeline (without asyncio.Queue since it is missing in uasyncio)
-        write_buffer = []
+        write_buffer = deque((), 10)
         data_ready = asyncio.Event()
         write_error = None
         
@@ -677,7 +689,7 @@ async def upload_file_endpoint(request):
                             activity_led.on() # Solid LED while flushing network chunks to disk
                             
                         while write_buffer:
-                            chunk = write_buffer.pop(0)
+                            chunk = write_buffer.popleft()
                             if chunk is None: # EOF signal
                                 activity_led.off()
                                 return
@@ -697,46 +709,60 @@ async def upload_file_endpoint(request):
         writer_task = asyncio.create_task(sd_writer())
         
         try:
-            remaining = total_size
-            while remaining > 0:
-                if write_error:
-                    raise Exception(f"Background write failed: {write_error}")
+            try:
+                remaining = total_size
+                while remaining > 0:
+                    if write_error:
+                        raise Exception(f"Background write failed: {write_error}")
+                        
+                    read_size = min(chunk_size, remaining)
+                    chunk = await request.stream.read(read_size)
+                    if not chunk:
+                        resilience.log(f"Stream ended early at {bytes_written}/{total_size}", level=2)
+                        break
                     
-                read_size = min(chunk_size, remaining)
-                chunk = await request.stream.read(read_size)
-                if not chunk:
-                    resilience.log(f"Stream ended early at {bytes_written}/{total_size}", level=2)
-                    break
-                
-                # Throttle network read if SD card is falling behind (Queue maxsize=3 alternative)
-                while len(write_buffer) >= 3 and not write_error:
-                    await asyncio.sleep(0.05)
+                    # Throttle network read if SD card is falling behind
+                    while len(write_buffer) >= 3 and not write_error:
+                        await asyncio.sleep(0.05)
+                        
+                    # Push off to background writer
+                    write_buffer.append(chunk)
+                    data_ready.set()
                     
-                # Push off to background writer
-                write_buffer.append(chunk)
+                    bytes_written += len(chunk)
+                    remaining -= len(chunk)
+                    
+                    # Feed WDT every chunk (H14)
+                    resilience.feed_wdt()
+                    
+                    # Manual memory optimization
+                    if bytes_written % (16 * chunk_size) == 0:
+                        resilience.log(f"Received: {bytes_written}/{total_size} bytes")
+                        gc.collect()
+                        
+                # After receiving all chunks, send EOF marker
+                write_buffer.append(None)
                 data_ready.set()
                 
-                bytes_written += len(chunk)
-                remaining -= len(chunk)
+                # Wait for the background writer to finish emptying buffer
+                while write_buffer and not write_error:
+                    await asyncio.sleep(0.05) 
                 
-                # Manual memory optimization
-                if bytes_written % (16 * chunk_size) == 0:
-                    resilience.log(f"Received: {bytes_written}/{total_size} bytes")
-                    resilience.feed_wdt()
-                    gc.collect()
-                    
-            # After receiving all chunks, send EOF marker
-            write_buffer.append(None)
-            data_ready.set()
-            
-            # Wait for the background writer to finish emptying buffer
-            while write_buffer and not write_error:
-                await asyncio.sleep(0.05) 
-            
-            if write_error:
-                raise Exception(f"Background write failed at EOF: {write_error}")
-                
+                if write_error:
+                    raise Exception(f"Background write failed at EOF: {write_error}")
+            finally:
+                # Cancel/await background task to avoid leaks (H9)
+                writer_task.cancel()
+                try:
+                    await writer_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    pass
         except Exception as e:
+            import sys
+            print("--- UPLOAD PIPELINE EXCEPTION ---")
+            sys.print_exception(e)
             resilience.log(f"Upload pipeline failed: {e}", level=3)
             return {'error': f'Upload pipeline failed: {e}'}, 500
         finally:
@@ -749,6 +775,9 @@ async def upload_file_endpoint(request):
         _dsk_files_cache = None  # Invalidate file list cache
         return {'status': 'ok', 'path': target_path, 'size': bytes_written}
     except Exception as e:
+        import sys
+        print("--- GENERAL UPLOAD EXCEPTION ---")
+        sys.print_exception(e)
         _uploading = False
         _dsk_files_cache = None  # Invalidate cache
         resilience.log(f"General upload error: {e}", level=3)
@@ -776,8 +805,6 @@ async def monitor_chan_endpoint(request):
             if chan < -1 or chan >= 32:
                 return {'error': 'Channel must be -1 (off) to 31'}, 400
             app.dw_server.monitor_channel = chan
-            from collections import deque
-            from drivewire import MAX_TERMINAL_BUFFER_SIZE
             app.dw_server.terminal_buffer = deque((), MAX_TERMINAL_BUFFER_SIZE) # Clear on change
             return {'status': 'ok'}
         except (ValueError, TypeError) as e:
@@ -910,7 +937,7 @@ async def remote_files_endpoint(request):
     """List .dsk files from all configured remote servers (streaming JSON)."""
     gc.collect()
     
-    async def generate():
+    def generate():
         yield '{"servers":['
         remote_servers = config.get('remote_servers') or []
         first_server = True
@@ -959,7 +986,7 @@ async def remote_test_endpoint(request):
         if not sock:
             return {'status': 'error', 'message': 'Cannot reach remote server'}, 502
 
-        async def generate():
+        def generate():
             yield '{"status":"ok","info":'
             try:
                 while True:
@@ -1053,7 +1080,6 @@ async def remote_clone_endpoint(request):
                 activity_led.on()
                 
                 # Resolve remote host IP once to avoid repeated getaddrinfo calls
-                import usocket
                 host_url = remote_url.split('://', 1)[1] if '://' in remote_url else remote_url
                 host = host_url.split('/')[0]
                 port = 80
@@ -1081,12 +1107,10 @@ async def remote_clone_endpoint(request):
                         while lsn < total_sectors:
                             count = min(CHUNK_SIZE // 256, total_sectors - lsn)
                             expected_bytes = count * 256
-                            
-                            # Read from persistent socket
                             pos = 0
                             while pos < expected_bytes:
                                 n = sock.readinto(view[pos:expected_bytes])
-                                if n == 0: break
+                                if not n: break
                                 pos += n
                                 resilience.feed_wdt()
                             
@@ -1112,7 +1136,6 @@ async def remote_clone_endpoint(request):
 
                 # Hot-swap if drive_num specified
                 if 0 <= drive_num < 4:
-                    from drivewire import VirtualDrive
                     new_drive = VirtualDrive(local_path)
                     if new_drive.file:
                         await app.dw_server.swap_drive(drive_num, new_drive)

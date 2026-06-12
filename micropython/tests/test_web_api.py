@@ -84,5 +84,26 @@ class TestWebAPI(unittest.IsolatedAsyncioTestCase):
         response = await web_server.config_endpoint(MagicMock(method='GET'))
         self.assertEqual(response["baud_rate"], 115200)
 
+    async def test_config_post_masked_password_ignored(self):
+        from config import shared_config
+        shared_config.config["wifi_password"] = "actual_secret"
+        
+        request = MagicMock(method='POST')
+        request.json = {"wifi_password": "********", "baud_rate": 115200}
+        
+        await web_server.config_endpoint(request)
+        self.assertEqual(shared_config.config["wifi_password"], "actual_secret")
+        self.assertEqual(shared_config.config["baud_rate"], 115200)
+
+    async def test_config_post_new_password_saved(self):
+        from config import shared_config
+        shared_config.config["wifi_password"] = "old_secret"
+        
+        request = MagicMock(method='POST')
+        request.json = {"wifi_password": "new_secret"}
+        
+        await web_server.config_endpoint(request)
+        self.assertEqual(shared_config.config["wifi_password"], "new_secret")
+
 if __name__ == '__main__':
     unittest.main()

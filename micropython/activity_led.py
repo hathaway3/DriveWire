@@ -22,6 +22,12 @@ _led = None
 _available = False
 
 
+
+
+
+
+
+
 def _init() -> None:
     """Lazy-init the LED pin. Safe to call multiple times."""
     global _led, _available
