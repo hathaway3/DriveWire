@@ -1091,45 +1091,51 @@ async def remote_clone_endpoint(request):
                 remote_addr = usocket.getaddrinfo(host, port)[0][-1]
                 resilience.log_mem_info("Clone Start (Single Stream)")
 
-                # Request ALL sectors in a single persistent stream
-                url = f"{remote_url}/sectors/{disk_name}/0?count={total_sectors}"
-                sock = resilience.open_remote_stream(url, addr=remote_addr)
-                if not sock:
-                    raise Exception(f"Failed to open clone stream at {url}")
-
-                try:
-                    CHUNK_SIZE = 4096 # 16 sectors at a time (SD-aligned)
-                    buffer = bytearray(CHUNK_SIZE)
-                    view = memoryview(buffer)
-                    
-                    with open(local_path, 'wb') as f:
-                        lsn = 0
-                        while lsn < total_sectors:
-                            count = min(CHUNK_SIZE // 256, total_sectors - lsn)
+                # Request sectors in sequential chunks of up to 64 to comply with standard
+                CHUNK_SECTORS = 64
+                buffer = bytearray(4096)  # 4KB read/write buffer
+                view = memoryview(buffer)
+                
+                with open(local_path, 'wb') as f:
+                    lsn = 0
+                    while lsn < total_sectors:
+                        count = min(CHUNK_SECTORS, total_sectors - lsn)
+                        url = f"{remote_url}/sectors/{disk_name}/{lsn}?count={count}"
+                        
+                        sock = resilience.open_remote_stream(url, addr=remote_addr)
+                        if not sock:
+                            raise Exception(f"Failed to open clone stream at LSN {lsn}")
+                        
+                        try:
                             expected_bytes = count * 256
-                            pos = 0
-                            while pos < expected_bytes:
-                                n = sock.readinto(view[pos:expected_bytes])
-                                if not n: break
-                                pos += n
-                                resilience.feed_wdt()
+                            read_bytes = 0
+                            while read_bytes < expected_bytes:
+                                to_read = min(4096, expected_bytes - read_bytes)
+                                pos = 0
+                                while pos < to_read:
+                                    n = sock.readinto(view[pos:to_read])
+                                    if not n:
+                                        break
+                                    pos += n
+                                    resilience.feed_wdt()
+                                
+                                if pos < to_read:
+                                    raise Exception(f"Stream ended early at LSN {lsn + (read_bytes // 256)} (got {pos}/{to_read})")
+                                
+                                f.write(view[:to_read])
+                                read_bytes += to_read
+                        finally:
+                            sock.close()
                             
-                            if pos < expected_bytes:
-                                raise Exception(f"Stream ended early at LSN {lsn} (got {pos}/{expected_bytes})")
-                            
-                            f.write(view[:expected_bytes])
-                            lsn += count
-                            _clone_progress['progress'] = lsn
-                            
-                            # Yield to web server and other tasks
-                            await asyncio.sleep(0)
-                            
-                            if lsn % 128 == 0:
-                                resilience.log_mem_info(f"Cloning {lsn}/{total_sectors}")
-                                gc.collect()
-                finally:
-                    sock.close()
-                    gc.collect()
+                        lsn += count
+                        _clone_progress['progress'] = lsn
+                        
+                        # Yield to web server and other tasks, with a small cooldown for LwIP socket cleanup
+                        await asyncio.sleep(0.05)
+                        
+                        if lsn % 128 == 0:
+                            resilience.log_mem_info(f"Cloning {lsn}/{total_sectors}")
+                            gc.collect()
 
                 activity_led.off()
                 _clone_progress['state'] = 'swapping'

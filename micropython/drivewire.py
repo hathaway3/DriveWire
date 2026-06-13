@@ -313,6 +313,7 @@ class RemoteDrive:
             pass
 
     async def read_sector(self, lsn: int) -> Optional[Union[bytes, bytearray, memoryview]]:
+        self.last_error = 0
         self.stats['reads'] += 1
         if lsn in self.directory_cache: self.stats['dir_cache_hits'] += 1; return self.directory_cache[lsn]
         if lsn in self.read_cache:
@@ -320,7 +321,10 @@ class RemoteDrive:
             data = self.read_cache.pop(lsn); self.read_cache[lsn] = data; return data
         fetch_count = 8
         base_name = self.filename.split(':')[-1].split('/')[-1]
-        url = f"{self.url}/sectors/{base_name}/{lsn}?count={fetch_count}"
+        base_url = self.url
+        if '/disk/' in base_url:
+            base_url = base_url.split('/disk/')[0]
+        url = f"{base_url}/sectors/{base_name}/{lsn}?count={fetch_count}"
         
         sock = None
         for attempt in range(3):
@@ -349,6 +353,23 @@ class RemoteDrive:
                 if pos < SECTOR_SIZE:
                     break
                 
+                if curr_lsn == 0:
+                    is_dir = True
+                    try:
+                        root_lsn = RbfParser.get_root_dir_lsn(self._fetch_buf)
+                        if root_lsn and len(self.dir_lsns) < MAX_DIR_LSNS:
+                            self.dir_lsns.add(root_lsn)
+                    except Exception: pass
+                elif curr_lsn in self.dir_lsns:
+                    is_dir = True
+                    try:
+                        if RbfParser.is_directory_fd(self._fetch_buf):
+                            for seg_lsn, seg_size in RbfParser.get_segments(self._fetch_buf):
+                                for i in range(seg_size):
+                                    if len(self.dir_lsns) < MAX_DIR_LSNS:
+                                        self.dir_lsns.add(seg_lsn + i)
+                    except Exception: pass
+
                 if is_dir:
                     if len(self.directory_cache) < MAX_DIR_CACHE_ENTRIES:
                         self.directory_cache[curr_lsn] = bytes(self._fetch_buf)

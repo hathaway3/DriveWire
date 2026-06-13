@@ -308,5 +308,18 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
         # Clean up
         await vd2.close()
 
+    async def test_remote_drive_url_resolution(self):
+        remote_url = "http://192.168.1.100:6809/disk/NOS9_6309_L2_DEV_coco3_dw.dsk"
+        rd = drivewire.RemoteDrive(remote_url)
+        
+        mock_sock = MagicMock()
+        mock_sock.readinto.return_value = 0 # End of stream
+        
+        with patch('resilience.open_remote_stream', return_value=mock_sock) as mock_open:
+            await rd.read_sector(612)
+            mock_open.assert_called()
+            called_url = mock_open.call_args[0][0]
+            self.assertEqual(called_url, "http://192.168.1.100:6809/sectors/NOS9_6309_L2_DEV_coco3_dw.dsk/612?count=8")
+
 if __name__ == '__main__':
     unittest.main()
