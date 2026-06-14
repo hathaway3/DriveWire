@@ -122,6 +122,19 @@ def deinit_sd() -> None:
     _cleanup()
 
 
+async def remount_sd() -> bool:
+    """Unmount then re-mount the SD card so SPI-pin / mount-point config changes
+    take effect without a reboot.
+
+    Serialized on the SD lock so it never races concurrent SD access. init_sd()
+    re-reads the (already-updated) config, so the new pins/mount point apply.
+    Returns the resulting mount state.
+    """
+    async with _lock:
+        deinit_sd()
+        return init_sd()
+
+
 def _cleanup() -> None:
     """Reset module state."""
     global _sd, _mounted, _spi

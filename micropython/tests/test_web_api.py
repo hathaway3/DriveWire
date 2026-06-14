@@ -105,6 +105,29 @@ class TestWebAPI(unittest.IsolatedAsyncioTestCase):
         await web_server.config_endpoint(request)
         self.assertEqual(shared_config.config["wifi_password"], "new_secret")
 
+    async def test_config_post_sd_change_triggers_remount(self):
+        # Defect #10: changing an SD pin/mount config must remount the card live
+        # rather than silently requiring a reboot.
+        from config import shared_config
+        shared_config.config["sd_cs"] = 5
+        request = MagicMock(method='POST')
+        request.json = {"sd_cs": 9}
+        with patch('web_server.sd_card.remount_sd', new=AsyncMock(return_value=True)) as remount:
+            await web_server.config_endpoint(request)
+        remount.assert_awaited_once()
+        self.assertEqual(shared_config.config["sd_cs"], 9)
+
+    async def test_config_post_no_sd_change_skips_remount(self):
+        # The remount must not fire for unrelated config edits (avoids needless
+        # SD churn on every settings save).
+        from config import shared_config
+        shared_config.config["sd_cs"] = 5
+        request = MagicMock(method='POST')
+        request.json = {"baud_rate": 57600}
+        with patch('web_server.sd_card.remount_sd', new=AsyncMock(return_value=True)) as remount:
+            await web_server.config_endpoint(request)
+        remount.assert_not_awaited()
+
     async def test_upload_missing_content_length_rejected(self):
         # Defect #11: without a Content-Length the stream loop never runs, so a
         # 0-byte .dsk was written and reported as success. The endpoint must

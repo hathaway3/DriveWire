@@ -126,12 +126,25 @@ async def config_endpoint(request):
                     update_data['drives'] = drives
 
             # SD card SPI pin config
-            for sd_key in ('sd_spi_id', 'sd_sck', 'sd_mosi', 'sd_miso', 'sd_cs', 'sd_mount_point'):
+            sd_keys = ('sd_spi_id', 'sd_sck', 'sd_mosi', 'sd_miso', 'sd_cs',
+                       'sd_mount_point', 'sd_spi_baudrate')
+            old_sd = {k: config.get(k) for k in sd_keys}
+            for sd_key in sd_keys:
                 if sd_key in new_config:
                     update_data[sd_key] = new_config[sd_key]
-            
+
             config.update(update_data)
-            
+
+            # Apply SD pin/mount changes live so they no longer need a reboot
+            # (#10). Remount before reloading drives so any drive pointing at the
+            # mount point finds the freshly-mounted card.
+            if any(k in new_config and old_sd[k] != config.get(k) for k in sd_keys):
+                resilience.log("SD config changed; remounting SD card...")
+                try:
+                    await sd_card.remount_sd()
+                except Exception as e:
+                    resilience.log(f"SD remount failed: {e}", level=3)
+
             # Trigger reload on DriveWire Server if attached
             if hasattr(app, 'dw_server'):
                 resilience.log("Reloading DriveWire Config...")
