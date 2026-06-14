@@ -88,6 +88,7 @@ E_CRC = micropython.const(243)     # E$CRC  - Checksum error
 E_WP = micropython.const(242)      # E$WP   - Write protect error
 E_READ = micropython.const(244)    # E$Read - Read error
 E_NOTRDY = micropython.const(246)  # E$NotRdy - Device not ready (network down)
+E_UNKSVC = micropython.const(210)  # E$UnkSvc - Unknown service request code
 
 # Pre-allocated response constants (zero-allocation hot path)
 _RESP_OK = bytes([0])
@@ -874,6 +875,14 @@ class DriveWireServer:
                                     else: ec = 207
                                     _RFM_ERR_RESP[0] = ec
                                     self.uart.write(_RFM_ERR_RESP)
+                            else:
+                                # Unhandled RFM sub-op (e.g. WRITE/GETSTT/SETSTT/
+                                # MAKDIR/DELETE). Returning an unknown-service
+                                # error unblocks the client instead of leaving it
+                                # to hang forever waiting on a response.
+                                resilience.log(f"Unhandled RFM sub-op {sub:#04x}; returning E_UNKSVC", level=2)
+                                _RFM_ERR_RESP[0] = E_UNKSVC
+                                self.uart.write(_RFM_ERR_RESP)
                     elif opcode == OP_NAMEOBJ_MOUNT or opcode == OP_NAMEOBJ_CREATE:
                         ln_b = await self.read_bytes(1, offset=1)
                         if ln_b:

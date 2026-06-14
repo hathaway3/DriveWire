@@ -421,6 +421,17 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
         logged = " ".join(str(c.args[0]) for c in mock_log.call_args_list if c.args)
         self.assertNotIn("Protocol error", logged)
 
+    async def test_rfm_unhandled_subop_returns_unksvc(self):
+        # Feature gap F2: an unhandled RFM sub-op (e.g. WRITE) wrote no response,
+        # leaving the OS-9 client to hang waiting forever. It must now answer
+        # with a 1-byte E_UNKSVC error.
+        self.uart_mock.input_buffer.extend([drivewire.OP_RFM, drivewire.OP_RFM_WRITE])
+        server_task = asyncio.create_task(self.server.run())
+        await asyncio.sleep(0.05)
+        await self.server.stop()
+        await server_task
+        self.assertEqual(list(self.uart_mock.output_buffer), [drivewire.E_UNKSVC])
+
     async def test_serreadm_out_of_range_channel_does_not_crash(self):
         # Defect #8: OP_SERREADM indexed self.channels[chan] with an unchecked
         # client-supplied channel (0-255 vs NUM_CHANNELS=32), raising IndexError
