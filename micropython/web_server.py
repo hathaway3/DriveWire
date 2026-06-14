@@ -1111,17 +1111,23 @@ async def remote_clone_endpoint(request):
                             read_bytes = 0
                             while read_bytes < expected_bytes:
                                 to_read = min(4096, expected_bytes - read_bytes)
+                                # Read with recv() rather than readinto(): the raw
+                                # lwIP socket's readinto did not deliver the body
+                                # on-device (same root cause as remote sector reads,
+                                # defect #2). recv is capped to the bytes still
+                                # needed for this block so it never overruns `view`.
                                 pos = 0
                                 while pos < to_read:
-                                    n = sock.readinto(view[pos:to_read])
-                                    if not n:
+                                    chunk = sock.recv(to_read - pos)
+                                    if not chunk:
                                         break
-                                    pos += n
+                                    view[pos:pos + len(chunk)] = chunk
+                                    pos += len(chunk)
                                     resilience.feed_wdt()
-                                
+
                                 if pos < to_read:
                                     raise Exception(f"Stream ended early at LSN {lsn + (read_bytes // 256)} (got {pos}/{to_read})")
-                                
+
                                 f.write(view[:to_read])
                                 read_bytes += to_read
                         finally:
