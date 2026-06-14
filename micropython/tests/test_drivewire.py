@@ -378,6 +378,33 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(vd.stats['read_hits'], 1)
         await vd.close()
 
+    async def test_reload_config_preserves_dirty_and_flushes_removed(self):
+        # Defect #5: reloading config must not silently drop unflushed writes
+        # nor leak the open file handle of a drive being replaced/removed.
+        server = self.server
+        # init_drives is mocked out in asyncSetUp; exercise the real method.
+        real_init = drivewire.DriveWireServer.init_drives
+        server.config.config['drives'] = [self.test_dsk, None, None, None]
+        await real_init(server)
+        drive = server.drives[0]
+
+        # Stage an unflushed write.
+        await drive.write_sector(5, bytearray([0xAB] * 256))
+        self.assertIn(5, drive.dirty_sectors)
+
+        # Reload with identical config: same live drive, dirty buffers intact.
+        await real_init(server)
+        self.assertIs(server.drives[0], drive)
+        self.assertIn(5, drive.dirty_sectors)
+
+        # Remove the mount: the drive must be flushed to disk, then dropped.
+        server.config.config['drives'] = [None, None, None, None]
+        await real_init(server)
+        self.assertIsNone(server.drives[0])
+        with open(self.test_dsk, 'rb') as f:
+            f.seek(5 * 256)
+            self.assertEqual(f.read(256), bytes([0xAB] * 256))
+
 
 class _ChunkedSocket:
     """Minimal socket stand-in whose recv() honors the contract recv(n) <= n,

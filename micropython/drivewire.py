@@ -461,12 +461,30 @@ class DriveWireServer:
             self.uart = None
 
     async def init_drives(self):
+        # Reload-safe: never overwrite a live drive without flushing+closing it
+        # first, or unflushed (dirty) sectors and the open file handle are lost.
         drive_paths = self.config.get('drives', [])
-        for i in range(min(len(drive_paths), NUM_DRIVES)):
-            path = drive_paths[i]
-            if path:
-                if path.startswith('http'): self.drives[i] = RemoteDrive(path)
-                else: self.drives[i] = VirtualDrive(path)
+        for i in range(NUM_DRIVES):
+            path = drive_paths[i] if i < len(drive_paths) else None
+            old = self.drives[i]
+
+            if not path:
+                # Slot cleared: flush & close any existing drive before dropping it.
+                if old:
+                    await old.close()
+                    self.drives[i] = None
+                continue
+
+            # Unchanged mount: keep the live drive (and its dirty buffers) in place.
+            is_remote = path.startswith('http')
+            if old is not None:
+                same = (old.url == path.rstrip('/')) if isinstance(old, RemoteDrive) \
+                    else (not isinstance(old, RemoteDrive) and old.filename == path)
+                if same:
+                    continue
+
+            new_drive = RemoteDrive(path) if is_remote else VirtualDrive(path)
+            await self.swap_drive(i, new_drive)
 
     async def swap_drive(self, drive_num: int, new_drive):
         if 0 <= drive_num < NUM_DRIVES:
