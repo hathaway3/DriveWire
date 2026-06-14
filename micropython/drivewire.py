@@ -390,6 +390,7 @@ class RemoteDrive:
                 # error is counted in stats.
                 self.stats['errors'] += 1
                 self.last_error = E_READ
+                resilience.log(f"RemoteDrive LSN {lsn}: stream opened but only {read_bytes}/{expected} bytes usable", level=2)
             return ret_data
         except Exception as e:
             resilience.log(f"RemoteDrive read error at LSN {lsn}: {e}", level=3)
