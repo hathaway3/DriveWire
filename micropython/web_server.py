@@ -838,45 +838,74 @@ def stream_remote_info(server_url):
         buffer = bytearray()
         in_disks = False
         depth = 0
-        
+        # Track JSON string context so structural characters ('{', '}', '[',
+        # ']', ',') appearing inside a disk name/value are not mistaken for
+        # object boundaries — that miscounted depth and dropped/merged entries.
+        in_string = False
+        escape = False
+
         while True:
             chunk = sock.recv(128)
             if not chunk:
                 break
             resilience.feed_wdt()
-            
+
             for b in chunk:
+                b_val = b if isinstance(b, int) else ord(b)
                 if not in_disks:
-                    # Look for "disks": [
-                    buffer.append(b)
-                    if b == ord('['):
-                        if b'"disks"' in buffer:
-                            in_disks = True
-                            buffer = bytearray()
-                            depth = 1
-                    elif len(buffer) > 100: 
-                        buffer.pop(0) # Sliding window
-                else:
-                    # Inside the disks array
-                    if b == ord(',' ) and depth == 1:
-                        # Skip commas between objects in the array
+                    # Scan for the start of the "disks" array, but honor string
+                    # context so a '[' inside an earlier string value can't
+                    # trigger a false start.
+                    buffer.append(b_val)
+                    if escape:
+                        escape = False
+                    elif b_val == 92:  # backslash
+                        escape = True
+                    elif b_val == 34:  # quote
+                        in_string = not in_string
+                    elif b_val == ord('[') and not in_string and b'"disks"' in buffer:
+                        in_disks = True
+                        buffer = bytearray()
+                        depth = 1
+                        in_string = False
+                        escape = False
                         continue
-                    buffer.append(b)
-                    if b == ord('{'):
-                        depth += 1
-                    elif b == ord('}'):
-                        depth -= 1
-                        if depth == 1:
-                            try:
-                                yield json.loads(buffer)
-                            except Exception:
-                                pass
-                            buffer = bytearray()
-                    elif b == ord(']'):
-                        depth -= 1
-                        if depth == 0:
-                            in_disks = False
-                            break
+                    if len(buffer) > 100:
+                        buffer.pop(0)  # Sliding window
+                    continue
+
+                # Inside the disks array
+                buffer.append(b_val)
+                if escape:
+                    escape = False
+                    continue
+                if b_val == 92:  # backslash
+                    escape = True
+                    continue
+                if b_val == 34:  # quote
+                    in_string = not in_string
+                    continue
+                if in_string:
+                    continue
+                # Structural characters, outside of strings only
+                if b_val == ord('{'):
+                    depth += 1
+                elif b_val == ord('}'):
+                    depth -= 1
+                    if depth == 1:
+                        try:
+                            yield json.loads(buffer)
+                        except Exception:
+                            pass
+                        buffer = bytearray()
+                elif b_val == ord(']'):
+                    depth -= 1
+                    if depth == 0:
+                        in_disks = False
+                        break
+                elif b_val == ord(',') and depth == 1:
+                    # Drop separators/whitespace accumulated between objects
+                    buffer = bytearray()
     except Exception as e:
         resilience.log(f"Remote info stream error ({server_url}): {e}", level=2)
     finally:

@@ -105,5 +105,42 @@ class TestWebAPI(unittest.IsolatedAsyncioTestCase):
         await web_server.config_endpoint(request)
         self.assertEqual(shared_config.config["wifi_password"], "new_secret")
 
+    async def test_stream_remote_info_handles_structural_chars_in_names(self):
+        # Defect #9: the streaming /info parser counted '{','}','[',']' and ','
+        # even inside string values, so a disk name containing any of them
+        # miscounted depth and dropped or merged entries. A string-aware parser
+        # must yield every disk verbatim regardless of chunk boundaries.
+        payload = json.dumps({
+            "version": "1.0",
+            "disks": [
+                {"name": "weird{name},[v2]", "size": 161280},
+                {"name": "quote\"inside", "size": 100},
+                {"name": "normal.dsk", "size": 200},
+            ],
+        }).encode()
+
+        class _InfoSocket:
+            def __init__(self, data, chunk=7):
+                self._data, self._pos, self._chunk = data, 0, chunk
+                self.closed = False
+            def recv(self, n):
+                end = min(self._pos + self._chunk, len(self._data))
+                out = self._data[self._pos:end]
+                self._pos = end
+                return out
+            def close(self):
+                self.closed = True
+
+        sock = _InfoSocket(payload)
+        with patch('web_server.resilience.open_remote_stream', return_value=sock):
+            disks = list(web_server.stream_remote_info("http://host:6809"))
+
+        self.assertEqual(
+            [d["name"] for d in disks],
+            ["weird{name},[v2]", "quote\"inside", "normal.dsk"],
+        )
+        self.assertTrue(sock.closed)
+
+
 if __name__ == '__main__':
     unittest.main()
