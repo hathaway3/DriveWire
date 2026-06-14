@@ -381,9 +381,16 @@ class RemoteDrive:
             
             # Use explicit None checks to avoid short-circuit issues with empty but valid byte buffers
             ret_data = self.directory_cache.get(lsn)
-            if ret_data is not None:
-                return ret_data
-            return self.read_cache.get(lsn)
+            if ret_data is None:
+                ret_data = self.read_cache.get(lsn)
+            if ret_data is None:
+                # Socket opened but the server returned no usable data for this LSN
+                # (non-2xx, empty body, or truncated first sector). Report a real
+                # read error so the CoCo sees E$Read rather than E$Unit, and the
+                # error is counted in stats.
+                self.stats['errors'] += 1
+                self.last_error = E_READ
+            return ret_data
         except Exception as e:
             resilience.log(f"RemoteDrive read error at LSN {lsn}: {e}", level=3)
             self.stats['errors'] += 1; self.last_error = E_NOTRDY; return None

@@ -321,5 +321,22 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
             called_url = mock_open.call_args[0][0]
             self.assertEqual(called_url, "http://192.168.1.100:6809/sectors/NOS9_6309_L2_DEV_coco3_dw.dsk/612?count=8")
 
+    async def test_remote_drive_empty_response_reports_read_error(self):
+        # When the socket opens but the server returns no usable data, read_sector
+        # must surface a real read error (E$Read) and count it — not leave
+        # last_error at 0, which the protocol layer maps to E$Unit.
+        remote_url = "http://192.168.1.100:6809/disk/NOS9_6309_L2_DEV_coco3_dw.dsk"
+        rd = drivewire.RemoteDrive(remote_url)
+
+        mock_sock = MagicMock()
+        mock_sock.readinto.return_value = 0  # End of stream: no bytes delivered
+
+        with patch('resilience.open_remote_stream', return_value=mock_sock):
+            result = await rd.read_sector(612)
+
+        self.assertIsNone(result)
+        self.assertEqual(rd.last_error, drivewire.E_READ)
+        self.assertGreaterEqual(rd.stats['errors'], 1)
+
 if __name__ == '__main__':
     unittest.main()
