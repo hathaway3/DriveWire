@@ -311,10 +311,10 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
     async def test_remote_drive_url_resolution(self):
         remote_url = "http://192.168.1.100:6809/disk/NOS9_6309_L2_DEV_coco3_dw.dsk"
         rd = drivewire.RemoteDrive(remote_url)
-        
+
         mock_sock = MagicMock()
-        mock_sock.readinto.return_value = 0 # End of stream
-        
+        mock_sock.recv.return_value = b''  # End of stream
+
         with patch('resilience.open_remote_stream', return_value=mock_sock) as mock_open:
             await rd.read_sector(612)
             mock_open.assert_called()
@@ -329,7 +329,7 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
         rd = drivewire.RemoteDrive(remote_url)
 
         mock_sock = MagicMock()
-        mock_sock.readinto.return_value = 0  # End of stream: no bytes delivered
+        mock_sock.recv.return_value = b''  # End of stream: no bytes delivered
 
         with patch('resilience.open_remote_stream', return_value=mock_sock):
             result = await rd.read_sector(612)
@@ -337,6 +337,51 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result)
         self.assertEqual(rd.last_error, drivewire.E_READ)
         self.assertGreaterEqual(rd.stats['errors'], 1)
+
+    async def test_remote_drive_recv_reassembles_sectors_across_chunks(self):
+        # Regression guard for defect #2: the body is read with recv(), which
+        # returns arbitrary-length chunks that do not align to 256-byte sector
+        # boundaries. read_sector must reassemble them into correct sectors.
+        remote_url = "http://192.168.1.100:6809/disk/test.dsk"
+        rd = drivewire.RemoteDrive(remote_url)
+
+        # 8 sectors (count=8), each filled with a distinct byte value.
+        payload = b''.join(bytes([(i + 10) & 0xFF]) * 256 for i in range(8))
+        # recv delivers it in 100-byte slices that straddle sector boundaries.
+        sock = _ChunkedSocket(payload, max_chunk=100)
+
+        with patch('resilience.open_remote_stream', return_value=sock):
+            result = await rd.read_sector(0)
+
+        # LSN 0 is treated as a directory sector and returned from directory_cache.
+        self.assertEqual(result, bytes([10]) * 256)
+        # Remaining sectors of the fetch land in the read cache, intact.
+        self.assertEqual(rd.read_cache[1], bytearray([11] * 256))
+        self.assertEqual(rd.read_cache[7], bytearray([17] * 256))
+        self.assertEqual(rd.last_error, 0)
+        self.assertTrue(sock.closed)
+
+
+class _ChunkedSocket:
+    """Minimal socket stand-in whose recv() honors the contract recv(n) <= n,
+    returning data in small straddling chunks to exercise sector reassembly."""
+    def __init__(self, payload, max_chunk=100):
+        self._buf = bytes(payload)
+        self._pos = 0
+        self._max = max_chunk
+        self.closed = False
+
+    def recv(self, n):
+        if self._pos >= len(self._buf):
+            return b''
+        take = min(n, self._max, len(self._buf) - self._pos)
+        chunk = self._buf[self._pos:self._pos + take]
+        self._pos += take
+        return chunk
+
+    def close(self):
+        self.closed = True
+
 
 if __name__ == '__main__':
     unittest.main()

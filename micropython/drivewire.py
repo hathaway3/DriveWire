@@ -345,11 +345,18 @@ class RemoteDrive:
                 curr_lsn = lsn + (read_bytes // SECTOR_SIZE)
                 is_dir = curr_lsn in self.dir_lsns or curr_lsn == 0
                 
+                # Fill one sector using recv(). The raw lwIP socket's readinto()
+                # did not deliver the response body on-device, while recv() (used
+                # by the working remote file-listing path) does. recv is capped to
+                # the bytes still needed for this sector so it never spans a
+                # boundary or overruns the 256-byte scratch buffer.
                 pos = 0
                 while pos < SECTOR_SIZE:
-                    n = sock.readinto(self._fetch_view[pos:])
-                    if n == 0 or n is None: break
-                    pos += n
+                    chunk = sock.recv(SECTOR_SIZE - pos)
+                    if not chunk:
+                        break
+                    self._fetch_buf[pos:pos + len(chunk)] = chunk
+                    pos += len(chunk)
                 if pos < SECTOR_SIZE:
                     break
                 
