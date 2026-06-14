@@ -421,6 +421,19 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
         logged = " ".join(str(c.args[0]) for c in mock_log.call_args_list if c.args)
         self.assertNotIn("Protocol error", logged)
 
+    async def test_serreadm_out_of_range_channel_does_not_crash(self):
+        # Defect #8: OP_SERREADM indexed self.channels[chan] with an unchecked
+        # client-supplied channel (0-255 vs NUM_CHANNELS=32), raising IndexError
+        # caught as a "Protocol error" that stalled the loop.
+        self.uart_mock.input_buffer.extend([OP_SERREADM, 200, 1])
+        with patch('drivewire.resilience.log') as mock_log:
+            server_task = asyncio.create_task(self.server.run())
+            await asyncio.sleep(0.05)
+            await self.server.stop()
+            await server_task
+        logged = " ".join(str(c.args[0]) for c in mock_log.call_args_list if c.args)
+        self.assertNotIn("Protocol error", logged)
+
     async def test_read_only_drive_rejects_writes_with_write_protect(self):
         # Defect #6: a drive opened read-only must report E_WP, not buffer the
         # write into dirty_sectors where flush() fails and the data is lost.

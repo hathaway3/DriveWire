@@ -724,7 +724,7 @@ class DriveWireServer:
                         req = await self.read_bytes(2)
                         if req:
                             chan, count = req[0], req[1]
-                            if len(self.channels[chan]) >= count:
+                            if chan < len(self.channels) and len(self.channels[chan]) >= count:
                                 self.uart.write(memoryview(self.channels[chan])[:count])
                                 del self.channels[chan][:count]
                                 if not self.channels[chan]:
