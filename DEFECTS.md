@@ -105,9 +105,16 @@ suspected location.
     port) **and logs the actual non-2xx status**, so the failure is diagnosable
     from the on-device system log. The Host-header fix is also a candidate root
     cause if the server validates Host.
-- **Needed to close:** reproduce on-device and read the system-log line, or share
-  `curl -i 'http://<host>:6809/sectors/<name>.dsk/0?count=8'` output, to confirm
-  whether the server returns 2xx + raw sector bytes.
+- **Root cause (confirmed 2026-06-14):** `curl` proved the server returns
+  `200` + `Content-Length: 2048` raw bytes for the exact URL the Pico builds, so
+  server/URL/contract are all correct. The remaining difference: working paths
+  (file listing) read the body with `sock.recv()`, while the broken sector/clone
+  paths used `sock.readinto(memoryview[pos:])`, which does not deliver the body
+  on the Pico's raw lwIP socket.
+- **Candidate fix (`bc6689a`):** `read_sector` now reads the body with `recv()`
+  (capped per-sector), matching the working code; reassembly unit-tested.
+- **Status:** ⏳ Pending on-device verification — flash branch
+  `fix/remote-disk-io` and confirm remote disk reads succeed from the CoCo.
 
 ### #3 — Clone remote disk to local is broken (regression)
 
@@ -136,8 +143,15 @@ suspected location.
   different byte count than `count*256`. Both require observing the live server.
   The non-2xx logging added in `23e3c38` also covers this path (clone uses the
   same `open_remote_stream`).
-- **Needed to close:** same diagnostic as #2 — on-device system log during a
-  clone, or a manual `curl -i` of a `/sectors/...?count=64` request.
+- **Root cause (confirmed 2026-06-14):** shares #2's cause — the clone download
+  loop filled its buffer with `sock.readinto()`, which does not deliver the body
+  on-device.
+- **Candidate fix (`fa9b7af`):** clone loop now reads with `recv()` capped per
+  block, matching #2 and the working file-listing paths.
+- **Status:** ⏳ Pending on-device verification — flash branch
+  `fix/remote-disk-io` and confirm a remote→local clone completes. If the
+  per-chunk socket churn also causes ENOMEM on-device, revisit reusing a single
+  stream; the `recv` fix is independent of that.
 
 ### #4 — Server-mode serial ports never listen (backend ignores `mode`)
 
