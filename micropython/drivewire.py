@@ -589,6 +589,10 @@ class DriveWireServer:
         await self.init_drives()
         flush_task = asyncio.create_task(self.flush_loop())
         loop_counter = 0
+        # Must be initialized before the loop: if the UART has data on the very
+        # first iteration the idle branch (which used to seed this) is skipped,
+        # and the `consecutive_opcodes += 1` below would raise UnboundLocalError.
+        consecutive_opcodes = 0
         try:
             while self.running:
                 try:

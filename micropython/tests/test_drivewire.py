@@ -405,6 +405,22 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
             f.seek(5 * 256)
             self.assertEqual(f.read(256), bytes([0xAB] * 256))
 
+    async def test_first_opcode_does_not_raise_unbound_consecutive(self):
+        # Defect #7: with UART data ready on the very first loop iteration the
+        # idle branch (which seeded consecutive_opcodes) is skipped. Pre-fix the
+        # trailing `consecutive_opcodes += 1` raised UnboundLocalError, logged a
+        # spurious "Protocol error" and stalled the loop for 1s.
+        vd = drivewire.VirtualDrive(self.test_dsk)
+        self.server.drives[0] = vd
+        self.uart_mock.input_buffer.extend([OP_READ, 0x00, 0x00, 0x00, 0x01])
+        with patch('drivewire.resilience.log') as mock_log:
+            server_task = asyncio.create_task(self.server.run())
+            await asyncio.sleep(0.05)
+            await self.server.stop()
+            await server_task
+        logged = " ".join(str(c.args[0]) for c in mock_log.call_args_list if c.args)
+        self.assertNotIn("Protocol error", logged)
+
     async def test_read_only_drive_rejects_writes_with_write_protect(self):
         # Defect #6: a drive opened read-only must report E_WP, not buffer the
         # write into dirty_sectors where flush() fails and the data is lost.
