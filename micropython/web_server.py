@@ -641,8 +641,19 @@ async def upload_file_endpoint(request):
         if not filename.lower().endswith('.dsk'):
             resilience.log(f"Upload Error: Invalid file type: {filename}", level=2)
             return {'error': 'Only .dsk files are supported.'}, 400
-            
-        # Clean filename 
+
+        # A missing or non-positive Content-Length leaves total_size == 0, so the
+        # streaming loop below never runs and we'd silently write a 0-byte .dsk
+        # yet report success. Require a valid length up front.
+        try:
+            declared_size = int(content_length)
+        except (TypeError, ValueError):
+            declared_size = 0
+        if declared_size <= 0:
+            resilience.log(f"Upload Error: missing/invalid Content-Length ({content_length})", level=2)
+            return {'error': 'Missing or invalid Content-Length header.'}, 411
+
+        # Clean filename
         clean_name = filename.split('/')[-1].split('\\')[-1]
         target_path = '/sd/' + clean_name
         

@@ -105,6 +105,17 @@ class TestWebAPI(unittest.IsolatedAsyncioTestCase):
         await web_server.config_endpoint(request)
         self.assertEqual(shared_config.config["wifi_password"], "new_secret")
 
+    async def test_upload_missing_content_length_rejected(self):
+        # Defect #11: without a Content-Length the stream loop never runs, so a
+        # 0-byte .dsk was written and reported as success. The endpoint must
+        # reject the upload with 411 instead.
+        headers = {'X-Filename': 'test_upload.dsk'}  # deliberately no Content-Length
+        request = MagicMock()
+        request.headers.get.side_effect = lambda k, d=None: headers.get(k, d)
+        response, status = await web_server.upload_file_endpoint(request)
+        self.assertEqual(status, 411)
+        self.assertIn("Content-Length", response["error"])
+
     async def test_stream_remote_info_handles_structural_chars_in_names(self):
         # Defect #9: the streaming /info parser counted '{','}','[',']' and ','
         # even inside string values, so a disk name containing any of them
