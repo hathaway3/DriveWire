@@ -405,6 +405,17 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
             f.seek(5 * 256)
             self.assertEqual(f.read(256), bytes([0xAB] * 256))
 
+    async def test_read_only_drive_rejects_writes_with_write_protect(self):
+        # Defect #6: a drive opened read-only must report E_WP, not buffer the
+        # write into dirty_sectors where flush() fails and the data is lost.
+        vd = drivewire.VirtualDrive(self.test_dsk)
+        vd.read_only = True
+        ok = await vd.write_sector(5, bytearray([0xCD] * 256))
+        self.assertFalse(ok)
+        self.assertEqual(vd.last_error, drivewire.E_WP)
+        self.assertNotIn(5, vd.dirty_sectors)
+        await vd.close()
+
 
 class _ChunkedSocket:
     """Minimal socket stand-in whose recv() honors the contract recv(n) <= n,

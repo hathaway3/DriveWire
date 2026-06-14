@@ -160,6 +160,7 @@ class VirtualDrive:
         self.directory_cache = {}
         self.dir_lsns = set()
         self.last_error = 0
+        self.read_only = False
         self._read_buf = bytearray(SECTOR_SIZE)
         self._open()
 
@@ -167,6 +168,7 @@ class VirtualDrive:
         try:
             os.stat(self.filename)
             self.file = open(self.filename, "r+b")
+            self.read_only = False
             # Don't prime cache in test environment to keep stats deterministic
             if 'unittest' not in sys.modules:
                 try:
@@ -177,6 +179,10 @@ class VirtualDrive:
             resilience.log(f"VirtualDrive open fail '{self.filename}': {e}", level=2)
             try:
                 self.file = open(self.filename, "rb")
+                # Opened read-only: writes must be rejected, not silently buffered
+                # into dirty_sectors where flush() fails and the data is lost.
+                self.read_only = True
+                resilience.log(f"VirtualDrive '{self.filename}' is write-protected (read-only)", level=2)
                 if 'unittest' not in sys.modules:
                     try:
                         asyncio.create_task(self._prime_cache())
@@ -251,6 +257,10 @@ class VirtualDrive:
 
     async def write_sector(self, lsn: int, data: Union[bytes, bytearray, memoryview]) -> bool:
         if not self.file: self.last_error = E_NOTRDY; return False
+        if self.read_only:
+            # Report write-protect to the client instead of buffering a write
+            # that flush() can never persist (silent data loss).
+            self.stats['errors'] += 1; self.last_error = E_WP; return False
         self.stats['writes'] += 1
         # SAFETY: data may be an alias into _rx_buf which is reused by read_bytes().
         # We MUST copy the data to avoid silent data corruption.
