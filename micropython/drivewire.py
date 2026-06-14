@@ -152,7 +152,8 @@ class VirtualDrive:
         self.file = None
         self.stats = {
             'reads': 0, 'writes': 0, 'errors': 0, 'latency_us': 0,
-            'dir_cache_hits': 0, 'dir_cache_misses': 0
+            'dir_cache_hits': 0, 'dir_cache_misses': 0,
+            'read_hits': 0, 'read_misses': 0
         }
         self.dirty_sectors = {}
         self.read_cache = {}
@@ -204,11 +205,13 @@ class VirtualDrive:
             self.stats['dir_cache_hits'] += 1
             return self.directory_cache[lsn]
         if lsn in self.read_cache:
+            self.stats['read_hits'] += 1
             data = self.read_cache.pop(lsn)
             self.read_cache[lsn] = data
             return data
-            
+
         try:
+            self.stats['read_misses'] += 1
             self.file.seek(lsn * SECTOR_SIZE)
             n = self.file.readinto(self._read_buf)
             if n is None or n == 0: return _PAD_256
@@ -293,8 +296,9 @@ class RemoteDrive:
         self.url = url.rstrip('/')
         self.filename = f"REMOTE:{url}"
         self.stats = {
-            'reads': 0, 'writes': 0, 'errors': 0, 'latency_us': 0, 'cache_hits': 0,
-            'dir_cache_hits': 0, 'dir_cache_misses': 0
+            'reads': 0, 'writes': 0, 'errors': 0, 'latency_us': 0,
+            'dir_cache_hits': 0, 'dir_cache_misses': 0,
+            'read_hits': 0, 'read_misses': 0
         }
         self.read_cache = {}
         self.directory_cache = {}
@@ -317,7 +321,7 @@ class RemoteDrive:
         self.stats['reads'] += 1
         if lsn in self.directory_cache: self.stats['dir_cache_hits'] += 1; return self.directory_cache[lsn]
         if lsn in self.read_cache:
-            self.stats['cache_hits'] += 1
+            self.stats['read_hits'] += 1
             data = self.read_cache.pop(lsn); self.read_cache[lsn] = data; return data
         fetch_count = 8
         base_name = self.filename.split(':')[-1].split('/')[-1]
@@ -381,6 +385,7 @@ class RemoteDrive:
                     if len(self.directory_cache) < MAX_DIR_CACHE_ENTRIES:
                         self.directory_cache[curr_lsn] = bytes(self._fetch_buf)
                 else:
+                    self.stats['read_misses'] += 1
                     if len(self.read_cache) >= MAX_READ_CACHE_ENTRIES:
                         self.read_cache.pop(next(iter(self.read_cache)))
                     self.read_cache[curr_lsn] = bytearray(self._fetch_buf)

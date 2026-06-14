@@ -361,6 +361,23 @@ class TestDriveWire(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rd.last_error, 0)
         self.assertTrue(sock.closed)
 
+    async def test_virtual_drive_read_hit_miss_counters(self):
+        # Defect #1: the stats screen reads read_hits/read_misses. A physical
+        # read of a data sector is a miss; the cached re-read is a hit.
+        vd = drivewire.VirtualDrive(self.test_dsk)
+        self.assertIn('read_hits', vd.stats)
+        self.assertIn('read_misses', vd.stats)
+
+        # LSN 5 is a plain data sector (not LSN 0 / not a directory).
+        await vd.read_sector(5)
+        self.assertEqual(vd.stats['read_misses'], 1)
+        self.assertEqual(vd.stats['read_hits'], 0)
+
+        await vd.read_sector(5)  # served from read_cache
+        self.assertEqual(vd.stats['read_misses'], 1)
+        self.assertEqual(vd.stats['read_hits'], 1)
+        await vd.close()
+
 
 class _ChunkedSocket:
     """Minimal socket stand-in whose recv() honors the contract recv(n) <= n,
