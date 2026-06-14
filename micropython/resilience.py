@@ -292,11 +292,14 @@ def open_remote_stream(url: str, addr=None):
                 raise  # Re-raise on final attempt or non-ENOMEM error
         feed_wdt()
         
-        # Send minimal HTTP/1.0 request (Connection: close implied)
+        # Send minimal HTTP/1.0 request (Connection: close implied).
+        # The Host header must carry the non-default port (RFC 7230); some
+        # servers/frameworks reject or misroute requests whose Host omits it.
+        host_header = host if port == 80 else f"{host}:{port}"
         sock.send(b'GET ')
         sock.send(path.encode())
         sock.send(b' HTTP/1.0\r\nHost: ')
-        sock.send(host.encode())
+        sock.send(host_header.encode())
         sock.send(b'\r\n\r\n')
         
         # Read headers byte-by-byte looking for \r\n\r\n end marker
@@ -337,6 +340,13 @@ def open_remote_stream(url: str, addr=None):
         
         # Check for 2xx status (allowing 200, 206 etc)
         if b' 2' not in bytes(status_line):
+            # Surface the actual status line — a silent None here is the reason
+            # remote-drive failures are indistinguishable from a dead connection.
+            try:
+                status_txt = bytes(status_line).decode('ascii', 'ignore').strip()
+            except Exception:
+                status_txt = repr(bytes(status_line))
+            log(f"Remote stream non-2xx for {path}: '{status_txt}'", level=2)
             sock.close()
             return None
         
