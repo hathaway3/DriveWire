@@ -15,18 +15,25 @@ suspected location.
 
 | # | Severity | Platform | Summary | Symptom / Repro | Suspected location |
 |---|----------|----------|---------|-----------------|--------------------|
-| 1 | 🟠 Major | micropython | Web Statistics screen: several drive metrics never update | Some metrics update live, others stay frozen at 0/`--` | `web_server.py:_build_drive_stats` ↔ `www/static/script.js:renderDriveStats` |
-| 2 | 🔴 Critical | micropython | Remote disk images unusable from client (I/O errors) | Drive mounts OK, but client reads fail with I/O errors | `drivewire.py:RemoteDrive.read_sector` · `resilience.open_remote_stream` |
-| 3 | 🔴 Critical | micropython | Clone remote → local disk broken (regression) | Clone fails; worked in earlier versions | `web_server.py:remote_clone_endpoint/_do_clone` |
 | 4 | 🟠 Major | micropython | Server-mode serial ports never listen; backend ignores `mode` | Config saves `server` channels but clients can't connect to any | `drivewire.py:init_channel` · dead `tcp_accept_handler` |
-| 5 | 🔴 Critical | micropython | Hot config reload loses unflushed writes & leaks file handles | After Save/reload, pending sector writes vanish; old drives not closed | `drivewire.py:reload_config` → `init_drives` |
-| 6 | 🔴 Critical | micropython | Writes to a read-only-opened drive are ACKed then silently dropped | CoCo write "succeeds" but data never persists | `drivewire.py:VirtualDrive._open` / `write_sector` / `flush` |
-| 7 | 🟡 Minor | micropython | First request after boot can be dropped (`consecutive_opcodes` unbound) | Intermittent lost first transaction + ~1s stall | `drivewire.py:run` (~line 543/855) |
-| 8 | 🟡 Minor | micropython | Out-of-range serial channel index throws IndexError | Client requesting channel ≥ 32 causes protocol error + 1s stall | `drivewire.py` OP_SERREADM / `channels[chan]` accesses |
-| 9 | 🟡 Minor | micropython | Brittle hand-rolled JSON parser for remote `/info` | Disk names containing JSON metacharacters desync parsing → disks dropped / clone size lookup fails | `web_server.py:stream_remote_info` |
-| 10 | 🟡 Minor | micropython | SD pin/mount config changes saved but never applied without reboot | Changing SD SPI pins / mount point has no effect until power cycle | `web_server.py:config_endpoint` · `sd_card.init_sd` (boot-only) |
-| 11 | 🟡 Minor | micropython | Upload with missing/zero Content-Length silently writes empty file + reports OK | 0-byte `.dsk` created, `{status: ok}` returned | `web_server.py:upload_file_endpoint` (~line 659/713) |
-| 12 | 🟡 Trivial | micropython | Drive-count bound hardcoded (`drive_num < 4`) instead of `NUM_DRIVES` | Latent divergence if drive count changes; minor double config save | `web_server.py:_do_clone` (~line 1144/1151) |
+
+> **#4 is deferred, not skipped.** Implementing a `server`-mode TCP listener is a
+> genuine feature addition whose viability hinges on the Pico 2 W lwIP PCB budget
+> (the user's own open concern about ~16 concurrent listening ports). It cannot
+> be validated without flashing and live client testing, so it sits outside the
+> "fix without flashing" pass alongside feature gaps F1/F3/F5.
+
+## Pending on-device verification
+
+These have a candidate fix committed on branch `fix/remote-disk-io` (root cause
+confirmed: the Pico's raw lwIP socket does not deliver the HTTP body via
+`readinto`, only via `recv`). They cannot be closed until flashed and tested
+against a live remote DriveWire server.
+
+| # | Severity | Platform | Summary | Candidate fix |
+|---|----------|----------|---------|---------------|
+| 2 | 🔴 Critical | micropython | Remote disk images unusable from client (I/O errors) | `bc6689a` (recv reassembly) |
+| 3 | 🔴 Critical | micropython | Clone remote → local disk broken (regression) | `fa9b7af` (recv reassembly) |
 
 ## In Progress
 
@@ -36,13 +43,27 @@ suspected location.
 
 ## Fixed
 
+All fixes below are on branch `fix/defects-batch`, each a focused commit with a
+CPython regression test (suite green at 43/43).
+
 | # | Platform | Summary | Fixed in |
 |---|----------|---------|----------|
-| _ | _ | _ | _ |
+| 1 | micropython | Stats screen: emit `read_hits`/`read_misses`/`write_count`/`dir_cache_size` | `120fd4e` |
+| 5 | micropython | Flush+close drives on config reload (no data loss / handle leak) | `41fbdea` |
+| 6 | micropython | Reject writes to read-only drive with `E_WP` instead of silent loss | `25b94f6` |
+| 7 | micropython | Initialize `consecutive_opcodes` before run loop | `c0a3b80` |
+| 8 | micropython | Bounds-check serial channel in `OP_SERREADM` | `3966b38` |
+| 9 | micropython | String-aware streaming `/info` JSON parser | `f52224d` |
+| 10 | micropython | Remount SD card live on `sd_*` config change | `e15f34f` |
+| 11 | micropython | Reject upload with missing/invalid `Content-Length` (411) | `146a1c8` |
+| 12 | micropython | Use `NUM_DRIVES` bound, drop redundant `config.save()` | `207c27e` |
+| F2 | micropython | Answer unhandled RFM sub-ops with `E_UNKSVC` instead of hanging | `e506d77` |
 
 ---
 
 ### #1 — Web Statistics screen: several drive metrics never update
+
+> ✅ **Fixed** in `120fd4e` (branch `fix/defects-batch`).
 
 - **Severity:** 🟠 Major
 - **Platform(s):** micropython
@@ -188,6 +209,8 @@ suspected location.
 
 ### #5 — Hot config reload loses unflushed writes & leaks file handles
 
+> ✅ **Fixed** in `41fbdea` (branch `fix/defects-batch`).
+
 - **Severity:** 🔴 Critical (data loss)
 - **Platform(s):** micropython
 - **Symptom:** Applying a config change while drives are mounted can drop
@@ -211,6 +234,8 @@ suspected location.
 
 ### #6 — Writes to a read-only-opened drive are ACKed, then silently dropped
 
+> ✅ **Fixed** in `25b94f6` (branch `fix/defects-batch`).
+
 - **Severity:** 🔴 Critical (silent data loss / integrity)
 - **Platform(s):** micropython
 - **Symptom:** When a disk image opens read-only, the CoCo still receives a
@@ -229,6 +254,8 @@ suspected location.
 
 ### #7 — First request after boot can be dropped (`consecutive_opcodes` unbound)
 
+> ✅ **Fixed** in `c0a3b80` (branch `fix/defects-batch`).
+
 - **Severity:** 🟡 Minor (intermittent, self-clearing)
 - **Platform(s):** micropython
 - **Symptom:** Occasionally the first serial transaction after start is lost and
@@ -245,6 +272,8 @@ suspected location.
 - **Suspected file(s):** `micropython/drivewire.py` — `run()`.
 
 ### #8 — Out-of-range serial channel index throws IndexError
+
+> ✅ **Fixed** in `3966b38` (branch `fix/defects-batch`).
 
 - **Severity:** 🟡 Minor (robustness / DoS on malformed request)
 - **Platform(s):** micropython
@@ -265,6 +294,8 @@ suspected location.
 
 ### #9 — Brittle hand-rolled JSON parser for remote `/info`
 
+> ✅ **Fixed** in `f52224d` (branch `fix/defects-batch`).
+
 - **Severity:** 🟡 Minor (robustness)
 - **Platform(s):** micropython
 - **Symptom:** Remote disk discovery / clone sizing can drop disks or fail to
@@ -280,6 +311,8 @@ suspected location.
 - **Suspected file(s):** `micropython/web_server.py` — `stream_remote_info`.
 
 ### #10 — SD pin/mount config changes are saved but never applied without reboot
+
+> ✅ **Fixed** in `e15f34f` (branch `fix/defects-batch`).
 
 - **Severity:** 🟡 Minor (config gap)
 - **Platform(s):** micropython
@@ -298,6 +331,8 @@ suspected location.
 
 ### #11 — Upload with missing/zero Content-Length silently writes an empty file
 
+> ✅ **Fixed** in `146a1c8` (branch `fix/defects-batch`).
+
 - **Severity:** 🟡 Minor (edge case)
 - **Platform(s):** micropython
 - **Symptom:** A POST to `/api/files/upload` without a (valid) `Content-Length`
@@ -310,6 +345,8 @@ suspected location.
 - **Suspected file(s):** `micropython/web_server.py` — `upload_file_endpoint`.
 
 ### #12 — Drive-count bound hardcoded instead of `NUM_DRIVES`
+
+> ✅ **Fixed** in `207c27e` (branch `fix/defects-batch`).
 
 - **Severity:** 🟡 Trivial (maintainability)
 - **Platform(s):** micropython
@@ -343,6 +380,11 @@ implemented, or implied by the protocol/UI but not actually delivered.
   is silently dropped. Either implement an output sink or document as unsupported.
 
 ### F2 — RFM is read-only and incomplete (and can hang the client)
+
+> ⚠️ **Partially addressed** in `e506d77`: unhandled RFM sub-ops now return a
+> 1-byte `E_UNKSVC` error instead of hanging the client. The underlying features
+> (CREATE/MAKDIR/DELETE/WRITE/READLN/WRITLN/GETSTT/SETSTT) remain unimplemented
+> by design and are still tracked here.
 
 - The RFM sub-op constants are all defined (`OP_RFM_CREATE` … `OP_RFM_SETSTT`),
   but the dispatch in `run()` only implements OPEN, CHGDIR, SEEK, READ, and CLOSE.
