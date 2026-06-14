@@ -25,7 +25,7 @@ try:
     import usocket
 except ImportError:
     import socket as usocket
-from drivewire import VirtualDrive, MAX_TERMINAL_BUFFER_SIZE
+from drivewire import VirtualDrive, MAX_TERMINAL_BUFFER_SIZE, NUM_DRIVES
 
 try:
     from typing import Optional, List, Dict, Any, Union
@@ -1191,15 +1191,16 @@ async def remote_clone_endpoint(request):
                 _clone_progress['state'] = 'swapping'
 
                 # Hot-swap if drive_num specified
-                if 0 <= drive_num < 4:
+                if 0 <= drive_num < NUM_DRIVES:
                     new_drive = VirtualDrive(local_path)
                     if new_drive.file:
                         await app.dw_server.swap_drive(drive_num, new_drive)
-                        # Update config to point to local path and persist
+                        # Update config to point to local path and persist.
+                        # config.set() already saves; a second save() here just
+                        # doubles the flash write.
                         drives = config.get('drives')
                         drives[drive_num] = local_path
                         config.set('drives', drives)
-                        config.save()
                         _clone_progress['state'] = 'complete'
                     else:
                         _clone_progress['state'] = 'error'
